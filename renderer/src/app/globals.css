@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 222 18% 12%;
+  --border: 214 18% 84%;
+  --input: 214 18% 84%;
+  --ring: 191 72% 35%;
+  --primary: 191 74% 30%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 210 18% 92%;
+  --muted-foreground: 218 12% 38%;
+  --destructive: 0 72% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 48% 34%;
+  --success-foreground: 0 0% 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.print-report {
+  display: none;
+}
+
+.report-document {
+  line-height: 1.45;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: white;
+  }
+
+  main > :not(.print-report) {
+    display: none !important;
+  }
+
+  .print-report {
+    display: block !important;
+  }
+
+  .report-document {
+    color: #020617;
+    font-size: 10pt;
+  }
+
+  .report-document section,
+  .report-document table,
+  .report-document tr {
+    break-inside: avoid;
+  }
+}

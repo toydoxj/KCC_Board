@@ -1,0 +1,41 @@
+{
+  "_source": "Type sheet",
+  "items": [
+    {
+      "stud_type": "C-STUD",
+      "method": "기본"
+    },
+    {
+      "stud_type": "C-STUD",
+      "method": "겹침"
+    },
+    {
+      "stud_type": "C-STUD",
+      "method": "맞댐이음"
+    },
+    {
+      "stud_type": "C-STUD",
+      "method": "이중스터드"
+    },
+    {
+      "stud_type": "CH-STUD",
+      "method": null
+    },
+    {
+      "stud_type": "SH-STUD",
+      "method": null
+    },
+    {
+      "stud_type": "R.STUD",
+      "method": null
+    },
+    {
+      "stud_type": "T.silent-STUD",
+      "method": null
+    },
+    {
+      "stud_type": "MP-STUD",
+      "method": null
+    }
+  ]
+}

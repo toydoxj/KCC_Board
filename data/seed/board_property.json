@@ -1,0 +1,160 @@
+{
+  "_source": "계산_SHEET_260528_.xlsx / Property_Gymsumboard",
+  "_note": "E_GPa: 엑셀 값(추후 *10^3 -> N/mm^2). Fy: N/mm^2. mass: kg/m^2",
+  "items": [
+    {
+      "kind": "일반",
+      "thickness": 9.5,
+      "mass_kg_m2": 5.4,
+      "Fy": 10.05207756232687,
+      "E_GPa": 3.241
+    },
+    {
+      "kind": "일반",
+      "thickness": 12.5,
+      "mass_kg_m2": 7.1,
+      "Fy": 7.526399999999999,
+      "E_GPa": 2.67
+    },
+    {
+      "kind": "일반",
+      "thickness": 15.0,
+      "mass_kg_m2": 8.4,
+      "Fy": 6.89422222222222,
+      "E_GPa": 2.581
+    },
+    {
+      "kind": "방수",
+      "thickness": 9.5,
+      "mass_kg_m2": 5.4,
+      "Fy": 18.801108033240997,
+      "E_GPa": null
+    },
+    {
+      "kind": "방수",
+      "thickness": 12.5,
+      "mass_kg_m2": 7.1,
+      "Fy": 12.006399999999998,
+      "E_GPa": null
+    },
+    {
+      "kind": "방균",
+      "thickness": 9.5,
+      "mass_kg_m2": 5.4,
+      "Fy": 9.307479224376733,
+      "E_GPa": null
+    },
+    {
+      "kind": "방균",
+      "thickness": 12.5,
+      "mass_kg_m2": 7.1,
+      "Fy": 7.920639999999999,
+      "E_GPa": null
+    },
+    {
+      "kind": "방화",
+      "thickness": 12.5,
+      "mass_kg_m2": 10.5,
+      "Fy": 9.820159999999998,
+      "E_GPa": 2.992
+    },
+    {
+      "kind": "방화",
+      "thickness": 15.0,
+      "mass_kg_m2": 13.1,
+      "Fy": 8.03911111111111,
+      "E_GPa": 4.127
+    },
+    {
+      "kind": "방화",
+      "thickness": 19.0,
+      "mass_kg_m2": 16.1,
+      "Fy": 7.988919667590029,
+      "E_GPa": 2.861
+    },
+    {
+      "kind": "방화",
+      "thickness": 25.0,
+      "mass_kg_m2": 21.3,
+      "Fy": 8.117759999999997,
+      "E_GPa": 2.275
+    },
+    {
+      "kind": "방화방수",
+      "thickness": 12.5,
+      "mass_kg_m2": 10.7,
+      "Fy": 10.644479999999998,
+      "E_GPa": null
+    },
+    {
+      "kind": "방화방수",
+      "thickness": 15.0,
+      "mass_kg_m2": 13.1,
+      "Fy": 10.229333333333333,
+      "E_GPa": null
+    },
+    {
+      "kind": "방화방수",
+      "thickness": 19.0,
+      "mass_kg_m2": 15.9,
+      "Fy": 7.942382271468145,
+      "E_GPa": null
+    },
+    {
+      "kind": "차음",
+      "thickness": 9.5,
+      "mass_kg_m2": null,
+      "Fy": 12.409972299168977,
+      "E_GPa": null
+    },
+    {
+      "kind": "차음",
+      "thickness": 12.5,
+      "mass_kg_m2": 10.5,
+      "Fy": 9.640959999999998,
+      "E_GPa": null
+    },
+    {
+      "kind": "차음",
+      "thickness": 15.0,
+      "mass_kg_m2": 12.5,
+      "Fy": null,
+      "E_GPa": null
+    },
+    {
+      "kind": "고강도일반",
+      "thickness": 12.5,
+      "mass_kg_m2": 13.2,
+      "Fy": 20.751359999999995,
+      "E_GPa": 3.491
+    },
+    {
+      "kind": "고강도일반",
+      "thickness": 15.0,
+      "mass_kg_m2": 15.8,
+      "Fy": 13.93777777777778,
+      "E_GPa": null
+    },
+    {
+      "kind": "전방수",
+      "thickness": 12.5,
+      "mass_kg_m2": 10.7,
+      "Fy": 11.504639999999997,
+      "E_GPa": 5.048
+    },
+    {
+      "kind": "전방수",
+      "thickness": 15.0,
+      "mass_kg_m2": null,
+      "Fy": 9.880888888888888,
+      "E_GPa": 2.05
+    },
+    {
+      "kind": "고강도전방수",
+      "thickness": 12.5,
+      "mass_kg_m2": 12.6,
+      "Fy": 14.766079999999997,
+      "E_GPa": null
+    }
+  ]
+}

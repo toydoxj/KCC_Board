@@ -1,0 +1,42 @@
+{
+  "_source": "SCREWBOLT / T1:U9",
+  "_unit": "Fu: N/mm^2",
+  "items": [
+    {
+      "material": "6061-T6",
+      "Fu": 290
+    },
+    {
+      "material": "6063-T5",
+      "Fu": 145
+    },
+    {
+      "material": "6063-T6",
+      "Fu": 205
+    },
+    {
+      "material": "STS304",
+      "Fu": 520
+    },
+    {
+      "material": "STS316",
+      "Fu": 520
+    },
+    {
+      "material": "SS400",
+      "Fu": 400
+    },
+    {
+      "material": "SM490",
+      "Fu": 490
+    },
+    {
+      "material": "2024-T4",
+      "Fu": 425
+    },
+    {
+      "material": "7075-T73",
+      "Fu": 470
+    }
+  ]
+}
