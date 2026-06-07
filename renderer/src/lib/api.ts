@@ -18,6 +18,7 @@ export interface BoardProperty {
   thickness: number;
   mass_kg_m2: number | null;
   Fy: number | null;
+  Fu: number | null;
   E_GPa: number | null;
   is_complete: boolean;
   missing_fields: string[];
@@ -92,6 +93,7 @@ export interface WallCheckPayload {
     Fa?: number;
   };
   omega: number;
+  anchor_capacity_kN: number;
 }
 
 export interface LayerResult {

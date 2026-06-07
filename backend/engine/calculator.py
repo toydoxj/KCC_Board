@@ -6,10 +6,10 @@ import math
 from dataclasses import dataclass, replace
 
 from backend.engine.constants import (
+  BOLT_YIELD_RATIO_FROM_FRACTURE,
+  DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_OMEGA,
-  EXCEL_BOARD_BEARING_FACTOR,
-  EXCEL_INNER_CONNECTION_FACTOR,
   GRAVITY,
   STEEL_DENSITY_KG_M3,
   STUD_ELASTIC_MODULUS,
@@ -29,6 +29,12 @@ from backend.engine.seismic import calculate_fa
 
 MAX_HEIGHT_INCREMENT_MM = 50
 MAX_HEIGHT_SEARCH_LIMIT_MM = 30000
+CENTRAL_JOINT_STUD_GAP_MM = 25.0
+CH_STUD_REAR_BOARD_THICKNESS_MM = 25.0
+CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM = 12.5
+I_STUD_REAR_BOARD_KIND = "방화"
+I_STUD_REAR_BOARD_THICKNESS_MM = 25.0
+R_STUD_BOARD_STUD_CLEAR_GAP_MM = 12.0
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,7 @@ class _Layer:
   axial_strength_kN: float
   mass_kN: float
   board_property: BoardProperty | None = None
+  fully_composite_with_stud: bool = False
 
 
 @dataclass(frozen=True)
@@ -51,6 +58,33 @@ class _Section:
   stud_layer: _Layer
   stud_section: StudSection
   stud_multiplier: float
+  stud_unfactored_self_inertia_mm4: float
+  stud_connection_inertia_factor: float
+  stud_section_modulus_depth_mm: float
+
+
+@dataclass(frozen=True)
+class _StudAssembly:
+  area_mm2: float
+  height_mm: float
+  centroid_mm: float
+  self_inertia_mm4: float
+  unfactored_self_inertia_mm4: float
+  connection_inertia_factor: float
+  multiplier: float
+  section_modulus_depth_mm: float
+
+
+@dataclass(frozen=True)
+class _ReactionResult:
+  live_kN_per_m: float
+  seismic_kN_per_m: float
+  load_combination_L_kN_per_m: float
+  load_combination_0_7E_kN_per_m: float
+  load_combination_0_75L_0_7E_kN_per_m: float
+  required_kN_per_m: float
+  anchor_capacity_kN: float
+  anchor_spacing_mm: float
 
 
 def calculate_wall_check(
@@ -80,14 +114,18 @@ def _calculate_wall_check_once(
 
   shear_by_name = _shear_connection_by_layer(section.layers, request)
   eta = _composite_ratio(section.layers, shear_by_name)
-  I_eff = stud_result.inertia_about_neutral_axis_mm4 + math.sqrt(eta) * (
+  group, method = _parse_stud_type(request.stud)
+  I_eff_raw = stud_result.inertia_about_neutral_axis_mm4 + math.sqrt(eta) * (
     I_full - stud_result.inertia_about_neutral_axis_mm4
   )
-  Mn = _nominal_moment(layer_results, shear_by_name, section.stud_layer.thickness_mm)
+  I_eff_correction_factor = _effective_inertia_correction_factor(group, method)
+  I_eff = I_eff_raw * I_eff_correction_factor
+  Mn = _nominal_moment(layer_results, shear_by_name, section.stud_section_modulus_depth_mm)
   deflection = _deflection_mm(request, I_eff)
   deflection_limit = request.span_mm / request.deflection_limit_denom
   seismic_moment, seismic_weight, sds, fp = _seismic_moment_kNm(request, section.layers)
   live_moment = _live_moment_kNm(request)
+  reaction = _reaction_result_kN_per_m(request, fp)
   Mu = max(live_moment, 0.7 * seismic_moment, 0.75 * live_moment + 0.7 * seismic_moment)
   stress_ratio = request.omega * Mu / Mn
 
@@ -121,11 +159,25 @@ def _calculate_wall_check_once(
     layers=enriched_layers,
     intermediate={
       "stud_I_mm4": stud_result.inertia_about_neutral_axis_mm4,
+      "stud_I_unfactored_mm4": section.stud_unfactored_self_inertia_mm4,
+      "stud_section_height_mm": section.stud_layer.thickness_mm,
+      "stud_section_modulus_depth_mm": section.stud_section_modulus_depth_mm,
+      "stud_connection_inertia_factor": section.stud_connection_inertia_factor,
+      "I_eff_raw_mm4": I_eff_raw,
+      "I_eff_correction_factor": I_eff_correction_factor,
       "live_moment_kNm": live_moment,
       "seismic_weight_kN": seismic_weight,
       "Fa": _seismic_fa(request),
       "Sds": sds,
       "Fp_kN": fp,
+      "reaction_live_kN_per_m": reaction.live_kN_per_m,
+      "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
+      "reaction_L_kN_per_m": reaction.load_combination_L_kN_per_m,
+      "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
+      "reaction_0_75L_0_7E_kN_per_m": reaction.load_combination_0_75L_0_7E_kN_per_m,
+      "reaction_required_kN_per_m": reaction.required_kN_per_m,
+      "anchor_capacity_kN": reaction.anchor_capacity_kN,
+      "anchor_spacing_mm": reaction.anchor_spacing_mm,
     },
   )
 
@@ -188,25 +240,46 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
       Fa=float(seismic_raw["Fa"]),
     ),
     omega=DEFAULT_OMEGA,
+    anchor_capacity_kN=float(inputs.get("anchor_capacity_kN", DEFAULT_ANCHOR_CAPACITY_KN)),
   )
 
 
 def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Section:
   group, method = _parse_stud_type(request.stud)
   stud = repo.get_stud(group, request.stud.spec)
-  stud_multiplier = 2.0 if "맞댐" in method else 1.0
+  stud_assembly = _stud_assembly(stud, method)
+  fixed_rear_board = _fixed_rear_board_for_group(group)
+  if fixed_rear_board is not None:
+    _validate_fixed_rear_boards(group, request.rear_boards, fixed_rear_board)
   layers: list[_Layer] = []
   y_cursor = 0.0
+  rear_boards = _assign_rear_orders(request.rear_boards)
+  front_boards = _assign_front_orders(request.front_boards)
+  r_stud_board_gap = R_STUD_BOARD_STUD_CLEAR_GAP_MM if _is_r_stud_group(group) else 0.0
 
-  for board in _assign_rear_orders(request.rear_boards):
-    layer, y_cursor = _board_layer(board, y_cursor, request, repo)
+  for board in rear_boards:
+    layer, next_y_cursor = _board_layer(
+      board,
+      y_cursor,
+      request,
+      repo,
+      fully_composite_with_stud=fixed_rear_board is not None,
+    )
     layers.append(layer)
+    if fixed_rear_board is None:
+      y_cursor = next_y_cursor
 
-  stud_layer = _stud_layer(stud, y_cursor, request, stud_multiplier)
+  if rear_boards and r_stud_board_gap > 0.0:
+    y_cursor += r_stud_board_gap
+
+  stud_layer = _stud_layer(stud, y_cursor, request, stud_assembly)
   layers.append(stud_layer)
   y_cursor += stud_layer.thickness_mm
 
-  for board in _assign_front_orders(request.front_boards):
+  if front_boards and r_stud_board_gap > 0.0:
+    y_cursor += r_stud_board_gap
+
+  for board in front_boards:
     layer, y_cursor = _board_layer(board, y_cursor, request, repo)
     layers.append(layer)
 
@@ -214,7 +287,10 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
     layers=tuple(layers),
     stud_layer=stud_layer,
     stud_section=stud,
-    stud_multiplier=stud_multiplier,
+    stud_multiplier=stud_assembly.multiplier,
+    stud_unfactored_self_inertia_mm4=stud_assembly.unfactored_self_inertia_mm4,
+    stud_connection_inertia_factor=stud_assembly.connection_inertia_factor,
+    stud_section_modulus_depth_mm=stud_assembly.section_modulus_depth_mm,
   )
 
 
@@ -238,6 +314,7 @@ def _board_layer(
   y_bottom: float,
   request: WallCheckRequest,
   repo: MaterialRepository,
+  fully_composite_with_stud: bool = False,
 ) -> tuple[_Layer, float]:
   prop = repo.get_board(board.kind, board.thickness)
   elastic_ratio = prop.E_GPa * 1000.0 / STUD_ELASTIC_MODULUS
@@ -260,6 +337,7 @@ def _board_layer(
       axial_strength_kN=axial,
       mass_kN=mass,
       board_property=prop,
+      fully_composite_with_stud=fully_composite_with_stud,
     ),
     y_bottom + board.thickness,
   )
@@ -269,32 +347,131 @@ def _stud_layer(
   stud: StudSection,
   y_bottom: float,
   request: WallCheckRequest,
-  multiplier: float,
+  assembly: _StudAssembly,
 ) -> _Layer:
-  area = stud.A * multiplier
-  height = stud.H
-  y_centroid = y_bottom + stud.cy
-  mass = area * request.span_mm * 1e-9 * STEEL_DENSITY_KG_M3 * GRAVITY / 1000.0
+  mass = assembly.area_mm2 * request.span_mm * 1e-9 * STEEL_DENSITY_KG_M3 * GRAVITY / 1000.0
   return _Layer(
     name=f"{stud.group}-{stud.name}",
     layer_type="stud",
     order=0,
-    thickness_mm=height,
-    y_centroid_mm=y_centroid,
-    transformed_area_mm2=area,
-    self_inertia_mm4=stud.Ix * multiplier,
-    axial_strength_kN=area * STUD_YIELD_STRENGTH * 1e-3,
+    thickness_mm=assembly.height_mm,
+    y_centroid_mm=y_bottom + assembly.centroid_mm,
+    transformed_area_mm2=assembly.area_mm2,
+    self_inertia_mm4=assembly.self_inertia_mm4,
+    axial_strength_kN=assembly.area_mm2 * STUD_YIELD_STRENGTH * 1e-3,
     mass_kN=mass,
   )
 
 
+def _stud_assembly(stud: StudSection, method: str) -> _StudAssembly:
+  if _is_central_joint_method(method):
+    distance = stud.H + CENTRAL_JOINT_STUD_GAP_MM / 2.0
+    self_inertia = 2.0 * (stud.A * distance**2 + stud.Ix)
+    return _StudAssembly(
+      area_mm2=2.0 * stud.A,
+      height_mm=2.0 * stud.H + CENTRAL_JOINT_STUD_GAP_MM,
+      centroid_mm=(2.0 * stud.H + CENTRAL_JOINT_STUD_GAP_MM) / 2.0,
+      self_inertia_mm4=self_inertia,
+      unfactored_self_inertia_mm4=self_inertia,
+      connection_inertia_factor=1.0,
+      multiplier=2.0,
+      section_modulus_depth_mm=stud.H,
+    )
+
+  multiplier = 2.0 if "맞댐" in method else 1.0
+  return _StudAssembly(
+    area_mm2=stud.A * multiplier,
+    height_mm=stud.H,
+    centroid_mm=stud.cy,
+    self_inertia_mm4=stud.Ix * multiplier,
+    unfactored_self_inertia_mm4=stud.Ix * multiplier,
+    connection_inertia_factor=1.0,
+    multiplier=multiplier,
+    section_modulus_depth_mm=stud.H,
+  )
+
+
+def _is_central_joint_method(method: str) -> bool:
+  normalized = method.replace(" ", "")
+  return "중앙부이음" in normalized or "중앙부연결" in normalized
+
+
+def _effective_inertia_correction_factor(group: str, method: str) -> float:
+  normalized_group = group.replace(".", "-").replace(" ", "").upper()
+  if normalized_group == "C-STUD":
+    return 0.22 if _is_central_joint_method(method) else 1.0
+  if normalized_group.startswith("CH-STUD"):
+    return 0.58
+  if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
+    return 0.44
+  if normalized_group == "R-STUD":
+    return 0.28
+  if normalized_group == "I-STUD":
+    return 0.8
+  if normalized_group == "HR-STUD":
+    return 0.55
+  if normalized_group == "RV-STUD":
+    return 0.45
+  if normalized_group == "MP-STUD":
+    return 0.45
+  return 1.0
+
+
 def _parse_stud_type(stud: StudInput) -> tuple[str, str]:
-  if "(" in stud.stud_type:
+  if stud.stud_type.startswith("C-STUD("):
     group = stud.stud_type.split("(", maxsplit=1)[0]
   else:
     group = stud.stud_type
   method = stud.method or stud.stud_type
   return group, method
+
+
+def _fixed_rear_board_for_group(group: str) -> tuple[str | None, float] | None:
+  if _is_ch_stud_group(group):
+    if "개량형" in group:
+      return (None, CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM)
+    return (None, CH_STUD_REAR_BOARD_THICKNESS_MM)
+  if _is_i_stud_group(group):
+    return (I_STUD_REAR_BOARD_KIND, I_STUD_REAR_BOARD_THICKNESS_MM)
+  return None
+
+
+def _is_ch_stud_group(group: str) -> bool:
+  return group.replace(" ", "").upper().startswith("CH-STUD")
+
+
+def _is_i_stud_group(group: str) -> bool:
+  return group.replace(" ", "").upper() == "I-STUD"
+
+
+def _is_r_stud_group(group: str) -> bool:
+  return group.replace(".", "-").replace(" ", "").upper() == "R-STUD"
+
+
+def _validate_fixed_rear_boards(
+  group: str,
+  rear_boards: tuple[BoardLayer, ...],
+  fixed_rear_board: tuple[str | None, float],
+) -> None:
+  required_kind, required_thickness_mm = fixed_rear_board
+  required_label = (
+    f"{required_kind} {required_thickness_mm:g}T"
+    if required_kind is not None
+    else f"{required_thickness_mm:g}T"
+  )
+  if len(rear_boards) != 1:
+    raise ValueError(
+      f"{group}는 후면 석고보드 1장만 허용되며 {required_label}로 고정입니다.",
+    )
+  board = rear_boards[0]
+  if required_kind is not None and board.kind != required_kind:
+    raise ValueError(
+      f"{group} 후면 석고보드는 {required_label}로 고정입니다.",
+    )
+  if not math.isclose(board.thickness, required_thickness_mm, rel_tol=0.0, abs_tol=1e-6):
+    raise ValueError(
+      f"{group} 후면 석고보드는 {required_label}로 고정입니다.",
+    )
 
 
 def _neutral_axis(layers: tuple[_Layer, ...]) -> float:
@@ -342,7 +519,11 @@ def _side_cumulative_shear(layers_outer_to_inner: tuple[_Layer, ...], request: W
   cumulative = 0.0
   result: dict[str, float] = {}
   for layer in layers_outer_to_inner:
-    capacity = _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    capacity = (
+      layer.axial_strength_kN
+      if layer.fully_composite_with_stud
+      else _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    )
     cumulative += min(layer.axial_strength_kN, capacity)
     result[layer.name] = cumulative
   return result
@@ -353,12 +534,19 @@ def _connection_capacity_kN(layer: _Layer, bolt: BoltInput, span_mm: float) -> f
     return 0.0
   pitch = _pitch_for_order(bolt.pitch, layer.order)
   count = _count_for_order(bolt.count, layer.order)
-  order_factor = EXCEL_INNER_CONNECTION_FACTOR if layer.order == 1 else 1.0
-  board_bearing_strength = layer.board_property.Fy * EXCEL_BOARD_BEARING_FACTOR
-  shear_n = 0.6 * bolt.yield_strength * math.pi / 4.0 * bolt.diameter**2 / 1.25
-  shear_n *= count * order_factor
+  board_bearing_strength = layer.board_property.Fu
+  shear_n = (
+    0.5
+    * 0.6
+    * bolt.yield_strength
+    * BOLT_YIELD_RATIO_FROM_FRACTURE
+    * math.pi
+    / 4.0
+    * bolt.diameter**2
+    / 1.25
+  )
+  shear_n *= count
   bearing_n = 2.0 * 0.85 * layer.thickness_mm * count * bolt.diameter * board_bearing_strength
-  bearing_n *= order_factor
   return min(shear_n, bearing_n) * (span_mm / 2.0) / pitch * 1e-3
 
 
@@ -400,7 +588,7 @@ def _composite_ratio(layers: tuple[_Layer, ...], shear_by_name: dict[str, float]
 def _nominal_moment(
   layers: tuple[LayerResult, ...],
   shear_by_name: dict[str, float],
-  stud_height_mm: float,
+  stud_section_modulus_depth_mm: float,
 ) -> float:
   total = 0.0
   for layer in layers:
@@ -408,7 +596,7 @@ def _nominal_moment(
       force = min(layer.axial_strength_kN, shear_by_name.get(layer.name, 0.0))
       total += abs(force * layer.distance_to_neutral_axis_mm * 1e-3)
     else:
-      section_modulus = layer.inertia_about_neutral_axis_mm4 / stud_height_mm * 2.0
+      section_modulus = layer.inertia_about_neutral_axis_mm4 / stud_section_modulus_depth_mm * 2.0
       total += STUD_YIELD_STRENGTH * section_modulus * 1e-6
   return total
 
@@ -451,6 +639,30 @@ def _seismic_moment_kNm(
   fp = 0.48 * sds * request.seismic.Ip * seismic_weight
   moment = 0.25 * fp * (request.span_mm / 1000.0)
   return moment, seismic_weight, sds, fp
+
+
+def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _ReactionResult:
+  spacing_m = request.spacing_mm / 1000.0
+  span_m = request.span_mm / 1000.0
+  live_per_spacing = request.live_load_kN_m2 * span_m * spacing_m / 2.0
+  seismic_per_spacing = fp_kN / 2.0 * 2.0
+  live_kN_per_m = live_per_spacing / spacing_m
+  seismic_kN_per_m = seismic_per_spacing / spacing_m
+  load_combination_L = live_kN_per_m
+  load_combination_0_7E = 0.7 * seismic_kN_per_m
+  load_combination_0_75L_0_7E = 0.75 * live_kN_per_m + 0.7 * seismic_kN_per_m
+  required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_7E)
+  anchor_spacing_mm = request.anchor_capacity_kN / required * 1000.0 if required > 0.0 else 0.0
+  return _ReactionResult(
+    live_kN_per_m=live_kN_per_m,
+    seismic_kN_per_m=seismic_kN_per_m,
+    load_combination_L_kN_per_m=load_combination_L,
+    load_combination_0_7E_kN_per_m=load_combination_0_7E,
+    load_combination_0_75L_0_7E_kN_per_m=load_combination_0_75L_0_7E,
+    required_kN_per_m=required,
+    anchor_capacity_kN=request.anchor_capacity_kN,
+    anchor_spacing_mm=anchor_spacing_mm,
+  )
 
 
 def _seismic_fa(request: WallCheckRequest) -> float:

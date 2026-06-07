@@ -15,6 +15,10 @@
     },
     {
       "stud_type": "C-STUD",
+      "method": "중앙부 이음"
+    },
+    {
+      "stud_type": "C-STUD",
       "method": "이중스터드"
     },
     {

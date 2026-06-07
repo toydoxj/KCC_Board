@@ -41,8 +41,8 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <VerdictBadge label="기준 응력" ok={stressOk} value={result.stress_verdict} />
-          <VerdictBadge label="기준 처짐" ok={deflectionOk} value={result.deflection_verdict} />
+          <VerdictBadge label="산정 응력" ok={stressOk} value={result.stress_verdict} />
+          <VerdictBadge label="산정 처짐" ok={deflectionOk} value={result.deflection_verdict} />
         </div>
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <Metric label="응력비" value={result.stress_ratio} suffix="" />
@@ -51,10 +51,13 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
           <Metric label="처짐" value={result.deflection_mm} suffix="mm" />
           <Metric label="처짐한계" value={result.deflection_limit_mm} suffix="mm" />
         </div>
+        <ReactionMetrics result={result} />
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <Metric label="중립축" value={result.neutral_axis_mm} suffix="mm" />
           <Metric label="I_full" value={result.I_full_mm4} suffix="mm⁴" />
           <Metric label="η" value={result.eta} suffix="" />
+          <Metric label="I_eff(raw)" value={result.intermediate.I_eff_raw_mm4 ?? result.I_eff_mm4} suffix="mm⁴" />
+          <Metric label="I_eff 보정" value={result.intermediate.I_eff_correction_factor ?? 1} suffix="" />
           <Metric label="I_eff" value={result.I_eff_mm4} suffix="mm⁴" />
         </div>
       </div>
@@ -75,14 +78,38 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
         <Metric label="처짐한계" value={result.deflection_limit_mm} suffix="mm" />
         <Metric label="지진모멘트" value={result.seismic_moment_kNm} suffix="kN·m" />
       </div>
+      <ReactionMetrics result={result} />
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
         <Metric label="중립축" value={result.neutral_axis_mm} suffix="mm" />
         <Metric label="I_full" value={result.I_full_mm4} suffix="mm⁴" />
         <Metric label="η" value={result.eta} suffix="" />
+        <Metric label="I_eff(raw)" value={result.intermediate.I_eff_raw_mm4 ?? result.I_eff_mm4} suffix="mm⁴" />
+        <Metric label="I_eff 보정" value={result.intermediate.I_eff_correction_factor ?? 1} suffix="" />
         <Metric label="I_eff" value={result.I_eff_mm4} suffix="mm⁴" />
       </div>
     </div>
   );
+}
+
+function ReactionMetrics({ result }: { result: WallCheckResult }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
+      <Metric label="반력 L" value={intermediateValue(result, "reaction_L_kN_per_m")} suffix="kN/m" />
+      <Metric label="반력 0.7E" value={intermediateValue(result, "reaction_0_7E_kN_per_m")} suffix="kN/m" />
+      <Metric
+        label="반력 0.75L+0.7E"
+        value={intermediateValue(result, "reaction_0_75L_0_7E_kN_per_m")}
+        suffix="kN/m"
+      />
+      <Metric label="필요 반력" value={intermediateValue(result, "reaction_required_kN_per_m")} suffix="kN/m" />
+      <Metric label="앵커 성능" value={intermediateValue(result, "anchor_capacity_kN")} suffix="kN/개" />
+      <Metric label="앵커 간격" value={intermediateValue(result, "anchor_spacing_mm")} suffix="mm" />
+    </div>
+  );
+}
+
+function intermediateValue(result: WallCheckResult, key: string) {
+  return result.intermediate[key] ?? 0;
 }
 
 function VerdictBadge({ label, ok, value }: { label: string; ok: boolean; value: string }) {

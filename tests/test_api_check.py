@@ -42,8 +42,11 @@ class ApiCheckTest(unittest.TestCase):
     self.assertEqual(len(boards_body["data"]), 22)
     complete_boards = [board for board in boards_body["data"] if board["is_complete"]]
     incomplete_boards = [board for board in boards_body["data"] if not board["is_complete"]]
-    self.assertEqual(len(complete_boards), 9)
-    self.assertEqual(len(incomplete_boards), 13)
+    self.assertEqual(len(complete_boards), 19)
+    self.assertEqual(len(incomplete_boards), 3)
+    waterproof = next(board for board in boards_body["data"] if board["kind"] == "방수" and board["thickness"] == 9.5)
+    self.assertTrue(waterproof["is_complete"])
+    self.assertAlmostEqual(float(waterproof["E_GPa"]), 1.9)
 
     studs = self.client.get("/api/db/studs")
     self.assertEqual(studs.status_code, 200)
@@ -55,11 +58,12 @@ class ApiCheckTest(unittest.TestCase):
     self.assertEqual(stud_methods.status_code, 200)
     stud_methods_body = stud_methods.json()
     self.assertTrue(stud_methods_body["success"])
-    self.assertEqual(len(stud_methods_body["data"]), 9)
+    self.assertEqual(len(stud_methods_body["data"]), 10)
     c_stud_methods = [
       item["method"] for item in stud_methods_body["data"] if item["stud_type"] == "C-STUD"
     ]
     self.assertIn("맞댐이음", c_stud_methods)
+    self.assertIn("중앙부 이음", c_stud_methods)
 
     bolts = self.client.get("/api/db/bolts")
     self.assertEqual(bolts.status_code, 200)

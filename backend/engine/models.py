@@ -47,6 +47,7 @@ class WallCheckRequest:
   bolt: BoltInput
   seismic: SeismicInput
   omega: float = 1.67
+  anchor_capacity_kN: float = 0.4
 
 
 @dataclass(frozen=True)

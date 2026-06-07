@@ -2,7 +2,8 @@
 
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Calculator, Printer, RefreshCcw } from "lucide-react";
+import Link from "next/link";
+import { Calculator, FileSpreadsheet, Printer, RefreshCcw } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
@@ -11,6 +12,7 @@ import { SectionPreview } from "@/components/section-preview";
 import { ResultPanel } from "@/components/result-panel";
 import { Button } from "@/components/ui/button";
 import { Field, inputClassName } from "@/components/ui/field";
+import progressCases from "@/data/progress-cases.json";
 import {
   checkWall,
   fetchCatalog,
@@ -31,6 +33,15 @@ const fallbackStudMethod = "기본";
 const hiddenOmega = 1.67;
 const hiddenBoltDiameter = 3.5;
 const hiddenBoltYieldStrength = 480;
+const hiddenBoltCountOuter = 2;
+const hiddenBoltCountMiddle = 2;
+const hiddenBoltCountInner = 1;
+const centralJointStudGapMm = 25;
+const studConnectionInertiaFactor = 1;
+const chStudRearBoardThicknessMm = 25;
+const chStudImprovedRearBoardThicknessMm = 12.5;
+const iStudRearBoardKind = "방화";
+const iStudRearBoardThicknessMm = 25;
 const calculationModeOptions: Array<{ value: CalculationMode; label: string }> = [
   { value: "heightCheck", label: calculationModeLabels.heightCheck },
   { value: "maxHeight", label: calculationModeLabels.maxHeight },
@@ -64,9 +75,7 @@ const formSchema = z.object({
   spacingMm: z.coerce.number().positive(),
   spanMm: z.coerce.number().positive(),
   deflectionLimitDenom: z.coerce.number().int().positive(),
-  boltCountOuter: z.coerce.number().positive(),
-  boltCountMiddle: z.coerce.number().positive(),
-  boltCountInner: z.coerce.number().positive(),
+  anchorCapacityKn: z.coerce.number().positive(),
   boltPitchOuter: z.coerce.number().positive(),
   boltPitchMiddle: z.coerce.number().positive(),
   boltPitchInner: z.coerce.number().positive(),
@@ -91,6 +100,23 @@ type BoardThicknessField =
   | "frontBoardInnerThickness"
   | "frontBoardMiddleThickness"
   | "frontBoardOuterThickness";
+type ProgressCase = {
+  id: string;
+  drawingName: string;
+  frontBoards: string[];
+  studType: string | null;
+  studSize: string | null;
+  spacingMm: number | null;
+  rearBoards: string[];
+  heightSeismicMm: number | null;
+  isNew: boolean;
+};
+type ProgressDataset = {
+  cases: ProgressCase[];
+};
+
+const productCases = (progressCases as ProgressDataset).cases;
+const noProductValue = "";
 
 const defaultValues: CheckFormValues = {
   calculationMode: "heightCheck",
@@ -113,12 +139,10 @@ const defaultValues: CheckFormValues = {
   spacingMm: 450,
   spanMm: 7500,
   deflectionLimitDenom: 240,
-  boltCountOuter: 2,
-  boltCountMiddle: 2,
-  boltCountInner: 1,
-  boltPitchOuter: 600,
-  boltPitchMiddle: 600,
-  boltPitchInner: 300,
+  anchorCapacityKn: 0.4,
+  boltPitchOuter: 300,
+  boltPitchMiddle: 300,
+  boltPitchInner: 600,
   seismicS: 0.22,
   seismicSiteClass: "S5",
   s5BedrockDepthUnknown: false,
@@ -145,6 +169,7 @@ export default function Home() {
     reset,
     control,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<CheckFormValues>({
     resolver: zodResolver(formSchema),
@@ -179,13 +204,25 @@ export default function Home() {
   }, [reset, setCatalog, setCatalogLoading, setErrorMessage]);
 
   const formValues = useWatch({ control });
+  const selectedStudGroup = formValues.studGroup ?? defaultValues.studGroup;
+  const selectedStudMethod = formValues.studMethod ?? defaultValues.studMethod;
+  const selectedFixedRearBoardThickness = fixedRearBoardThicknessForGroup(selectedStudGroup);
+  const selectedFixedRearBoardKind = fixedRearBoardKindForGroup(selectedStudGroup);
+  const selectedHasFixedRearBoard = selectedFixedRearBoardThickness !== null;
   const selectedRearBoards = useMemo(
     () =>
-      compactBoards(catalog?.boards ?? [], [
-        boardSelection(formValues.rearBoardOuterKind, formValues.rearBoardOuterThickness),
-        boardSelection(formValues.rearBoardMiddleKind, formValues.rearBoardMiddleThickness),
-        boardSelection(formValues.rearBoardInnerKind, formValues.rearBoardInnerThickness),
-      ]),
+      compactBoards(
+        catalog?.boards ?? [],
+        selectedFixedRearBoardThickness === null
+          ? [
+              boardSelection(formValues.rearBoardOuterKind, formValues.rearBoardOuterThickness),
+              boardSelection(formValues.rearBoardMiddleKind, formValues.rearBoardMiddleThickness),
+              boardSelection(formValues.rearBoardInnerKind, formValues.rearBoardInnerThickness),
+            ]
+          : [
+              boardSelection(selectedFixedRearBoardKind ?? formValues.rearBoardInnerKind, thicknessValue(selectedFixedRearBoardThickness)),
+            ],
+      ),
     [
       catalog?.boards,
       formValues.rearBoardInnerKind,
@@ -194,6 +231,8 @@ export default function Home() {
       formValues.rearBoardMiddleThickness,
       formValues.rearBoardOuterKind,
       formValues.rearBoardOuterThickness,
+      selectedFixedRearBoardKind,
+      selectedFixedRearBoardThickness,
     ],
   );
   const selectedFrontBoards = useMemo(
@@ -213,27 +252,94 @@ export default function Home() {
       formValues.frontBoardOuterThickness,
     ],
   );
-  const selectedStudGroup = formValues.studGroup ?? defaultValues.studGroup;
   const selectedStud = useMemo(
     () => findStud(catalog?.studs ?? [], selectedStudGroup, formValues.studSpec ?? defaultValues.studSpec),
     [catalog?.studs, formValues.studSpec, selectedStudGroup],
   );
   const selectedSiteClass = (formValues.seismicSiteClass ?? defaultValues.seismicSiteClass) as SiteClass;
   const selectedCalculationMode = (formValues.calculationMode ?? defaultValues.calculationMode) as CalculationMode;
-  const heightFieldLabel = selectedCalculationMode === "maxHeight" ? "기준 높이 mm" : "검토 높이 mm";
+  const heightFieldLabel = selectedCalculationMode === "maxHeight" ? "산정 높이 mm" : "검토 높이 mm";
   const submitButtonLabel = selectedCalculationMode === "maxHeight" ? "최대높이 산정" : "높이 검토";
   const calculationModeRegister = register("calculationMode");
   const studGroupRegister = register("studGroup");
   const [reportData, setReportData] = useState<CalculationReportData | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState(noProductValue);
+  const [productMessage, setProductMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!catalog || selectedFixedRearBoardThickness === null) {
+      return;
+    }
+
+    const fixedRearBoardKind = boardKindForFixedThickness(
+      catalog.boards,
+      selectedFixedRearBoardThickness,
+      formValues.rearBoardInnerKind,
+      selectedFixedRearBoardKind ?? undefined,
+    );
+    if (!fixedRearBoardKind) {
+      const fixedBoardLabel = selectedFixedRearBoardKind
+        ? `${selectedFixedRearBoardKind} ${selectedFixedRearBoardThickness}T`
+        : `${selectedFixedRearBoardThickness}T`;
+      setErrorMessage(`${selectedStudGroup} 후면 고정 보드 ${fixedBoardLabel} 물성이 없습니다.`);
+      return;
+    }
+
+    setChBoardValue("rearBoardOuterKind", noneBoardValue, formValues.rearBoardOuterKind);
+    setChBoardValue("rearBoardOuterThickness", noThicknessValue, formValues.rearBoardOuterThickness);
+    setChBoardValue("rearBoardMiddleKind", noneBoardValue, formValues.rearBoardMiddleKind);
+    setChBoardValue("rearBoardMiddleThickness", noThicknessValue, formValues.rearBoardMiddleThickness);
+    setChBoardValue("rearBoardInnerKind", fixedRearBoardKind, formValues.rearBoardInnerKind);
+    setChBoardValue("rearBoardInnerThickness", thicknessValue(selectedFixedRearBoardThickness), formValues.rearBoardInnerThickness);
+
+    function setChBoardValue(
+      field: BoardKindField | BoardThicknessField,
+      nextValue: string,
+      currentValue: string | undefined,
+    ) {
+      if (currentValue !== nextValue) {
+        setValue(field, nextValue, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      }
+    }
+  }, [
+    catalog,
+    formValues.rearBoardInnerKind,
+    formValues.rearBoardInnerThickness,
+    formValues.rearBoardMiddleKind,
+    formValues.rearBoardMiddleThickness,
+    formValues.rearBoardOuterKind,
+    formValues.rearBoardOuterThickness,
+    selectedFixedRearBoardKind,
+    selectedFixedRearBoardThickness,
+    selectedStudGroup,
+    setErrorMessage,
+    setValue,
+  ]);
 
   async function onSubmit(values: CheckFormValues) {
     setChecking(true);
     setErrorMessage(null);
     try {
-      const payload = buildPayload(values);
-      const nextResult = await checkWall(payload);
+      let nextValues = values;
+      let nextResult = await checkWall(buildPayload(values));
+
+      if (values.calculationMode === "maxHeight" && nextResult.max_height_mm > 0 && nextResult.max_height_mm !== values.spanMm) {
+        nextValues = {
+          ...values,
+          spanMm: nextResult.max_height_mm,
+        };
+        nextResult = await checkWall(buildPayload(nextValues));
+        setValue("spanMm", nextValues.spanMm, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      }
+
       setResult(nextResult);
-      setReportData(createReportData(values, nextResult, catalog?.boards ?? [], catalog?.studs ?? []));
+      setReportData(createReportData(nextValues, nextResult, catalog?.boards ?? [], catalog?.studs ?? []));
     } catch (error: unknown) {
       setResult(null);
       setReportData(null);
@@ -245,6 +351,8 @@ export default function Home() {
 
   function handleReset() {
     reset(defaultValues);
+    setSelectedProductId(noProductValue);
+    setProductMessage(null);
     setResult(null);
     setReportData(null);
     setErrorMessage(null);
@@ -265,6 +373,30 @@ export default function Home() {
   function handleCalculationModeChange(event: ChangeEvent<HTMLInputElement>) {
     calculationModeRegister.onChange(event);
     clearCalculationResult();
+  }
+
+  function handleProductChange(event: ChangeEvent<HTMLSelectElement>) {
+    const productId = event.target.value;
+    setSelectedProductId(productId);
+    clearCalculationResult();
+    if (!productId) {
+      setProductMessage(null);
+      return;
+    }
+
+    const product = productCases.find((item) => item.id === productId);
+    if (!product) {
+      setProductMessage("선택한 제품 정보를 찾지 못했습니다.");
+      return;
+    }
+
+    const preset = createProductPreset(product, catalog?.boards ?? [], catalog?.studs ?? [], catalog?.studMethods ?? []);
+    reset({ ...getValues(), ...preset.values });
+    setProductMessage(
+      preset.warnings.length > 0
+        ? `${product.drawingName}: ${preset.warnings.join(" ")}`
+        : `${product.drawingName} 입력값을 적용했습니다.`,
+    );
   }
 
   function renderCalculationModeControl() {
@@ -299,10 +431,23 @@ export default function Home() {
     );
   }
 
-  function renderBoardSlot(label: string, kindField: BoardKindField, thicknessField: BoardThicknessField) {
+  function renderBoardSlot(
+    label: string,
+    kindField: BoardKindField,
+    thicknessField: BoardThicknessField,
+    options: { disabled?: boolean; fixedThickness?: number; required?: boolean } = {},
+  ) {
     const kindRegister = register(kindField);
     const selectedKind = (formValues[kindField] as string | undefined) ?? noneBoardValue;
-    const thicknessDisabled = selectedKind === noneBoardValue;
+    const disabled = options.disabled ?? false;
+    const thicknessDisabled = disabled || selectedKind === noneBoardValue || options.fixedThickness !== undefined;
+    const kindOptions = disabled
+      ? [{ value: noneBoardValue, label: "없음", disabled: false }]
+      : boardKindOptions(catalog?.boards, options.fixedThickness, !options.required);
+    const thicknessOptions =
+      options.fixedThickness === undefined
+        ? boardThicknessOptions(catalog?.boards, selectedKind)
+        : [{ value: thicknessValue(options.fixedThickness), label: `${options.fixedThickness}T`, disabled: false }];
 
     return (
       <div className="grid gap-1.5">
@@ -311,16 +456,23 @@ export default function Home() {
           <select
             aria-label={`${label} 종류`}
             className={inputClassName}
+            disabled={disabled}
             {...kindRegister}
             onChange={(event) => {
               kindRegister.onChange(event);
-              setValue(thicknessField, firstCompleteThicknessValue(catalog?.boards ?? [], event.target.value), {
-                shouldDirty: true,
-                shouldValidate: true,
-              });
+              setValue(
+                thicknessField,
+                options.fixedThickness === undefined
+                  ? firstCompleteThicknessValue(catalog?.boards ?? [], event.target.value)
+                  : thicknessValue(options.fixedThickness),
+                {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                },
+              );
             }}
           >
-            {boardKindOptions(catalog?.boards).map((option) => (
+            {kindOptions.map((option) => (
               <option key={option.value} value={option.value} disabled={option.disabled}>
                 {option.label}
               </option>
@@ -332,7 +484,7 @@ export default function Home() {
             disabled={thicknessDisabled}
             {...register(thicknessField)}
           >
-            {boardThicknessOptions(catalog?.boards, selectedKind).map((option) => (
+            {thicknessOptions.map((option) => (
               <option key={option.value} value={option.value} disabled={option.disabled}>
                 {option.label}
               </option>
@@ -351,8 +503,17 @@ export default function Home() {
             <h1 className="text-xl font-semibold tracking-normal">KCC Board</h1>
             <p className="mt-1 text-sm text-muted-foreground">석고보드·스터드 부분합성 건식벽체 구조검토</p>
           </div>
-          <div className="rounded-md border border-border px-3 py-2 text-sm font-medium">
-            API {catalogLoading ? "확인 중" : catalog ? "연결됨" : "대기"}
+          <div className="flex items-center gap-2">
+            <Link
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring"
+              href="/prototype"
+            >
+              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+              프리셋결과
+            </Link>
+            <div className="rounded-md border border-border px-3 py-2 text-sm font-medium">
+              API {catalogLoading ? "확인 중" : catalog ? "연결됨" : "대기"}
+            </div>
           </div>
         </div>
       </div>
@@ -380,14 +541,40 @@ export default function Home() {
               </div>
             ) : null}
 
-            <div className="grid gap-5 lg:grid-cols-[1fr_260px]">
-              <div className="grid gap-5">
-                {renderCalculationModeControl()}
+	            <div className="grid gap-5 lg:grid-cols-[1fr_260px]">
+	              <div className="grid gap-5">
+	                <div className="grid gap-3 rounded-md border border-dashed border-border bg-slate-50 p-3 md:grid-cols-[minmax(260px,1fr)_minmax(180px,240px)]">
+	                  <Field label="제품명">
+	                    <select className={inputClassName} value={selectedProductId} onChange={handleProductChange}>
+	                      <option value={noProductValue}>직접 입력</option>
+	                      {productCases.map((product) => (
+	                        <option key={product.id} value={product.id}>
+	                          {product.drawingName}
+	                          {product.isNew ? " (신규)" : ""} · {product.studType ?? "-"} · {unitValue(product.heightSeismicMm, "mm")}
+	                        </option>
+	                      ))}
+	                    </select>
+	                  </Field>
+	                  <div className="grid content-end">
+	                    <div className="min-h-10 rounded-md border border-border bg-white px-3 py-2 text-sm text-muted-foreground">
+	                      {productMessage ?? "제품명을 선택하면 보드, 스터드, 간격, 높이를 자동 입력합니다."}
+	                    </div>
+	                  </div>
+	                </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {renderBoardSlot("후면 외측 보드", "rearBoardOuterKind", "rearBoardOuterThickness")}
-                  {renderBoardSlot("후면 중간 보드", "rearBoardMiddleKind", "rearBoardMiddleThickness")}
-                  {renderBoardSlot("후면 내측 보드", "rearBoardInnerKind", "rearBoardInnerThickness")}
+	                {renderCalculationModeControl()}
+
+	                <div className="grid gap-3 sm:grid-cols-3">
+                  {renderBoardSlot("후면 외측 보드", "rearBoardOuterKind", "rearBoardOuterThickness", {
+                    disabled: selectedHasFixedRearBoard,
+                  })}
+                  {renderBoardSlot("후면 중간 보드", "rearBoardMiddleKind", "rearBoardMiddleThickness", {
+                    disabled: selectedHasFixedRearBoard,
+                  })}
+                  {renderBoardSlot("후면 내측 보드", "rearBoardInnerKind", "rearBoardInnerThickness", {
+                    fixedThickness: selectedFixedRearBoardThickness ?? undefined,
+                    required: selectedHasFixedRearBoard,
+                  })}
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -440,7 +627,7 @@ export default function Home() {
                   </Field>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-5">
                   <Field label="스터드 간격 mm" error={errors.spacingMm?.message}>
                     <input className={inputClassName} type="number" step="1" {...register("spacingMm")} />
                   </Field>
@@ -453,17 +640,8 @@ export default function Home() {
                   <Field label="처짐한계 L/" error={errors.deflectionLimitDenom?.message}>
                     <input className={inputClassName} type="number" step="1" {...register("deflectionLimitDenom")} />
                   </Field>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="3번(외측) 개수" error={errors.boltCountOuter?.message}>
-                    <input className={inputClassName} type="number" step="1" {...register("boltCountOuter")} />
-                  </Field>
-                  <Field label="2번(중간) 개수" error={errors.boltCountMiddle?.message}>
-                    <input className={inputClassName} type="number" step="1" {...register("boltCountMiddle")} />
-                  </Field>
-                  <Field label="1번(내측) 개수" error={errors.boltCountInner?.message}>
-                    <input className={inputClassName} type="number" step="1" {...register("boltCountInner")} />
+                  <Field label="앵커 성능 kN/개" error={errors.anchorCapacityKn?.message}>
+                    <input className={inputClassName} type="number" step="0.01" {...register("anchorCapacityKn")} />
                   </Field>
                 </div>
 
@@ -510,7 +688,12 @@ export default function Home() {
               </div>
 
               <div className="rounded-md border border-border bg-slate-50 p-3">
-                <SectionPreview rearBoards={selectedRearBoards} frontBoards={selectedFrontBoards} stud={selectedStud} />
+                <SectionPreview
+                  rearBoards={selectedRearBoards}
+                  frontBoards={selectedFrontBoards}
+                  stud={selectedStud}
+                  studMethod={selectedStudMethod}
+                />
               </div>
             </div>
           </section>
@@ -552,13 +735,229 @@ export default function Home() {
   );
 }
 
-function boardKindOptions(boards: BoardProperty[] | undefined) {
+function unitValue(value: number | null, unit: string) {
+  return value === null ? "-" : `${formatNumber(value)} ${unit}`;
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 1,
+  }).format(value);
+}
+
+function createProductPreset(
+  product: ProgressCase,
+  boards: BoardProperty[],
+  studs: StudSection[],
+  studMethods: StudMethod[],
+) {
+  const warnings: string[] = [];
+  const values: Partial<CheckFormValues> = {
+    calculationMode: "heightCheck",
+  };
+  if (product.spacingMm !== null) {
+    values.spacingMm = product.spacingMm;
+  }
+  if (product.heightSeismicMm !== null) {
+    values.spanMm = product.heightSeismicMm;
+  }
+
+  const studGroup = resolveProductStudGroup(product.studType, studs, warnings);
+  const studMethod = resolveProductStudMethod(product.studType, studGroup, studMethods, warnings);
+  const studSpec = resolveProductStudSpec(product.studSize, studGroup, studs, warnings);
+  values.studGroup = studGroup;
+  values.studMethod = studMethod;
+  values.studSpec = studSpec;
+
+  applyFrontBoardPreset(values, product.frontBoards, boards, warnings);
+  applyRearBoardPreset(values, product.rearBoards, boards, warnings, studGroup);
+
+  return { values, warnings };
+}
+
+function applyFrontBoardPreset(
+  values: Partial<CheckFormValues>,
+  boardLabels: string[],
+  boards: BoardProperty[],
+  warnings: string[],
+) {
+  const parsedBoards = boardLabels.map((label) => resolveProductBoard(label, boards, warnings));
+  setBoardSlot(values, "frontBoardInnerKind", "frontBoardInnerThickness", parsedBoards[0] ?? null);
+  setBoardSlot(values, "frontBoardMiddleKind", "frontBoardMiddleThickness", parsedBoards[1] ?? null);
+  setBoardSlot(values, "frontBoardOuterKind", "frontBoardOuterThickness", parsedBoards[2] ?? null);
+}
+
+function applyRearBoardPreset(
+  values: Partial<CheckFormValues>,
+  boardLabels: string[],
+  boards: BoardProperty[],
+  warnings: string[],
+  studGroup: string,
+) {
+  const fixedRearThickness = fixedRearBoardThicknessForGroup(studGroup);
+  if (fixedRearThickness !== null) {
+    const fixedKind = fixedRearBoardKindForGroup(studGroup);
+    const productBoard = boardLabels.map((label) => parseBoardLabel(label)).find((board) => board !== null);
+    const kind = fixedKind ?? productBoard?.kind ?? "방화";
+    setBoardSlot(values, "rearBoardOuterKind", "rearBoardOuterThickness", null);
+    setBoardSlot(values, "rearBoardMiddleKind", "rearBoardMiddleThickness", null);
+    setBoardSlot(values, "rearBoardInnerKind", "rearBoardInnerThickness", { kind, thickness: fixedRearThickness });
+    if (productBoard && !isSameThickness(productBoard.thickness, fixedRearThickness)) {
+      warnings.push(`${studGroup} 후면 보드는 ${fixedRearThickness}T 고정값으로 적용했습니다.`);
+    }
+    return;
+  }
+
+  const parsedBoards = boardLabels.map((label) => resolveProductBoard(label, boards, warnings));
+  if (parsedBoards.length >= 3) {
+    setBoardSlot(values, "rearBoardOuterKind", "rearBoardOuterThickness", parsedBoards[0] ?? null);
+    setBoardSlot(values, "rearBoardMiddleKind", "rearBoardMiddleThickness", parsedBoards[1] ?? null);
+    setBoardSlot(values, "rearBoardInnerKind", "rearBoardInnerThickness", parsedBoards[2] ?? null);
+    return;
+  }
+  setBoardSlot(values, "rearBoardOuterKind", "rearBoardOuterThickness", null);
+  setBoardSlot(values, "rearBoardMiddleKind", "rearBoardMiddleThickness", parsedBoards[0] ?? null);
+  setBoardSlot(values, "rearBoardInnerKind", "rearBoardInnerThickness", parsedBoards[1] ?? null);
+}
+
+function setBoardSlot(
+  values: Partial<CheckFormValues>,
+  kindField: BoardKindField,
+  thicknessField: BoardThicknessField,
+  board: { kind: string; thickness: number } | null,
+) {
+  values[kindField] = board?.kind ?? noneBoardValue;
+  values[thicknessField] = board ? thicknessValue(board.thickness) : noThicknessValue;
+}
+
+function resolveProductBoard(label: string, boards: BoardProperty[], warnings: string[]) {
+  const parsed = parseBoardLabel(label);
+  if (!parsed) {
+    warnings.push(`${label} 보드를 해석하지 못했습니다.`);
+    return null;
+  }
+  const matched = boards.find((board) => board.kind === parsed.kind && isSameThickness(board.thickness, parsed.thickness));
+  if (!matched) {
+    warnings.push(`${label} 보드가 자재 DB에 없습니다.`);
+    return null;
+  }
+  if (!matched.is_complete) {
+    warnings.push(`${label} 보드는 물성이 미완성입니다.`);
+  }
+  return parsed;
+}
+
+function parseBoardLabel(label: string) {
+  const matched = label.trim().match(/^(.+?)(\d+(?:\.\d+)?)$/);
+  if (!matched) {
+    return null;
+  }
+  return {
+    kind: matched[1],
+    thickness: Number(matched[2]),
+  };
+}
+
+function resolveProductStudGroup(studType: string | null, studs: StudSection[], warnings: string[]) {
+  const normalized = (studType ?? "").replace(/\s/g, "").toUpperCase();
+  const preferredGroup =
+    normalized.startsWith("C-STUD")
+      ? "C-STUD"
+      : normalized.startsWith("CH-STUD")
+        ? "CH-STUD"
+        : normalized.startsWith("R-STUD")
+          ? "R-STUD"
+          : normalized.startsWith("MP-STUD")
+            ? "MP-STUD"
+            : normalized.startsWith("T.SILENT-STUD")
+              ? "T.silent-STUD"
+              : null;
+  if (preferredGroup && studs.some((stud) => stud.group === preferredGroup)) {
+    return preferredGroup;
+  }
+  warnings.push(`${studType ?? "알 수 없는 스터드"}는 현재 DB 그룹과 직접 매칭되지 않아 기본 C-STUD로 적용했습니다.`);
+  return defaultValues.studGroup;
+}
+
+function resolveProductStudMethod(
+  studType: string | null,
+  studGroup: string,
+  studMethods: StudMethod[],
+  warnings: string[],
+) {
+  const preferredMethod = (studType ?? "").includes("이중") ? "이중스터드" : fallbackStudMethod;
+  const methodOptions = studMethodOptions(studMethods, studGroup).map((option) => option.value);
+  if (methodOptions.includes(preferredMethod)) {
+    return preferredMethod;
+  }
+  const fallbackMethod = methodOptions[0] ?? fallbackStudMethod;
+  if (preferredMethod !== fallbackMethod) {
+    warnings.push(`${studType ?? studGroup} 시공방식은 ${fallbackMethod}로 대체했습니다.`);
+  }
+  return fallbackMethod;
+}
+
+function resolveProductStudSpec(studSize: string | null, studGroup: string, studs: StudSection[], warnings: string[]) {
+  const groupStuds = studs.filter((stud) => stud.group === studGroup);
+  const parsedSize = parseStudSize(studSize);
+  const preferredSpec = parsedSize ? productSpecName(studGroup, parsedSize) : null;
+  const exact = preferredSpec ? groupStuds.find((stud) => stud.name === preferredSpec) : undefined;
+  if (exact) {
+    return exact.name;
+  }
+  const closest = parsedSize ? closestStudByHeight(groupStuds, parsedSize.height) : undefined;
+  if (closest) {
+    warnings.push(`${studSize ?? "-"} 규격은 ${closest.name}로 대체했습니다.`);
+    return closest.name;
+  }
+  warnings.push(`${studSize ?? "-"} 규격을 찾지 못해 기본 규격을 적용했습니다.`);
+  return firstStudSpecValue(studs, studGroup);
+}
+
+function parseStudSize(studSize: string | null) {
+  const matched = (studSize ?? "").match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)/);
+  if (!matched) {
+    return null;
+  }
+  return {
+    height: Number(matched[1]),
+    width: Number(matched[2]),
+    thickness: Number(matched[3]),
+  };
+}
+
+function productSpecName(studGroup: string, size: { height: number; width: number; thickness: number }) {
+  const height = Math.round(size.height);
+  const width = Math.round(size.width);
+  const thicknessCode = String(Math.round(size.thickness * 10)).padStart(2, "0");
+  if (studGroup === "C-STUD" || studGroup === "R-STUD") {
+    return `${height}S-${width}-${thicknessCode}`;
+  }
+  if (studGroup === "CH-STUD" || studGroup === "CH-STUD(개량형)") {
+    return `${height}CHS-${thicknessCode}`;
+  }
+  if (studGroup === "MP-STUD" || studGroup === "RV-STUD") {
+    return `${studGroup.split("-")[0]}-${height}`;
+  }
+  return null;
+}
+
+function closestStudByHeight(studs: StudSection[], height: number) {
+  return studs
+    .map((stud) => ({ stud, distance: Math.abs(stud.H - height) }))
+    .sort((left, right) => left.distance - right.distance)[0]?.stud;
+}
+
+function boardKindOptions(boards: BoardProperty[] | undefined, requiredThickness?: number, includeNone = true) {
   const source =
     boards && boards.length > 0
       ? boards
-      : [{ kind: "방화", thickness: 19, mass_kg_m2: 16.1, Fy: 0, E_GPa: 0, is_complete: true, missing_fields: [] }];
+      : [{ kind: "방화", thickness: 19, mass_kg_m2: 16.1, Fy: 0, Fu: 0, E_GPa: 0, is_complete: true, missing_fields: [] }];
   const kindMap = new Map<string, BoardProperty[]>();
   for (const board of source) {
+    if (requiredThickness !== undefined && !isSameThickness(board.thickness, requiredThickness)) {
+      continue;
+    }
     kindMap.set(board.kind, [...(kindMap.get(board.kind) ?? []), board]);
   }
   const kindOptions = Array.from(kindMap.entries())
@@ -571,7 +970,7 @@ function boardKindOptions(boards: BoardProperty[] | undefined) {
         disabled: !hasCompleteThickness,
       };
     });
-  return [{ value: noneBoardValue, label: "없음", disabled: false }, ...kindOptions];
+  return includeNone ? [{ value: noneBoardValue, label: "없음", disabled: false }, ...kindOptions] : kindOptions;
 }
 
 function boardThicknessOptions(boards: BoardProperty[] | undefined, kind: string) {
@@ -598,8 +997,28 @@ function firstCompleteThicknessValue(boards: BoardProperty[], kind: string) {
   return board ? thicknessValue(board.thickness) : noThicknessValue;
 }
 
+function boardKindForFixedThickness(
+  boards: BoardProperty[],
+  thickness: number,
+  currentKind: string | undefined,
+  requiredKind?: string,
+) {
+  const completeBoards = boards.filter((board) => board.is_complete && isSameThickness(board.thickness, thickness));
+  if (requiredKind) {
+    return completeBoards.find((board) => board.kind === requiredKind)?.kind ?? null;
+  }
+  const current = completeBoards.find((board) => board.kind === currentKind);
+  const preferred = completeBoards.find((board) => board.kind === "방화");
+  const fallback = completeBoards.sort((left, right) => left.kind.localeCompare(right.kind, "ko-KR"))[0];
+  return (current ?? preferred ?? fallback)?.kind ?? null;
+}
+
 function thicknessValue(thickness: number) {
   return String(thickness);
+}
+
+function isSameThickness(left: number, right: number) {
+  return Math.abs(left - right) < 1e-6;
 }
 
 function boardSelection(kind: string | undefined, thickness: string | undefined) {
@@ -667,6 +1086,29 @@ function firstStudSpecValue(studs: StudSection[], group: string) {
   return studSpecOptions(studs, group)[0]?.value ?? defaultValues.studSpec;
 }
 
+function fixedRearBoardThicknessForGroup(group: string) {
+  if (!isChStudGroup(group)) {
+    return isIStudGroup(group) ? iStudRearBoardThicknessMm : null;
+  }
+  return group.includes("개량형") ? chStudImprovedRearBoardThicknessMm : chStudRearBoardThicknessMm;
+}
+
+function fixedRearBoardKindForGroup(group: string) {
+  return isIStudGroup(group) ? iStudRearBoardKind : null;
+}
+
+function fixedRearBoardLabelForGroup(group: string) {
+  return isIStudGroup(group) ? "I 연결" : "CH 끼움";
+}
+
+function isChStudGroup(group: string) {
+  return group.replace(/\s/g, "").toUpperCase().startsWith("CH-STUD");
+}
+
+function isIStudGroup(group: string) {
+  return group.replace(/\s/g, "").toUpperCase() === "I-STUD";
+}
+
 function normalizeStudType(value: string) {
   return value.replace(/[.\s]/g, "-").replace(/-+/g, "-").toUpperCase();
 }
@@ -683,13 +1125,24 @@ function compactBoardPayloads(selections: Array<{ kind: string; thickness: numbe
   return selections.filter((board): board is { kind: string; thickness: number } => Boolean(board));
 }
 
+function rearBoardPayloads(values: CheckFormValues) {
+  const fixedRearBoardThickness = fixedRearBoardThicknessForGroup(values.studGroup);
+  const fixedRearBoardKind = fixedRearBoardKindForGroup(values.studGroup);
+  if (fixedRearBoardThickness !== null) {
+    return compactBoardPayloads([
+      boardSelection(fixedRearBoardKind ?? values.rearBoardInnerKind, thicknessValue(fixedRearBoardThickness)),
+    ]);
+  }
+  return compactBoardPayloads([
+    boardSelection(values.rearBoardOuterKind, values.rearBoardOuterThickness),
+    boardSelection(values.rearBoardMiddleKind, values.rearBoardMiddleThickness),
+    boardSelection(values.rearBoardInnerKind, values.rearBoardInnerThickness),
+  ]);
+}
+
 function buildPayload(values: CheckFormValues): WallCheckPayload {
   return {
-    rear_boards: compactBoardPayloads([
-      boardSelection(values.rearBoardOuterKind, values.rearBoardOuterThickness),
-      boardSelection(values.rearBoardMiddleKind, values.rearBoardMiddleThickness),
-      boardSelection(values.rearBoardInnerKind, values.rearBoardInnerThickness),
-    ]),
+    rear_boards: rearBoardPayloads(values),
     front_boards: compactBoardPayloads([
       boardSelection(values.frontBoardInnerKind, values.frontBoardInnerThickness),
       boardSelection(values.frontBoardMiddleKind, values.frontBoardMiddleThickness),
@@ -708,7 +1161,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
       diameter: hiddenBoltDiameter,
       yield_strength: hiddenBoltYieldStrength,
       pitch: [values.boltPitchOuter, values.boltPitchMiddle, values.boltPitchInner],
-      count: [values.boltCountOuter, values.boltCountMiddle, values.boltCountInner],
+      count: [hiddenBoltCountOuter, hiddenBoltCountMiddle, hiddenBoltCountInner],
     },
     seismic: {
       S: values.seismicS,
@@ -717,6 +1170,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
       Ip: values.seismicIp,
     },
     omega: hiddenOmega,
+    anchor_capacity_kN: values.anchorCapacityKn,
   };
 }
 
@@ -728,16 +1182,30 @@ function createReportData(
 ): CalculationReportData {
   const stud = findStud(studs, values.studGroup, values.studSpec);
   const siteClassLabel = siteClassOptions.find((option) => option.value === values.seismicSiteClass)?.label ?? values.seismicSiteClass;
-  const studMultiplier = studMultiplierForMethod(values.studMethod);
+  const studAssembly = createStudAssembly(stud, values.studMethod);
+  const fixedRearBoardThickness = fixedRearBoardThicknessForGroup(values.studGroup);
+  const fixedRearBoardKind = fixedRearBoardKindForGroup(values.studGroup);
 
   return {
     generatedAt: new Date().toISOString(),
     calculationMode: values.calculationMode,
-    rearBoards: [
-      reportBoardSlot("후면 3번(외측)", values.rearBoardOuterKind, values.rearBoardOuterThickness, boards),
-      reportBoardSlot("후면 2번(중간)", values.rearBoardMiddleKind, values.rearBoardMiddleThickness, boards),
-      reportBoardSlot("후면 1번(내측)", values.rearBoardInnerKind, values.rearBoardInnerThickness, boards),
-    ],
+    rearBoards:
+      fixedRearBoardThickness === null
+        ? [
+            reportBoardSlot("후면 3번(외측)", values.rearBoardOuterKind, values.rearBoardOuterThickness, boards),
+            reportBoardSlot("후면 2번(중간)", values.rearBoardMiddleKind, values.rearBoardMiddleThickness, boards),
+            reportBoardSlot("후면 1번(내측)", values.rearBoardInnerKind, values.rearBoardInnerThickness, boards),
+          ]
+        : [
+            reportBoardSlot("후면 3번(외측)", noneBoardValue, noThicknessValue, boards),
+            reportBoardSlot("후면 2번(중간)", noneBoardValue, noThicknessValue, boards),
+            reportBoardSlot(
+              `후면 1번(${fixedRearBoardLabelForGroup(values.studGroup)})`,
+              fixedRearBoardKind ?? values.rearBoardInnerKind,
+              thicknessValue(fixedRearBoardThickness),
+              boards,
+            ),
+          ],
     frontBoards: [
       reportBoardSlot("전면 1번(내측)", values.frontBoardInnerKind, values.frontBoardInnerThickness, boards),
       reportBoardSlot("전면 2번(중간)", values.frontBoardMiddleKind, values.frontBoardMiddleThickness, boards),
@@ -747,13 +1215,19 @@ function createReportData(
       group: values.studGroup,
       method: values.studMethod,
       spec: values.studSpec,
-      multiplier: studMultiplier,
+      multiplier: studAssembly.multiplier,
       H: stud?.H ?? null,
+      totalH: studAssembly.totalH,
+      gapMm: studAssembly.gapMm,
+      connectionInertiaFactor: studAssembly.connectionInertiaFactor,
+      sectionModulusDepth: studAssembly.sectionModulusDepth,
       B: stud?.B ?? null,
       t: stud?.t ?? null,
-      A: multiplyNullable(stud?.A, studMultiplier),
-      Ix: multiplyNullable(stud?.Ix, studMultiplier),
-      Sx: multiplyNullable(stud?.Sx, studMultiplier),
+      A: studAssembly.A,
+      IxRaw: studAssembly.IxRaw,
+      SxRaw: studAssembly.SxRaw,
+      Ix: studAssembly.Ix,
+      Sx: studAssembly.Sx,
     },
     geometry: {
       spacingMm: values.spacingMm,
@@ -768,9 +1242,9 @@ function createReportData(
       seismicIp: values.seismicIp,
     },
     bolts: {
-      outerCount: values.boltCountOuter,
-      middleCount: values.boltCountMiddle,
-      innerCount: values.boltCountInner,
+      outerCount: hiddenBoltCountOuter,
+      middleCount: hiddenBoltCountMiddle,
+      innerCount: hiddenBoltCountInner,
       outerPitch: values.boltPitchOuter,
       middlePitch: values.boltPitchMiddle,
       innerPitch: values.boltPitchInner,
@@ -780,11 +1254,59 @@ function createReportData(
 }
 
 function studMultiplierForMethod(method: string) {
-  return method.includes("맞댐") ? 2.0 : 1.0;
+  return method.includes("맞댐") || isCentralJointMethod(method) ? 2.0 : 1.0;
 }
 
-function multiplyNullable(value: number | null | undefined, multiplier: number) {
-  return value === null || value === undefined ? null : value * multiplier;
+function isCentralJointMethod(method: string) {
+  return method.replace(/\s/g, "").includes("중앙부이음");
+}
+
+function createStudAssembly(stud: StudSection | undefined, method: string) {
+  if (!stud) {
+    return {
+      multiplier: studMultiplierForMethod(method),
+      totalH: null,
+      gapMm: isCentralJointMethod(method) ? centralJointStudGapMm : null,
+      connectionInertiaFactor: isCentralJointMethod(method) ? studConnectionInertiaFactor : null,
+      sectionModulusDepth: null,
+      A: null,
+      IxRaw: null,
+      SxRaw: null,
+      Ix: null,
+      Sx: null,
+    };
+  }
+
+  if (isCentralJointMethod(method)) {
+    const distance = stud.H + centralJointStudGapMm / 2;
+    const Ix = 2 * (stud.A * distance ** 2 + stud.Ix);
+    return {
+      multiplier: 2,
+      totalH: 2 * stud.H + centralJointStudGapMm,
+      gapMm: centralJointStudGapMm,
+      connectionInertiaFactor: studConnectionInertiaFactor,
+      sectionModulusDepth: stud.H,
+      A: 2 * stud.A,
+      IxRaw: Ix,
+      SxRaw: (Ix / stud.H) * 2,
+      Ix,
+      Sx: (Ix / stud.H) * 2,
+    };
+  }
+
+  const multiplier = studMultiplierForMethod(method);
+  return {
+    multiplier,
+    totalH: stud.H,
+    gapMm: null,
+    connectionInertiaFactor: null,
+    sectionModulusDepth: stud.H,
+    A: stud.A * multiplier,
+    IxRaw: null,
+    SxRaw: null,
+    Ix: stud.Ix * multiplier,
+    Sx: stud.Sx * multiplier,
+  };
 }
 
 function reportBoardSlot(
@@ -801,6 +1323,7 @@ function reportBoardSlot(
       thickness: null,
       mass_kg_m2: null,
       Fy: null,
+      Fu: null,
       E_GPa: null,
     };
   }
@@ -811,6 +1334,7 @@ function reportBoardSlot(
     thickness: selection.thickness,
     mass_kg_m2: board?.mass_kg_m2 ?? null,
     Fy: board?.Fy ?? null,
+    Fu: board?.Fu ?? null,
     E_GPa: board?.E_GPa ?? null,
   };
 }

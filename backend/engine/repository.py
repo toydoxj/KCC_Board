@@ -10,12 +10,16 @@ from pathlib import Path
 from typing import Mapping, Protocol, Sequence, cast
 
 
+DEFAULT_BOARD_E_GPA = 1.9
+
+
 @dataclass(frozen=True)
 class BoardProperty:
   kind: str
   thickness: float
   mass_kg_m2: float
   Fy: float
+  Fu: float
   E_GPa: float
 
 
@@ -25,6 +29,7 @@ class BoardCatalogItem:
   thickness: float
   mass_kg_m2: float | None
   Fy: float | None
+  Fu: float | None
   E_GPa: float | None
   is_complete: bool
   missing_fields: tuple[str, ...]
@@ -148,6 +153,7 @@ class JsonSeedRepository:
         thickness=item.thickness,
         mass_kg_m2=float(item.mass_kg_m2),
         Fy=float(item.Fy),
+        Fu=float(item.Fu),
         E_GPa=float(item.E_GPa),
       )
       boards[(board.kind, board.thickness)] = board
@@ -202,6 +208,7 @@ class JsonSeedRepository:
 class SqliteRepository:
   def __init__(self, db_path: Path | str) -> None:
     self.db_path = Path(db_path)
+    self._ensure_board_fu_column()
     self._board_cache: dict[tuple[str, float], BoardProperty] = {}
     self._stud_cache: dict[tuple[str, str], StudSection] = {}
     self._bolt_cache: dict[str, BoltMaterial] = {}
@@ -211,19 +218,20 @@ class SqliteRepository:
     if key in self._board_cache:
       return self._board_cache[key]
     query = """
-      SELECT kind, thickness, mass_kg_m2, Fy, E_GPa
+      SELECT kind, thickness, mass_kg_m2, Fy, Fu, E_GPa
       FROM board_property
       WHERE kind = ? AND thickness = ?
     """
     row = self._fetch_one(query, key)
-    if row is None or row["mass_kg_m2"] is None or row["Fy"] is None or row["E_GPa"] is None:
+    if row is None or row["mass_kg_m2"] is None or row["Fy"] is None:
       raise RepositoryLookupError(f"등록되지 않은 석고보드입니다: {kind} {thickness}")
     board = BoardProperty(
       kind=str(row["kind"]),
       thickness=float(row["thickness"]),
       mass_kg_m2=float(row["mass_kg_m2"]),
       Fy=float(row["Fy"]),
-      E_GPa=float(row["E_GPa"]),
+      Fu=_board_fu_or_fy(row["Fu"], row["Fy"]),
+      E_GPa=_elastic_modulus_or_default(row["E_GPa"]),
     )
     self._board_cache[key] = board
     return board
@@ -272,9 +280,9 @@ class SqliteRepository:
 
   def list_boards(self) -> tuple[BoardProperty, ...]:
     query = """
-      SELECT kind, thickness, mass_kg_m2, Fy, E_GPa
+      SELECT kind, thickness, mass_kg_m2, Fy, Fu, E_GPa
       FROM board_property
-      WHERE mass_kg_m2 IS NOT NULL AND Fy IS NOT NULL AND E_GPa IS NOT NULL
+      WHERE mass_kg_m2 IS NOT NULL AND Fy IS NOT NULL
       ORDER BY kind, thickness
     """
     with closing(sqlite3.connect(self.db_path)) as connection:
@@ -286,14 +294,15 @@ class SqliteRepository:
         thickness=float(row["thickness"]),
         mass_kg_m2=float(row["mass_kg_m2"]),
         Fy=float(row["Fy"]),
-        E_GPa=float(row["E_GPa"]),
+        Fu=_board_fu_or_fy(row["Fu"], row["Fy"]),
+        E_GPa=_elastic_modulus_or_default(row["E_GPa"]),
       )
       for row in rows
     )
 
   def list_board_catalog(self) -> tuple[BoardCatalogItem, ...]:
     query = """
-      SELECT kind, thickness, mass_kg_m2, Fy, E_GPa
+      SELECT kind, thickness, mass_kg_m2, Fy, Fu, E_GPa
       FROM board_property
       ORDER BY kind, thickness
     """
@@ -356,6 +365,17 @@ class SqliteRepository:
       connection.row_factory = sqlite3.Row
       return connection.execute(query, params).fetchone()
 
+  def _ensure_board_fu_column(self) -> None:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(board_property)").fetchall()}
+      if not columns:
+        return
+      if "Fu" not in columns:
+        connection.execute("ALTER TABLE board_property ADD COLUMN Fu REAL")
+      # 기존 로컬 DB는 Fu가 없었으므로 Fy를 임시 대체값으로 채운다.
+      connection.execute("UPDATE board_property SET Fu = Fy WHERE Fu IS NULL AND Fy IS NOT NULL")
+      connection.commit()
+
 
 def initialize_sqlite_from_seed(
   db_path: Path | str,
@@ -399,6 +419,7 @@ def _create_tables(connection: sqlite3.Connection) -> None:
       thickness REAL NOT NULL,
       mass_kg_m2 REAL,
       Fy REAL,
+      Fu REAL,
       E_GPa REAL,
       PRIMARY KEY (kind, thickness)
     );
@@ -446,19 +467,10 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
   board_items = _read_seed_items(seed_dir, "board_property.json")
   connection.executemany(
     """
-    INSERT INTO board_property (kind, thickness, mass_kg_m2, Fy, E_GPa)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO board_property (kind, thickness, mass_kg_m2, Fy, Fu, E_GPa)
+    VALUES (?, ?, ?, ?, ?, ?)
     """,
-    [
-      (
-        str(item["kind"]),
-        float(item["thickness"]),
-        _nullable_float(item.get("mass_kg_m2")),
-        _nullable_float(item.get("Fy")),
-        _nullable_float(item.get("E_GPa")),
-      )
-      for item in board_items
-    ],
+    [_board_seed_row(item) for item in board_items],
   )
 
   stud_items = _read_seed_items(seed_dir, "stud_section.json")
@@ -503,7 +515,7 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
     [(str(item["stud_type"]), None if item.get("method") is None else str(item["method"])) for item in method_items],
   )
 
-  connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", "1"))
+  connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", "3"))
   connection.commit()
 
 
@@ -513,16 +525,44 @@ def _nullable_float(value: object) -> float | None:
   return float(value)
 
 
+def _elastic_modulus_or_default(value: object) -> float:
+  if value is None:
+    return DEFAULT_BOARD_E_GPA
+  return float(value)
+
+
+def _board_fu_or_fy(fu_value: object, fy_value: object) -> float:
+  fu = _nullable_float(fu_value)
+  if fu is not None:
+    return fu
+  fy = _nullable_float(fy_value)
+  if fy is None:
+    raise RepositoryLookupError("석고보드 Fu와 Fy가 모두 누락되었습니다.")
+  return fy
+
+
+def _board_seed_row(item: Mapping[str, object]) -> tuple[object, ...]:
+  fy = _nullable_float(item.get("Fy"))
+  return (
+    str(item["kind"]),
+    float(item["thickness"]),
+    _nullable_float(item.get("mass_kg_m2")),
+    fy,
+    _nullable_float(item.get("Fu")) if item.get("Fu") is not None else fy,
+    _elastic_modulus_or_default(item.get("E_GPa")),
+  )
+
+
 def _board_catalog_item_from_mapping(item: Mapping[str, object]) -> BoardCatalogItem:
   mass = _nullable_float(item.get("mass_kg_m2"))
   fy = _nullable_float(item.get("Fy"))
-  elastic_modulus = _nullable_float(item.get("E_GPa"))
+  fu = _nullable_float(item.get("Fu")) if item.get("Fu") is not None else fy
+  elastic_modulus = _elastic_modulus_or_default(item.get("E_GPa"))
   missing_fields = tuple(
     field
     for field, value in [
       ("mass_kg_m2", mass),
       ("Fy", fy),
-      ("E_GPa", elastic_modulus),
     ]
     if value is None
   )
@@ -531,6 +571,7 @@ def _board_catalog_item_from_mapping(item: Mapping[str, object]) -> BoardCatalog
     thickness=float(item["thickness"]),
     mass_kg_m2=mass,
     Fy=fy,
+    Fu=fu,
     E_GPa=elastic_modulus,
     is_complete=len(missing_fields) == 0,
     missing_fields=missing_fields,

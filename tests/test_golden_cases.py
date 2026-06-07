@@ -13,9 +13,12 @@ from backend.engine.calculator import (
   _build_section,
   _calculate_wall_check_once,
   _connection_capacity_kN,
+  _effective_inertia_correction_factor,
+  _nominal_moment,
   calculate_wall_check,
   request_from_golden_case,
 )
+from backend.engine.models import BoardLayer, StudInput
 from backend.engine.repository import JsonSeedRepository
 
 
@@ -62,7 +65,7 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertLess(reduced_middle_count.eta, base.eta)
     self.assertLess(reduced_middle_count.Mn_kNm, base.Mn_kNm)
 
-  def test_bolt_shear_uses_yield_strength_factor(self) -> None:
+  def test_bolt_shear_uses_half_and_yield_conversion_factors(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
     bolt = replace(
       request.bolt,
@@ -78,10 +81,287 @@ class GoldenCaseTest(unittest.TestCase):
 
     actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
     bolt_area = math.pi / 4.0 * request.bolt.diameter**2
-    expected_shear_n = 0.6 * request.bolt.yield_strength * bolt_area / 1.25
+    expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * 0.85 * bolt_area / 1.25
     expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
 
     self.assertAlmostEqual(actual, expected)
+
+  def test_inner_board_connection_does_not_use_extra_factor(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    bolt = replace(
+      request.bolt,
+      yield_strength=10.0,
+      pitch=(1000.0, 1000.0, 1000.0),
+      count=(1.0, 1.0, 1.0),
+    )
+    request = replace(request, bolt=bolt)
+    section = _build_section(request, self.repository)
+    layer = next(
+      layer for layer in section.layers if layer.layer_type == "board" and layer.order == 1
+    )
+
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    bolt_area = math.pi / 4.0 * request.bolt.diameter**2
+    expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * 0.85 * bolt_area / 1.25
+    expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
+
+    self.assertAlmostEqual(actual, expected)
+
+  def test_board_bearing_uses_fracture_strength(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    bolt = replace(
+      request.bolt,
+      yield_strength=1_000_000.0,
+      pitch=(1000.0, 1000.0, 1000.0),
+      count=(1.0, 1.0, 1.0),
+    )
+    request = replace(request, bolt=bolt)
+    section = _build_section(request, self.repository)
+    layer = next(
+      layer for layer in section.layers if layer.layer_type == "board" and layer.order == 2
+    )
+    if layer.board_property is None:
+      self.fail("보드 물성이 누락되었습니다.")
+    layer = replace(layer, board_property=replace(layer.board_property, Fy=1000.0, Fu=2.0))
+
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    expected_bearing_n = 2.0 * 0.85 * layer.thickness_mm * request.bolt.diameter * 2.0
+    expected = expected_bearing_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
+
+    self.assertAlmostEqual(actual, expected)
+
+  def test_c_stud_central_joint_uses_two_studs_with_25mm_gap(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    request = replace(
+      request,
+      stud=replace(request.stud, stud_type="C-STUD", method="중앙부 이음"),
+    )
+
+    section = _build_section(request, self.repository)
+    stud = self.repository.get_stud("C-STUD", request.stud.spec)
+    stud_layer = section.stud_layer
+    distance = stud.H + 25.0 / 2.0
+    expected_i = 2.0 * (stud.A * distance**2 + stud.Ix)
+
+    self.assertEqual(section.stud_multiplier, 2.0)
+    self.assertAlmostEqual(stud_layer.thickness_mm, 2.0 * stud.H + 25.0)
+    self.assertAlmostEqual(stud_layer.transformed_area_mm2, 2.0 * stud.A)
+    self.assertAlmostEqual(section.stud_unfactored_self_inertia_mm4, expected_i)
+    self.assertAlmostEqual(stud_layer.self_inertia_mm4, expected_i)
+    self.assertAlmostEqual(section.stud_section_modulus_depth_mm, stud.H)
+
+    result = _calculate_wall_check_once(request, self.repository)
+    self.assertAlmostEqual(result.intermediate["stud_connection_inertia_factor"], 1.0)
+    self.assertAlmostEqual(result.intermediate["stud_I_unfactored_mm4"], expected_i)
+    stud_result = next(layer for layer in result.layers if layer.layer_type == "stud")
+    expected_stud_section_modulus = stud_result.inertia_about_neutral_axis_mm4 / stud.H * 2.0
+    expected_stud_moment = 275.0 * expected_stud_section_modulus * 1e-6
+    actual_stud_moment = _nominal_moment((stud_result,), {}, section.stud_section_modulus_depth_mm)
+
+    self.assertAlmostEqual(actual_stud_moment, expected_stud_moment)
+
+  def test_effective_inertia_correction_factor_mapping(self) -> None:
+    cases = [
+      ("C-STUD", "기본", 1.0),
+      ("C-STUD", "맞댐이음", 1.0),
+      ("C-STUD", "중앙부 이음", 0.22),
+      ("C-STUD", "중앙부연결", 0.22),
+      ("CH-STUD", "기본", 0.58),
+      ("CH-STUD(개량형)", "기본", 0.58),
+      ("T-Silent", "기본", 0.44),
+      ("T.silent-STUD", "기본", 0.44),
+      ("R.STUD", "기본", 0.28),
+      ("R-STUD", "기본", 0.28),
+      ("I-STUD", "기본", 0.8),
+      ("HR-STUD", "기본", 0.55),
+      ("RV-STUD", "기본", 0.45),
+      ("MP-STUD", "기본", 0.45),
+    ]
+
+    for group, method, expected in cases:
+      with self.subTest(group=group, method=method):
+        self.assertAlmostEqual(_effective_inertia_correction_factor(group, method), expected)
+
+  def test_effective_inertia_correction_factor_applies_only_to_i_eff(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 25.0),),
+      front_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="CH-STUD", spec="102CHS-08", method="기본"),
+    )
+
+    result = _calculate_wall_check_once(request, self.repository)
+    layer_inertia_sum = sum(layer.inertia_about_neutral_axis_mm4 for layer in result.layers)
+
+    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.58)
+    self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
+    self.assertAlmostEqual(
+      result.I_eff_mm4,
+      result.intermediate["I_eff_raw_mm4"] * result.intermediate["I_eff_correction_factor"],
+    )
+
+    central_request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      stud=StudInput(stud_type="C-STUD", spec="50S-45-08", method="중앙부 이음"),
+    )
+    central_result = _calculate_wall_check_once(central_request, self.repository)
+
+    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.22)
+    self.assertAlmostEqual(
+      central_result.I_eff_mm4,
+      central_result.intermediate["I_eff_raw_mm4"] * 0.22,
+    )
+
+  def test_reaction_result_is_converted_to_required_kN_per_m(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    result = _calculate_wall_check_once(request, self.repository)
+    spacing_m = request.spacing_mm / 1000.0
+    span_m = request.span_mm / 1000.0
+    expected_live = request.live_load_kN_m2 * span_m * spacing_m / 2.0 / spacing_m
+    expected_seismic = result.intermediate["Fp_kN"] / 2.0 * 2.0 / spacing_m
+    expected_0_7E = 0.7 * expected_seismic
+    expected_0_75L_0_7E = 0.75 * expected_live + 0.7 * expected_seismic
+    expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_7E)
+    expected_anchor_spacing = request.anchor_capacity_kN / expected_required * 1000.0
+
+    self.assertAlmostEqual(result.intermediate["reaction_L_kN_per_m"], expected_live)
+    self.assertAlmostEqual(result.intermediate["reaction_0_7E_kN_per_m"], expected_0_7E)
+    self.assertAlmostEqual(
+      result.intermediate["reaction_0_75L_0_7E_kN_per_m"],
+      expected_0_75L_0_7E,
+    )
+    self.assertAlmostEqual(result.intermediate["reaction_required_kN_per_m"], expected_required)
+    self.assertAlmostEqual(result.intermediate["anchor_capacity_kN"], 0.4)
+    self.assertAlmostEqual(result.intermediate["anchor_spacing_mm"], expected_anchor_spacing)
+
+    stronger_anchor_result = _calculate_wall_check_once(
+      replace(request, anchor_capacity_kN=0.8),
+      self.repository,
+    )
+    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
+    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_spacing_mm"], expected_anchor_spacing * 2.0)
+
+  def test_ch_stud_rear_board_is_inserted_without_offsetting_stud_centroid(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 25.0),),
+      front_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="CH-STUD", spec="102CHS-08", method="기본"),
+    )
+
+    section = _build_section(request, self.repository)
+    result = _calculate_wall_check_once(request, self.repository)
+    stud = self.repository.get_stud("CH-STUD", "102CHS-08")
+    stud_layer = section.stud_layer
+    front_layer = next(layer for layer in section.layers if layer.layer_type == "board" and layer.y_centroid_mm > stud.H)
+    expected_neutral_axis = sum(layer.transformed_area_mm2 * layer.y_centroid_mm for layer in section.layers) / sum(
+      layer.transformed_area_mm2 for layer in section.layers
+    )
+
+    self.assertAlmostEqual(stud_layer.thickness_mm, stud.H)
+    self.assertAlmostEqual(stud_layer.y_centroid_mm, stud.cy)
+    self.assertAlmostEqual(front_layer.y_centroid_mm, stud.H + 19.0 / 2.0)
+    self.assertAlmostEqual(result.neutral_axis_mm, expected_neutral_axis)
+
+  def test_ch_stud_rear_board_is_fully_composite_with_stud(self) -> None:
+    cases = [
+      ("CH-STUD", 25.0, "방화-25-0"),
+      ("CH-STUD(개량형)", 12.5, "방화-12.5-0"),
+    ]
+    for group, thickness, rear_board_prefix in cases:
+      with self.subTest(group=group):
+        request = replace(
+          request_from_golden_case(dict(self.cases[0])),
+          rear_boards=(BoardLayer("방화", thickness),),
+          front_boards=(BoardLayer("방화", 19.0),),
+          stud=StudInput(stud_type=group, spec="102CHS-08", method="기본"),
+        )
+
+        result = _calculate_wall_check_once(request, self.repository)
+        rear_board = next(
+          layer
+          for layer in result.layers
+          if layer.layer_type == "board" and layer.name.startswith(rear_board_prefix)
+        )
+
+        self.assertAlmostEqual(rear_board.cumulative_shear_kN, rear_board.axial_strength_kN)
+
+  def test_ch_stud_improved_keeps_group_and_uses_12mm_class_rear_board(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 12.5),),
+      front_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="CH-STUD(개량형)", spec="102CHS-08", method="기본"),
+    )
+
+    section = _build_section(request, self.repository)
+    stud = self.repository.get_stud("CH-STUD(개량형)", "102CHS-08")
+    stud_layer = section.stud_layer
+
+    self.assertEqual(stud_layer.name, "CH-STUD(개량형)-102CHS-08")
+    self.assertAlmostEqual(stud_layer.y_centroid_mm, stud.cy)
+    self.assertAlmostEqual(stud_layer.self_inertia_mm4, stud.Ix)
+
+  def test_ch_stud_rejects_invalid_rear_board_layout(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="CH-STUD", spec="102CHS-08", method="기본"),
+    )
+
+    with self.assertRaisesRegex(ValueError, "25T"):
+      _build_section(request, self.repository)
+
+  def test_i_stud_uses_fixed_fire_rated_25mm_rear_board_without_offsetting_stud(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 25.0),),
+      front_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="I-STUD", spec="I-STUD 102-08", method="기본"),
+    )
+
+    section = _build_section(request, self.repository)
+    result = _calculate_wall_check_once(request, self.repository)
+    stud = self.repository.get_stud("I-STUD", "I-STUD 102-08")
+    stud_layer = section.stud_layer
+    front_layer = next(layer for layer in section.layers if layer.layer_type == "board" and layer.y_centroid_mm > stud.H)
+    rear_board = next(layer for layer in result.layers if layer.layer_type == "board" and layer.name.startswith("방화-25-0"))
+
+    self.assertAlmostEqual(stud_layer.y_centroid_mm, stud.cy)
+    self.assertAlmostEqual(front_layer.y_centroid_mm, stud.H + 19.0 / 2.0)
+    self.assertAlmostEqual(rear_board.cumulative_shear_kN, rear_board.axial_strength_kN)
+
+  def test_i_stud_rejects_non_fire_rated_25mm_rear_board(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("일반", 25.0),),
+      stud=StudInput(stud_type="I-STUD", spec="I-STUD 102-08", method="기본"),
+    )
+
+    with self.assertRaisesRegex(ValueError, "방화 25T"):
+      _build_section(request, self.repository)
+
+  def test_r_stud_uses_12mm_clear_gap_between_1p_board_and_stud(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 19.0),),
+      front_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="R-STUD", spec="75S-45-08", method="기본"),
+    )
+
+    section = _build_section(request, self.repository)
+    stud = self.repository.get_stud("R-STUD", "75S-45-08")
+    rear_board = next(layer for layer in section.layers if layer.name.startswith("방화-19-0"))
+    stud_layer = next(layer for layer in section.layers if layer.layer_type == "stud")
+    front_board = next(
+      layer
+      for layer in section.layers
+      if layer.layer_type == "board" and not layer.name.startswith("방화-19-0")
+    )
+
+    self.assertAlmostEqual(rear_board.y_centroid_mm, 19.0 / 2.0)
+    self.assertAlmostEqual(stud_layer.y_centroid_mm, 19.0 + 12.0 + stud.cy)
+    self.assertAlmostEqual(front_board.y_centroid_mm, 19.0 + 12.0 + stud.H + 12.0 + 19.0 / 2.0)
 
   def test_max_height_is_checked_by_50mm_increment(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))

@@ -9,6 +9,7 @@ export interface ReportBoardSlot {
   thickness: number | null;
   mass_kg_m2: number | null;
   Fy: number | null;
+  Fu: number | null;
   E_GPa: number | null;
 }
 
@@ -18,9 +19,15 @@ export interface ReportStud {
   spec: string;
   multiplier: number;
   H: number | null;
+  totalH: number | null;
+  gapMm: number | null;
+  connectionInertiaFactor: number | null;
+  sectionModulusDepth: number | null;
   B: number | null;
   t: number | null;
   A: number | null;
+  IxRaw: number | null;
+  SxRaw: number | null;
   Ix: number | null;
   Sx: number | null;
 }
@@ -78,7 +85,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   const stressOk = data.result.stress_verdict === "O.K";
   const deflectionOk = data.result.deflection_verdict === "O.K";
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
-  const heightLabel = data.calculationMode === "maxHeight" ? "기준 높이" : "검토 높이";
+  const heightLabel = data.calculationMode === "maxHeight" ? "산정 높이" : "검토 높이";
   const mnTerms = nominalMomentTerms(data);
   const boardMoment = mnTerms
     .filter((term) => term.type === "board")
@@ -113,8 +120,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <Verdict label="기준 응력" ok={stressOk} value={data.result.stress_verdict} />
-                <Verdict label="기준 처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
+                <Verdict label="산정 응력" ok={stressOk} value={data.result.stress_verdict} />
+                <Verdict label="산정 처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
@@ -160,12 +167,32 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <ReportBlock title="스터드 단면">
           <div className="grid gap-1 text-sm">
             <KeyValue label="시공방식 계수" value={formatNumber(data.stud.multiplier)} />
-            <KeyValue label="H" value={unitValue(data.stud.H, "mm")} />
+            <KeyValue label={data.stud.gapMm === null ? "H" : "h(1개)"} value={unitValue(data.stud.H, "mm")} />
+            {data.stud.gapMm === null ? null : (
+              <>
+                <KeyValue label="스터드 간격" value={unitValue(data.stud.gapMm, "mm")} />
+                <KeyValue label="전체 높이" value={unitValue(data.stud.totalH, "mm")} />
+                <KeyValue
+                  label="보정계수"
+                  value={data.stud.connectionInertiaFactor === 1 ? "미적용" : formatNullableNumber(data.stud.connectionInertiaFactor)}
+                />
+                <KeyValue label="S 산정 h" value={unitValue(data.stud.sectionModulusDepth, "mm")} />
+              </>
+            )}
             <KeyValue label="B" value={unitValue(data.stud.B, "mm")} />
             <KeyValue label="t" value={unitValue(data.stud.t, "mm")} />
             <KeyValue label="A" value={unitValue(data.stud.A, "mm²")} />
-            <KeyValue label="Ix" value={unitValue(data.stud.Ix, "mm⁴")} />
-            <KeyValue label="Sx" value={unitValue(data.stud.Sx, "mm³")} />
+            {data.stud.gapMm === null ? (
+              <>
+                <KeyValue label="Ix" value={unitValue(data.stud.Ix, "mm⁴")} />
+                <KeyValue label="Sx" value={unitValue(data.stud.Sx, "mm³")} />
+              </>
+            ) : (
+              <>
+                <KeyValue label="Ix" value={unitValue(data.stud.Ix, "mm⁴")} />
+                <KeyValue label="Sx" value={unitValue(data.stud.Sx, "mm³")} />
+              </>
+            )}
           </div>
         </ReportBlock>
 
@@ -197,6 +224,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <TableHead>두께</TableHead>
                 <TableHead>질량</TableHead>
                 <TableHead>Fy</TableHead>
+                <TableHead>Fu</TableHead>
                 <TableHead>E</TableHead>
               </tr>
             </thead>
@@ -208,6 +236,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                   <TableCell>{board.thickness === null ? "-" : `${formatNumber(board.thickness)}T`}</TableCell>
                   <TableCell>{unitValue(board.mass_kg_m2, "kg/m²")}</TableCell>
                   <TableCell>{unitValue(board.Fy, "N/mm²")}</TableCell>
+                  <TableCell>{unitValue(board.Fu, "N/mm²")}</TableCell>
                   <TableCell>{unitValue(board.E_GPa, "GPa")}</TableCell>
                 </tr>
               ))}
@@ -222,6 +251,14 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="중립축" value={`${formatNumber(data.result.neutral_axis_mm)} mm`} />
             <KeyValue label="I_full" value={`${formatNumber(data.result.I_full_mm4)} mm⁴`} />
             <KeyValue label="합성률 η" value={formatNumber(data.result.eta)} />
+            <KeyValue
+              label="I_eff(raw)"
+              value={`${formatNumber(data.result.intermediate.I_eff_raw_mm4 ?? data.result.I_eff_mm4)} mm⁴`}
+            />
+            <KeyValue
+              label="I_eff 보정"
+              value={formatNumber(data.result.intermediate.I_eff_correction_factor ?? 1)}
+            />
             <KeyValue label="I_eff" value={`${formatNumber(data.result.I_eff_mm4)} mm⁴`} />
             {data.calculationMode === "maxHeight" ? (
               <KeyValue label="최대 가능 높이" value={`${formatNumber(data.result.max_height_mm)} mm`} />
@@ -233,11 +270,55 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
       </section>
 
       <section className="mt-5">
+        <ReportBlock title="반력 산정">
+          <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
+            <div>Rh,L = (L × H × B) / 2 / B</div>
+            <div>Rh,E = (Fp / 2 × 2) / B</div>
+            <div>Rh = max(L, 0.7E, 0.75L + 0.7E)</div>
+            <div>앵커 간격 = 앵커 성능 / Rh × 1000</div>
+          </div>
+          <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
+            <KeyValue
+              label="반력 L"
+              value={`${formatNumber(data.result.intermediate.reaction_L_kN_per_m ?? 0)} kN/m`}
+            />
+            <KeyValue
+              label="반력 0.7E"
+              value={`${formatNumber(data.result.intermediate.reaction_0_7E_kN_per_m ?? 0)} kN/m`}
+            />
+            <KeyValue
+              label="반력 0.75L+0.7E"
+              value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_7E_kN_per_m ?? 0)} kN/m`}
+            />
+            <KeyValue
+              label="필요 반력"
+              value={`${formatNumber(data.result.intermediate.reaction_required_kN_per_m ?? 0)} kN/m`}
+            />
+            <KeyValue
+              label="앵커 성능"
+              value={`${formatNumber(data.result.intermediate.anchor_capacity_kN ?? 0)} kN/개`}
+            />
+            <KeyValue
+              label="앵커 간격"
+              value={`${formatNumber(data.result.intermediate.anchor_spacing_mm ?? 0)} mm`}
+            />
+          </div>
+        </ReportBlock>
+      </section>
+
+      <section className="mt-5">
         <ReportBlock title="Mn 산정 상세">
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
             <div className="font-semibold">Mn = ΣM보드 + M스터드</div>
             <div>M보드,i = |min(Pn,i, Vc,i) × d_i| × 10^-3</div>
-            <div>M스터드 = Fy,stud × (I_stud / (h_stud / 2)) × 10^-6</div>
+            <div>M스터드 = Fy,stud × S스터드 × 10^-6, S스터드 = I_stud / h_ref × 2</div>
+            {data.stud.gapMm === null ? null : (
+              <>
+                <div>
+                  I스터드 = 2 × [A0 × (h + {formatNumber(data.stud.gapMm)} / 2)^2 + Ix0]
+                </div>
+              </>
+            )}
             <div>
               = {formatNumber(boardMoment)} + {formatNumber(studMoment)} = {formatNumber(data.result.Mn_kNm)} kN·m
             </div>
@@ -371,7 +452,7 @@ function MnTermRow({ term }: { term: NominalMomentTerm }) {
 }
 
 function nominalMomentTerms(data: CalculationReportData) {
-  const studHeight = data.stud.H ?? 0;
+  const sectionModulusDepth = data.stud.sectionModulusDepth ?? data.stud.H ?? 0;
   return data.result.layers.map<NominalMomentTerm>((layer) => {
     if (layer.layer_type === "board") {
       const appliedForce = Math.min(layer.axial_strength_kN, layer.cumulative_shear_kN);
@@ -388,7 +469,7 @@ function nominalMomentTerms(data: CalculationReportData) {
       };
     }
 
-    const sectionModulus = studHeight > 0 ? (layer.inertia_about_neutral_axis_mm4 / studHeight) * 2.0 : 0;
+    const sectionModulus = sectionModulusDepth > 0 ? (layer.inertia_about_neutral_axis_mm4 / sectionModulusDepth) * 2.0 : 0;
     return {
       name: layer.name,
       type: "stud",
@@ -416,6 +497,13 @@ function unitValue(value: number | null | undefined, unit: string) {
     return "-";
   }
   return `${formatNumber(value)} ${unit}`;
+}
+
+function formatNullableNumber(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  return formatNumber(value);
 }
 
 function formatNumber(value: number) {

@@ -11,6 +11,7 @@ from typing import Mapping, cast
 
 from backend.engine.calculator import calculate_wall_check, request_from_golden_case
 from backend.engine.repository import (
+  DEFAULT_BOARD_E_GPA,
   JsonSeedRepository,
   RepositoryLookupError,
   SqliteRepository,
@@ -37,12 +38,13 @@ class SqliteRepositoryTest(unittest.TestCase):
       self.assertEqual(_count_rows(connection, "board_property"), 22)
       self.assertEqual(_count_rows(connection, "stud_section"), 69)
       self.assertEqual(_count_rows(connection, "bolt_material"), 9)
-      self.assertEqual(_count_rows(connection, "stud_method"), 9)
+      self.assertEqual(_count_rows(connection, "stud_method"), 10)
 
   def test_lookup_matches_json_repository(self) -> None:
     json_board = self.json_repository.get_board("방화", 19.0)
     sqlite_board = self.sqlite_repository.get_board("방화", 19.0)
     self.assertEqual(sqlite_board, json_board)
+    self.assertAlmostEqual(sqlite_board.Fu, json_board.Fu)
 
     json_stud = self.json_repository.get_stud("C-STUD", "50S-45-08")
     sqlite_stud = self.sqlite_repository.get_stud("C-STUD", "50S-45-08")
@@ -56,20 +58,46 @@ class SqliteRepositoryTest(unittest.TestCase):
     catalog = self.sqlite_repository.list_board_catalog()
     self.assertEqual(len(catalog), 22)
     incomplete = [board for board in catalog if not board.is_complete]
-    self.assertEqual(len(incomplete), 13)
+    self.assertEqual(len(incomplete), 3)
     waterproof = next(board for board in catalog if board.kind == "방수" and board.thickness == 9.5)
-    self.assertEqual(waterproof.missing_fields, ("E_GPa",))
+    self.assertTrue(waterproof.is_complete)
+    self.assertEqual(waterproof.missing_fields, ())
+    self.assertAlmostEqual(waterproof.E_GPa or 0.0, DEFAULT_BOARD_E_GPA)
 
   def test_stud_method_catalog_preserves_seed_rows(self) -> None:
     methods = self.sqlite_repository.list_stud_methods()
-    self.assertEqual(len(methods), 9)
+    self.assertEqual(len(methods), 10)
     c_stud_methods = [item.method for item in methods if item.stud_type == "C-STUD"]
     self.assertIn("맞댐이음", c_stud_methods)
+    self.assertIn("중앙부 이음", c_stud_methods)
     self.assertIn(None, [item.method for item in methods if item.stud_type == "CH-STUD"])
+
+  def test_missing_elastic_modulus_uses_default_value(self) -> None:
+    board = self.sqlite_repository.get_board("방수", 9.5)
+    self.assertAlmostEqual(board.E_GPa, DEFAULT_BOARD_E_GPA)
+
+  def test_existing_sqlite_without_fu_column_is_migrated(self) -> None:
+    with sqlite3.connect(self.db_path) as connection:
+      connection.executescript(
+        """
+        CREATE TABLE old_board_property AS
+        SELECT kind, thickness, mass_kg_m2, Fy, E_GPa FROM board_property;
+        DROP TABLE board_property;
+        ALTER TABLE old_board_property RENAME TO board_property;
+        """
+      )
+
+    migrated_repository = SqliteRepository(self.db_path)
+    board = migrated_repository.get_board("방화", 19.0)
+
+    self.assertAlmostEqual(board.Fu, board.Fy)
+    with sqlite3.connect(self.db_path) as connection:
+      columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(board_property)").fetchall()}
+    self.assertIn("Fu", columns)
 
   def test_incomplete_board_property_is_lookup_error(self) -> None:
     with self.assertRaises(RepositoryLookupError):
-      self.sqlite_repository.get_board("방수", 9.5)
+      self.sqlite_repository.get_board("차음", 9.5)
 
   def test_golden_cases_with_sqlite_repository(self) -> None:
     with (ROOT / "tests/golden/cases.json").open(encoding="utf-8") as file:

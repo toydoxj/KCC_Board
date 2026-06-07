@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend.engine.constants import DEFAULT_DEFLECTION_LIMIT_DENOM, DEFAULT_OMEGA
+from backend.engine.constants import DEFAULT_ANCHOR_CAPACITY_KN, DEFAULT_DEFLECTION_LIMIT_DENOM, DEFAULT_OMEGA
 from backend.engine.models import (
   BoardLayer,
   BoltInput,
@@ -137,6 +137,7 @@ class WallCheckRequestPayload(ApiModel):
   bolt: BoltPayload
   seismic: SeismicPayload
   omega: float = Field(default=DEFAULT_OMEGA, gt=0)
+  anchor_capacity_kN: float = Field(default=DEFAULT_ANCHOR_CAPACITY_KN, gt=0)
 
   def to_engine(self) -> WallCheckRequest:
     live_load = self.live_load_kN_m2
@@ -154,6 +155,7 @@ class WallCheckRequestPayload(ApiModel):
       bolt=self.bolt.to_engine(),
       seismic=self.seismic.to_engine(),
       omega=self.omega,
+      anchor_capacity_kN=self.anchor_capacity_kN,
     )
 
 
@@ -232,6 +234,7 @@ class BoardPropertyData(ApiModel):
   thickness: float
   mass_kg_m2: float | None
   Fy: float | None
+  Fu: float | None
   E_GPa: float | None
   is_complete: bool
   missing_fields: list[str]
@@ -243,6 +246,7 @@ class BoardPropertyData(ApiModel):
       thickness=board.thickness,
       mass_kg_m2=board.mass_kg_m2,
       Fy=board.Fy,
+      Fu=board.Fu,
       E_GPa=board.E_GPa,
       is_complete=board.is_complete,
       missing_fields=list(board.missing_fields),
