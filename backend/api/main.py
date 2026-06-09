@@ -1,5 +1,6 @@
 """FastAPI 앱 엔트리포인트."""
 
+import os
 from pathlib import Path
 from typing import cast
 
@@ -42,6 +43,8 @@ def create_app(repository: MaterialRepository | None = None) -> FastAPI:
       "http://localhost:3000",
       "http://127.0.0.1:3001",
       "http://localhost:3001",
+      "kcc-board://kcc-board",
+      "null",
     ],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
@@ -103,10 +106,14 @@ def create_app(repository: MaterialRepository | None = None) -> FastAPI:
 
 
 def _default_repository() -> MaterialRepository:
-  sqlite_path = ROOT_DIR / "data/local/materials.sqlite3"
+  seed_dir = Path(os.environ.get("KCC_BOARD_SEED_DIR", str(ROOT_DIR / "data/seed")))
+  if os.environ.get("KCC_BOARD_REPOSITORY", "").lower() == "json":
+    return JsonSeedRepository(seed_dir)
+
+  sqlite_path = Path(os.environ.get("KCC_BOARD_SQLITE_PATH", str(ROOT_DIR / "data/local/materials.sqlite3")))
   if sqlite_path.exists():
     return SqliteRepository(sqlite_path)
-  return JsonSeedRepository(ROOT_DIR / "data/seed")
+  return JsonSeedRepository(seed_dir)
 
 
 def _error_response(status_code: int, code: str, message: str) -> JSONResponse:

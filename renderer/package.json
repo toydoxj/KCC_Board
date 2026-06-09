@@ -2,34 +2,64 @@
   "name": "kcc-board-renderer",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
+    "build:backend": "cd .. && .\\.venv-win\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --name kcc-board-api --distpath renderer\\backend-dist --workpath build\\pyinstaller --specpath build\\pyinstaller --collect-all uvicorn backend\\electron_api.py",
     "build": "next build",
+    "electron": "electron electron/main.cjs",
+    "dist": "npm run build:backend && npm run build && electron-builder",
     "start": "next start --hostname 127.0.0.1",
     "lint": "next lint"
   },
-  "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.468.0",
-    "next": "^15.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-hook-form": "^7.53.0",
-    "tailwind-merge": "^2.5.4",
-    "zod": "^3.23.8",
-    "zustand": "^5.0.0"
+  "build": {
+    "appId": "com.kcc.board",
+    "productName": "KCC Board",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend-dist/kcc-board-api",
+        "to": "backend-api"
+      },
+      {
+        "from": "../data/seed",
+        "to": "data/seed"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    }
   },
+  "dependencies": {},
   "devDependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
     "eslint": "^9.16.0",
     "eslint-config-next": "^15.0.0",
+    "lucide-react": "^0.468.0",
+    "next": "^15.0.0",
     "postcss": "^8.4.49",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hook-form": "^7.53.0",
+    "tailwind-merge": "^2.5.4",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "zod": "^3.23.8",
+    "zustand": "^5.0.0"
   }
 }

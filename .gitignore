@@ -1,4 +1,5 @@
 .venv/
+.venv-win/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -11,6 +12,7 @@ data/local/
 node_modules/
 .next/
 renderer/.next/
+renderer/backend-dist/
 renderer/out/
 .DS_Store
 .env
