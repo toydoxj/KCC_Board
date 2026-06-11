@@ -6,6 +6,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from typing import Mapping, cast
 
@@ -34,7 +35,7 @@ class SqliteRepositoryTest(unittest.TestCase):
     self.temp_dir.cleanup()
 
   def test_seed_counts(self) -> None:
-    with sqlite3.connect(self.db_path) as connection:
+    with closing(sqlite3.connect(self.db_path)) as connection:
       self.assertEqual(_count_rows(connection, "board_property"), 22)
       self.assertEqual(_count_rows(connection, "stud_section"), 69)
       self.assertEqual(_count_rows(connection, "bolt_material"), 9)
@@ -77,7 +78,7 @@ class SqliteRepositoryTest(unittest.TestCase):
     self.assertAlmostEqual(board.E_GPa, DEFAULT_BOARD_E_GPA)
 
   def test_existing_sqlite_without_fu_column_is_migrated(self) -> None:
-    with sqlite3.connect(self.db_path) as connection:
+    with closing(sqlite3.connect(self.db_path)) as connection:
       connection.executescript(
         """
         CREATE TABLE old_board_property AS
@@ -91,7 +92,7 @@ class SqliteRepositoryTest(unittest.TestCase):
     board = migrated_repository.get_board("방화", 19.0)
 
     self.assertAlmostEqual(board.Fu, board.Fy)
-    with sqlite3.connect(self.db_path) as connection:
+    with closing(sqlite3.connect(self.db_path)) as connection:
       columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(board_property)").fetchall()}
     self.assertIn("Fu", columns)
 

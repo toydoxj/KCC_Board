@@ -110,7 +110,7 @@
 | T-Silent | 0.44 |
 | R-STUD | 0.28 |
 | I-STUD | 0.8 |
-| HR-STUD | 0.55 |
+| HR-STUD | 0.78 |
 | RV-STUD | 0.45 |
 | C-STUD(맞댐) | 1.0 |
 | C-STUD(중앙부연결/중앙부 이음) | 0.22 |

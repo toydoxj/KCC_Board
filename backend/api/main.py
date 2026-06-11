@@ -34,7 +34,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
 def create_app(repository: MaterialRepository | None = None) -> FastAPI:
-  app = FastAPI(title="KCC Board API", version="0.1.0")
+  app = FastAPI(title="KCC Board API", version="0.3.0")
   app.state.repository = repository or _default_repository()
   app.add_middleware(
     CORSMiddleware,

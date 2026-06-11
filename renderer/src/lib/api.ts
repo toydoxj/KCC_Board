@@ -65,6 +65,7 @@ export interface BoardLayerPayload {
 }
 
 export type SiteClass = "S1" | "S2" | "S3" | "S4" | "S5";
+export type DesignCase = "seismic" | "non_seismic";
 
 export interface WallCheckPayload {
   rear_boards: BoardLayerPayload[];
@@ -74,6 +75,7 @@ export interface WallCheckPayload {
     spec: string;
     method: string;
   };
+  design_case: DesignCase;
   horizontal_load_kg_m2: number;
   live_load_kN_m2?: number;
   spacing_mm: number;
@@ -108,6 +110,7 @@ export interface LayerResult {
 }
 
 export interface WallCheckResult {
+  design_case: DesignCase;
   neutral_axis_mm: number;
   I_full_mm4: number;
   eta: number;

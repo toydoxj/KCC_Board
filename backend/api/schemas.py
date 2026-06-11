@@ -129,6 +129,7 @@ class WallCheckRequestPayload(ApiModel):
   rear_boards: list[BoardLayerPayload] = Field(default_factory=list)
   front_boards: list[BoardLayerPayload] = Field(default_factory=list)
   stud: StudPayload
+  design_case: Literal["seismic", "non_seismic"] = "seismic"
   horizontal_load_kg_m2: float = Field(default=24.0, gt=0)
   live_load_kN_m2: float | None = Field(default=None, ge=0)
   spacing_mm: float = Field(gt=0)
@@ -147,6 +148,7 @@ class WallCheckRequestPayload(ApiModel):
       rear_boards=tuple(board.to_engine() for board in self.rear_boards),
       front_boards=tuple(board.to_engine() for board in self.front_boards),
       stud=self.stud.to_engine(),
+      design_case=self.design_case,
       horizontal_load_kg_m2=self.horizontal_load_kg_m2,
       live_load_kN_m2=live_load,
       spacing_mm=self.spacing_mm,
@@ -184,6 +186,7 @@ class LayerResultData(ApiModel):
 
 
 class WallCheckResultData(ApiModel):
+  design_case: Literal["seismic", "non_seismic"]
   neutral_axis_mm: float
   I_full_mm4: float
   eta: float
@@ -204,6 +207,7 @@ class WallCheckResultData(ApiModel):
   @classmethod
   def from_engine(cls, result: WallCheckResult) -> "WallCheckResultData":
     return cls(
+      design_case=result.design_case,  # type: ignore[arg-type]
       neutral_axis_mm=result.neutral_axis_mm,
       I_full_mm4=result.I_full_mm4,
       eta=result.eta,

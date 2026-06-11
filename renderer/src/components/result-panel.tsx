@@ -23,6 +23,7 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
 
   const stressOk = result.stress_verdict === "O.K";
   const deflectionOk = result.deflection_verdict === "O.K";
+  const designCaseLabel = result.design_case === "non_seismic" ? "비내진" : "내진";
 
   if (mode === "maxHeight") {
     return (
@@ -45,6 +46,7 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
           <VerdictBadge label="산정 처짐" ok={deflectionOk} value={result.deflection_verdict} />
         </div>
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
+          <CaseMetric label="검토 CASE" value={designCaseLabel} />
           <Metric label="응력비" value={result.stress_ratio} suffix="" />
           <Metric label="Mu" value={result.Mu_kNm} suffix="kN·m" />
           <Metric label="Mn" value={result.Mn_kNm} suffix="kN·m" />
@@ -71,6 +73,7 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
         <VerdictBadge label="처짐" ok={deflectionOk} value={result.deflection_verdict} />
       </div>
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
+        <CaseMetric label="검토 CASE" value={designCaseLabel} />
         <Metric label="응력비" value={result.stress_ratio} suffix="" />
         <Metric label="Mu" value={result.Mu_kNm} suffix="kN·m" />
         <Metric label="Mn" value={result.Mn_kNm} suffix="kN·m" />
@@ -109,7 +112,7 @@ function ReactionMetrics({ result }: { result: WallCheckResult }) {
 }
 
 function intermediateValue(result: WallCheckResult, key: string) {
-  return result.intermediate[key] ?? 0;
+  return result.intermediate[key] ?? Number.NaN;
 }
 
 function VerdictBadge({ label, ok, value }: { label: string; ok: boolean; value: string }) {
@@ -126,6 +129,9 @@ function VerdictBadge({ label, ok, value }: { label: string; ok: boolean; value:
 }
 
 function Metric({ label, value, suffix }: { label: string; value: number; suffix: string }) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
   return (
     <div className="grid grid-cols-[1fr_auto] items-baseline gap-3 border-b border-border/70 py-2 last:border-b-0">
       <span className="text-sm text-muted-foreground">{label}</span>
@@ -133,6 +139,15 @@ function Metric({ label, value, suffix }: { label: string; value: number; suffix
         {numberFormat.format(value)}
         {suffix ? <span className="ml-1 text-xs font-medium text-muted-foreground">{suffix}</span> : null}
       </span>
+    </div>
+  );
+}
+
+function CaseMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-baseline gap-3 border-b border-border/70 py-2 last:border-b-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-right text-sm font-semibold text-foreground">{value}</span>
     </div>
   );
 }

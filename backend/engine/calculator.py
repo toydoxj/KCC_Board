@@ -35,6 +35,9 @@ CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM = 12.5
 I_STUD_REAR_BOARD_KIND = "방화"
 I_STUD_REAR_BOARD_THICKNESS_MM = 25.0
 R_STUD_BOARD_STUD_CLEAR_GAP_MM = 12.0
+DESIGN_CASE_SEISMIC = "seismic"
+DESIGN_CASE_NON_SEISMIC = "non_seismic"
+DESIGN_CASES = {DESIGN_CASE_SEISMIC, DESIGN_CASE_NON_SEISMIC}
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,7 @@ def _calculate_wall_check_once(
   request: WallCheckRequest,
   repository: MaterialRepository,
 ) -> WallCheckResult:
+  _validate_design_case(request.design_case)
   repo = repository
   section = _build_section(request, repo)
   neutral_axis = _neutral_axis(section.layers)
@@ -126,7 +130,7 @@ def _calculate_wall_check_once(
   seismic_moment, seismic_weight, sds, fp = _seismic_moment_kNm(request, section.layers)
   live_moment = _live_moment_kNm(request)
   reaction = _reaction_result_kN_per_m(request, fp)
-  Mu = max(live_moment, 0.7 * seismic_moment, 0.75 * live_moment + 0.7 * seismic_moment)
+  Mu = _required_moment_kNm(request, live_moment, seismic_moment)
   stress_ratio = request.omega * Mu / Mn
 
   enriched_layers = tuple(
@@ -144,6 +148,7 @@ def _calculate_wall_check_once(
   )
 
   return WallCheckResult(
+    design_case=request.design_case,
     neutral_axis_mm=neutral_axis,
     I_full_mm4=I_full,
     eta=eta,
@@ -166,16 +171,16 @@ def _calculate_wall_check_once(
       "I_eff_raw_mm4": I_eff_raw,
       "I_eff_correction_factor": I_eff_correction_factor,
       "live_moment_kNm": live_moment,
+      "moment_L_kNm": live_moment,
+      "moment_0_7E_kNm": 0.7 * seismic_moment,
+      "moment_0_75L_0_7E_kNm": 0.75 * live_moment + 0.7 * seismic_moment,
       "seismic_weight_kN": seismic_weight,
       "Fa": _seismic_fa(request),
       "Sds": sds,
       "Fp_kN": fp,
       "reaction_live_kN_per_m": reaction.live_kN_per_m,
       "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
-      "reaction_L_kN_per_m": reaction.load_combination_L_kN_per_m,
-      "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
-      "reaction_0_75L_0_7E_kN_per_m": reaction.load_combination_0_75L_0_7E_kN_per_m,
-      "reaction_required_kN_per_m": reaction.required_kN_per_m,
+      **_reaction_intermediate(request, reaction),
       "anchor_capacity_kN": reaction.anchor_capacity_kN,
       "anchor_spacing_mm": reaction.anchor_spacing_mm,
     },
@@ -239,6 +244,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
       Ip=float(seismic_raw["Ip"]),
       Fa=float(seismic_raw["Fa"]),
     ),
+    design_case=str(inputs.get("design_case", DESIGN_CASE_SEISMIC)),
     omega=DEFAULT_OMEGA,
     anchor_capacity_kN=float(inputs.get("anchor_capacity_kN", DEFAULT_ANCHOR_CAPACITY_KN)),
   )
@@ -409,7 +415,7 @@ def _effective_inertia_correction_factor(group: str, method: str) -> float:
   if normalized_group == "I-STUD":
     return 0.8
   if normalized_group == "HR-STUD":
-    return 0.55
+    return 0.78
   if normalized_group == "RV-STUD":
     return 0.45
   if normalized_group == "MP-STUD":
@@ -629,6 +635,12 @@ def _live_moment_kNm(request: WallCheckRequest) -> float:
   return request.live_load_kN_m2 * spacing_m * span_m**2 / 8.0
 
 
+def _required_moment_kNm(request: WallCheckRequest, live_moment: float, seismic_moment: float) -> float:
+  if request.design_case == DESIGN_CASE_NON_SEISMIC:
+    return live_moment
+  return max(live_moment, 0.7 * seismic_moment, 0.75 * live_moment + 0.7 * seismic_moment)
+
+
 def _seismic_moment_kNm(
   request: WallCheckRequest,
   layers: tuple[_Layer, ...],
@@ -651,7 +663,10 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
   load_combination_L = live_kN_per_m
   load_combination_0_7E = 0.7 * seismic_kN_per_m
   load_combination_0_75L_0_7E = 0.75 * live_kN_per_m + 0.7 * seismic_kN_per_m
-  required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_7E)
+  if request.design_case == DESIGN_CASE_NON_SEISMIC:
+    required = load_combination_L
+  else:
+    required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_7E)
   anchor_spacing_mm = request.anchor_capacity_kN / required * 1000.0 if required > 0.0 else 0.0
   return _ReactionResult(
     live_kN_per_m=live_kN_per_m,
@@ -665,6 +680,21 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
   )
 
 
+def _reaction_intermediate(request: WallCheckRequest, reaction: _ReactionResult) -> dict[str, float]:
+  values = {
+    "reaction_L_kN_per_m": reaction.load_combination_L_kN_per_m,
+    "reaction_required_kN_per_m": reaction.required_kN_per_m,
+  }
+  if request.design_case != DESIGN_CASE_NON_SEISMIC:
+    values.update(
+      {
+        "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
+        "reaction_0_75L_0_7E_kN_per_m": reaction.load_combination_0_75L_0_7E_kN_per_m,
+      }
+    )
+  return values
+
+
 def _seismic_fa(request: WallCheckRequest) -> float:
   if request.seismic.Fa is not None:
     return request.seismic.Fa
@@ -673,3 +703,8 @@ def _seismic_fa(request: WallCheckRequest) -> float:
     request.seismic.S,
     request.seismic.s5_bedrock_depth_unknown,
   )
+
+
+def _validate_design_case(design_case: str) -> None:
+  if design_case not in DESIGN_CASES:
+    raise ValueError(f"지원하지 않는 검토 CASE입니다: {design_case}")

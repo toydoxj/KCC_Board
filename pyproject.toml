@@ -1,6 +1,6 @@
 [project]
 name = "kcc-board"
-version = "0.1.0"
+version = "0.3.0"
 description = "석고보드·스터드 부분합성 건식벽체 구조검토 계산엔진"
 requires-python = ">=3.12"
 

@@ -44,6 +44,7 @@ export interface CalculationReportData {
     deflectionLimitDenom: number;
   };
   loads: {
+    designCaseLabel: string;
     horizontalLoadKgM2: number;
     seismicS: number;
     seismicSiteClass: string;
@@ -84,8 +85,11 @@ const studYieldStrength = 275;
 export function CalculationReport({ data, className = "" }: CalculationReportProps) {
   const stressOk = data.result.stress_verdict === "O.K";
   const deflectionOk = data.result.deflection_verdict === "O.K";
+  const isSeismic = data.result.design_case !== "non_seismic";
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
   const heightLabel = data.calculationMode === "maxHeight" ? "산정 높이" : "검토 높이";
+  const reactionFormula =
+    data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7E, 0.75L + 0.7E)";
   const mnTerms = nominalMomentTerms(data);
   const boardMoment = mnTerms
     .filter((term) => term.type === "board")
@@ -153,6 +157,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="스터드" value={`${data.stud.group} / ${data.stud.method} / ${data.stud.spec}`} />
             <KeyValue label="스터드 간격" value={`${formatNumber(data.geometry.spacingMm)} mm`} />
             <KeyValue label={heightLabel} value={`${formatNumber(data.geometry.spanMm)} mm`} />
+            <KeyValue label="검토 CASE" value={data.loads.designCaseLabel} />
             <KeyValue label="수평하중" value={`${formatNumber(data.loads.horizontalLoadKgM2)} kg/m²`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
             {data.calculationMode === "maxHeight" ? (
@@ -273,8 +278,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <ReportBlock title="반력 산정">
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
             <div>Rh,L = (L × H × B) / 2 / B</div>
-            <div>Rh,E = (Fp / 2 × 2) / B</div>
-            <div>Rh = max(L, 0.7E, 0.75L + 0.7E)</div>
+            {isSeismic ? <div>Rh,E = (Fp / 2 × 2) / B</div> : null}
+            <div>{reactionFormula}</div>
             <div>앵커 간격 = 앵커 성능 / Rh × 1000</div>
           </div>
           <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
@@ -284,11 +289,11 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             />
             <KeyValue
               label="반력 0.7E"
-              value={`${formatNumber(data.result.intermediate.reaction_0_7E_kN_per_m ?? 0)} kN/m`}
+              value={`${formatNumber(data.result.intermediate.reaction_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
             />
             <KeyValue
               label="반력 0.75L+0.7E"
-              value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_7E_kN_per_m ?? 0)} kN/m`}
+              value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
             />
             <KeyValue
               label="필요 반력"
@@ -392,6 +397,9 @@ function Verdict({ label, ok, value }: { label: string; ok: boolean; value: stri
 }
 
 function KeyValue({ label, value }: { label: string; value: string }) {
+  if (value.includes("NaN")) {
+    return null;
+  }
   return (
     <div className="grid grid-cols-[120px_1fr] gap-2 border-b border-slate-200 py-1 last:border-b-0">
       <span className="text-slate-600">{label}</span>

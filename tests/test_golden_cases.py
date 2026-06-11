@@ -173,7 +173,7 @@ class GoldenCaseTest(unittest.TestCase):
       ("R.STUD", "기본", 0.28),
       ("R-STUD", "기본", 0.28),
       ("I-STUD", "기본", 0.8),
-      ("HR-STUD", "기본", 0.55),
+      ("HR-STUD", "기본", 0.78),
       ("RV-STUD", "기본", 0.45),
       ("MP-STUD", "기본", 0.45),
     ]
@@ -240,6 +240,23 @@ class GoldenCaseTest(unittest.TestCase):
     )
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_spacing_mm"], expected_anchor_spacing * 2.0)
+
+  def test_non_seismic_case_checks_only_l_load_combination(self) -> None:
+    seismic_request = request_from_golden_case(dict(self.cases[0]))
+    non_seismic_request = replace(seismic_request, design_case="non_seismic")
+    result = _calculate_wall_check_once(non_seismic_request, self.repository)
+    expected_live_moment = result.intermediate["moment_L_kNm"]
+    expected_live_reaction = result.intermediate["reaction_L_kN_per_m"]
+
+    self.assertEqual(result.design_case, "non_seismic")
+    self.assertNotIn("reaction_0_7E_kN_per_m", result.intermediate)
+    self.assertNotIn("reaction_0_75L_0_7E_kN_per_m", result.intermediate)
+    self.assertAlmostEqual(result.Mu_kNm, expected_live_moment)
+    self.assertAlmostEqual(result.intermediate["reaction_required_kN_per_m"], expected_live_reaction)
+    self.assertAlmostEqual(
+      result.intermediate["anchor_spacing_mm"],
+      non_seismic_request.anchor_capacity_kN / expected_live_reaction * 1000.0,
+    )
 
   def test_ch_stud_rear_board_is_inserted_without_offsetting_stud_centroid(self) -> None:
     request = replace(

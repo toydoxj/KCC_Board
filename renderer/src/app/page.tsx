@@ -17,6 +17,7 @@ import {
   checkWall,
   fetchCatalog,
   type BoardProperty,
+  type DesignCase,
   type SiteClass,
   type StudMethod,
   type StudSection,
@@ -46,6 +47,10 @@ const calculationModeOptions: Array<{ value: CalculationMode; label: string }> =
   { value: "heightCheck", label: calculationModeLabels.heightCheck },
   { value: "maxHeight", label: calculationModeLabels.maxHeight },
 ];
+const designCaseOptions: Array<{ value: DesignCase; label: string }> = [
+  { value: "seismic", label: "내진" },
+  { value: "non_seismic", label: "비내진" },
+];
 const siteClassOptions: Array<{ value: SiteClass; label: string }> = [
   { value: "S1", label: "S1 암반" },
   { value: "S2", label: "S2 얕고 단단" },
@@ -56,6 +61,7 @@ const siteClassOptions: Array<{ value: SiteClass; label: string }> = [
 
 const formSchema = z.object({
   calculationMode: z.enum(["heightCheck", "maxHeight"]),
+  designCase: z.enum(["seismic", "non_seismic"]),
   rearBoardOuterKind: z.string().min(1),
   rearBoardOuterThickness: z.string(),
   rearBoardMiddleKind: z.string().min(1),
@@ -120,6 +126,7 @@ const noProductValue = "";
 
 const defaultValues: CheckFormValues = {
   calculationMode: "heightCheck",
+  designCase: "seismic",
   rearBoardOuterKind: noneBoardValue,
   rearBoardOuterThickness: noThicknessValue,
   rearBoardMiddleKind: "방화",
@@ -627,7 +634,16 @@ export default function Home() {
                   </Field>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-5">
+                <div className="grid gap-3 sm:grid-cols-6">
+                  <Field label="검토 CASE" error={errors.designCase?.message}>
+                    <select className={inputClassName} {...register("designCase")}>
+                      {designCaseOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                   <Field label="스터드 간격 mm" error={errors.spacingMm?.message}>
                     <input className={inputClassName} type="number" step="1" {...register("spacingMm")} />
                   </Field>
@@ -1153,6 +1169,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
       spec: values.studSpec,
       method: values.studMethod,
     },
+    design_case: values.designCase,
     horizontal_load_kg_m2: values.horizontalLoadKgM2,
     spacing_mm: values.spacingMm,
     span_mm: values.spanMm,
@@ -1182,6 +1199,7 @@ function createReportData(
 ): CalculationReportData {
   const stud = findStud(studs, values.studGroup, values.studSpec);
   const siteClassLabel = siteClassOptions.find((option) => option.value === values.seismicSiteClass)?.label ?? values.seismicSiteClass;
+  const designCaseLabel = designCaseOptions.find((option) => option.value === values.designCase)?.label ?? values.designCase;
   const studAssembly = createStudAssembly(stud, values.studMethod);
   const fixedRearBoardThickness = fixedRearBoardThicknessForGroup(values.studGroup);
   const fixedRearBoardKind = fixedRearBoardKindForGroup(values.studGroup);
@@ -1235,6 +1253,7 @@ function createReportData(
       deflectionLimitDenom: values.deflectionLimitDenom,
     },
     loads: {
+      designCaseLabel,
       horizontalLoadKgM2: values.horizontalLoadKgM2,
       seismicS: values.seismicS,
       seismicSiteClass: siteClassLabel,
