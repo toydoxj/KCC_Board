@@ -4,7 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend.engine.constants import DEFAULT_ANCHOR_CAPACITY_KN, DEFAULT_DEFLECTION_LIMIT_DENOM, DEFAULT_OMEGA
+from backend.engine.constants import (
+  DEFAULT_ANCHOR_CAPACITY_KN,
+  DEFAULT_DEFLECTION_LIMIT_DENOM,
+  DEFAULT_HORIZONTAL_LOAD_KG_M2,
+  DEFAULT_OMEGA,
+  GRAVITY,
+)
 from backend.engine.models import (
   BoardLayer,
   BoltInput,
@@ -131,7 +137,7 @@ class WallCheckRequestPayload(ApiModel):
   stud: StudPayload
   design_case: Literal["seismic", "non_seismic"] = "seismic"
   strength_check_mode: Literal["composite", "stud_only"] = "composite"
-  horizontal_load_kg_m2: float = Field(default=24.0, gt=0)
+  horizontal_load_kg_m2: float = Field(default=DEFAULT_HORIZONTAL_LOAD_KG_M2, gt=0)
   live_load_kN_m2: float | None = Field(default=None, ge=0)
   spacing_mm: float = Field(gt=0)
   span_mm: float = Field(gt=0)
@@ -144,7 +150,7 @@ class WallCheckRequestPayload(ApiModel):
   def to_engine(self) -> WallCheckRequest:
     live_load = self.live_load_kN_m2
     if live_load is None:
-      live_load = self.horizontal_load_kg_m2 / 100.0
+      live_load = self.horizontal_load_kg_m2 * GRAVITY / 1000.0
     return WallCheckRequest(
       rear_boards=tuple(board.to_engine() for board in self.rear_boards),
       front_boards=tuple(board.to_engine() for board in self.front_boards),

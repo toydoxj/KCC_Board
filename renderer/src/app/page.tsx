@@ -42,6 +42,7 @@ const hiddenBoltYieldStrength = 480;
 const hiddenBoltCountOuter = 2;
 const hiddenBoltCountMiddle = 2;
 const hiddenBoltCountInner = 1;
+const gravity = 9.81;
 const centralJointStudGapMm = 25;
 const studConnectionInertiaFactor = 1;
 const chStudRearBoardThicknessMm = 25;
@@ -87,7 +88,7 @@ const formSchema = z.object({
   studGroup: z.string().min(1),
   studMethod: z.string().min(1),
   studSpec: z.string().min(1),
-  horizontalLoadKgM2: z.coerce.number().positive(),
+  liveLoadKnM2: z.coerce.number().positive(),
   spacingMm: z.coerce.number().positive(),
   spanMm: z.coerce.number().positive(),
   deflectionLimitDenom: z.coerce.number().int().positive(),
@@ -153,7 +154,7 @@ const defaultValues: CheckFormValues = {
   studGroup: "C-STUD",
   studMethod: "맞댐이음",
   studSpec: "50S-45-08",
-  horizontalLoadKgM2: 24,
+  liveLoadKnM2: 0.25,
   spacingMm: 450,
   spanMm: 7500,
   deflectionLimitDenom: 240,
@@ -703,8 +704,8 @@ export default function Home() {
                   <Field label={heightFieldLabel} error={errors.spanMm?.message}>
                     <input className={inputClassName} type="number" step="1" {...register("spanMm")} />
                   </Field>
-                  <Field label="수평하중 kg/m²" error={errors.horizontalLoadKgM2?.message}>
-                    <input className={inputClassName} type="number" step="0.01" {...register("horizontalLoadKgM2")} />
+                  <Field label="활하중 kN/m²" error={errors.liveLoadKnM2?.message}>
+                    <input className={inputClassName} type="number" step="0.01" {...register("liveLoadKnM2")} />
                   </Field>
                   <Field label="처짐한계 L/" error={errors.deflectionLimitDenom?.message}>
                     <input className={inputClassName} type="number" step="1" {...register("deflectionLimitDenom")} />
@@ -812,6 +813,10 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("ko-KR", {
     maximumFractionDigits: Number.isInteger(value) ? 0 : 1,
   }).format(value);
+}
+
+function liveLoadKnM2ToKgM2(value: number) {
+  return (value * 1000.0) / gravity;
 }
 
 function createProductPreset(
@@ -1224,7 +1229,8 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
     },
     design_case: values.designCase,
     strength_check_mode: values.strengthCheckMode,
-    horizontal_load_kg_m2: values.horizontalLoadKgM2,
+    horizontal_load_kg_m2: liveLoadKnM2ToKgM2(values.liveLoadKnM2),
+    live_load_kN_m2: values.liveLoadKnM2,
     spacing_mm: values.spacingMm,
     span_mm: values.spanMm,
     deflection_limit_denom: values.deflectionLimitDenom,
@@ -1308,7 +1314,7 @@ function createReportData(
     },
     loads: {
       designCaseLabel,
-      horizontalLoadKgM2: values.horizontalLoadKgM2,
+      liveLoadKnM2: values.liveLoadKnM2,
       seismicS: values.seismicS,
       seismicSiteClass: siteClassLabel,
       s5BedrockDepthUnknown: values.seismicSiteClass === "S5" && values.s5BedrockDepthUnknown,

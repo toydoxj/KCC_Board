@@ -45,7 +45,7 @@ export interface CalculationReportData {
   };
   loads: {
     designCaseLabel: string;
-    horizontalLoadKgM2: number;
+    liveLoadKnM2: number;
     seismicS: number;
     seismicSiteClass: string;
     s5BedrockDepthUnknown: boolean;
@@ -163,7 +163,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label={heightLabel} value={`${formatNumber(data.geometry.spanMm)} mm`} />
             <KeyValue label="검토 CASE" value={data.loads.designCaseLabel} />
             <KeyValue label="강도 기준" value={strengthCheckModeLabel} />
-            <KeyValue label="수평하중" value={`${formatNumber(data.loads.horizontalLoadKgM2)} kg/m²`} />
+            <KeyValue label="활하중" value={`${formatNumber(data.loads.liveLoadKnM2)} kN/m²`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
             {data.calculationMode === "maxHeight" ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />

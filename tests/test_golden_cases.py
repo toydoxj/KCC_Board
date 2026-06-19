@@ -257,6 +257,21 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_spacing_mm"], expected_anchor_spacing * 2.0)
 
+  def test_deflection_uses_live_load_kn_m2(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    base = _calculate_wall_check_once(request, self.repository)
+    legacy_horizontal_changed = _calculate_wall_check_once(
+      replace(request, horizontal_load_kg_m2=request.horizontal_load_kg_m2 * 2.0),
+      self.repository,
+    )
+    live_load_changed = _calculate_wall_check_once(
+      replace(request, live_load_kN_m2=request.live_load_kN_m2 * 2.0),
+      self.repository,
+    )
+
+    self.assertAlmostEqual(legacy_horizontal_changed.deflection_mm, base.deflection_mm)
+    self.assertGreater(live_load_changed.deflection_mm, base.deflection_mm)
+
   def test_non_seismic_case_checks_only_l_load_combination(self) -> None:
     seismic_request = request_from_golden_case(dict(self.cases[0]))
     non_seismic_request = replace(seismic_request, design_case="non_seismic")

@@ -112,6 +112,24 @@ class ApiCheckTest(unittest.TestCase):
     self.assertTrue(body["success"])
     self.assertIsNone(body["error"])
 
+  def test_check_defaults_to_0_25_kn_m2_live_load(self) -> None:
+    payload = asdict(request_from_golden_case(dict(self.cases[0])))
+    payload.pop("horizontal_load_kg_m2")
+    payload.pop("live_load_kN_m2")
+
+    response = self.client.post("/api/check", json=payload)
+    self.assertEqual(response.status_code, 200)
+    body = response.json()
+    self.assertTrue(body["success"])
+
+    data = cast(Mapping[str, object], body["data"])
+    intermediate = cast(Mapping[str, object], data["intermediate"])
+    spacing_m = float(payload["spacing_mm"]) / 1000.0
+    span_m = float(payload["span_mm"]) / 1000.0
+    expected_live_moment = 0.25 * spacing_m * span_m**2 / 8.0
+
+    self.assertAlmostEqual(float(intermediate["moment_L_kNm"]), expected_live_moment)
+
   def test_check_accepts_stud_only_strength_mode(self) -> None:
     payload = asdict(request_from_golden_case(dict(self.cases[0])))
     payload["strength_check_mode"] = "stud_only"

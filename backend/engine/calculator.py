@@ -9,6 +9,7 @@ from backend.engine.constants import (
   BOLT_YIELD_RATIO_FROM_FRACTURE,
   DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_DEFLECTION_LIMIT_DENOM,
+  DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
   GRAVITY,
   STEEL_DENSITY_KG_M3,
@@ -243,8 +244,13 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
     rear_boards=tuple(rear),
     front_boards=tuple(front),
     stud=StudInput(stud_type=str(inputs["stud_type"]), spec=str(inputs["stud_spec"])),
-    horizontal_load_kg_m2=float(inputs["horizontal_load_kg_m2"]),
-    live_load_kN_m2=float(inputs.get("live_load_kN_m2", float(inputs["horizontal_load_kg_m2"]) / 100.0)),
+    horizontal_load_kg_m2=float(inputs.get("horizontal_load_kg_m2", DEFAULT_HORIZONTAL_LOAD_KG_M2)),
+    live_load_kN_m2=float(
+      inputs.get(
+        "live_load_kN_m2",
+        float(inputs.get("horizontal_load_kg_m2", DEFAULT_HORIZONTAL_LOAD_KG_M2)) * GRAVITY / 1000.0,
+      )
+    ),
     spacing_mm=float(inputs["spacing_mm"]),
     span_mm=float(inputs["span_mm"]),
     deflection_limit_denom=int(inputs.get("deflection_limit_denom", DEFAULT_DEFLECTION_LIMIT_DENOM)),
@@ -653,7 +659,7 @@ def _maximum_allowable_height_mm(
 
 
 def _deflection_mm(request: WallCheckRequest, I_eff_mm4: float) -> float:
-  line_load_N_mm = request.horizontal_load_kg_m2 * request.spacing_mm * GRAVITY * 1e-6
+  line_load_N_mm = request.live_load_kN_m2 * (request.spacing_mm / 1000.0)
   return 5.0 * line_load_N_mm * request.span_mm**4 / (384.0 * STUD_ELASTIC_MODULUS * I_eff_mm4)
 
 
