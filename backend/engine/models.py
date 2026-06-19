@@ -47,7 +47,8 @@ class WallCheckRequest:
   bolt: BoltInput
   seismic: SeismicInput
   design_case: str = "seismic"
-  omega: float = 1.67
+  strength_check_mode: str = "composite"
+  omega: float = 1.65
   anchor_capacity_kN: float = 0.4
 
 
@@ -65,6 +66,7 @@ class LayerResult:
 
 @dataclass(frozen=True)
 class WallCheckResult:
+  strength_check_mode: str
   design_case: str
   neutral_axis_mm: float
   I_full_mm4: float

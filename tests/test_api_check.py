@@ -46,7 +46,7 @@ class ApiCheckTest(unittest.TestCase):
     self.assertEqual(len(incomplete_boards), 3)
     waterproof = next(board for board in boards_body["data"] if board["kind"] == "방수" and board["thickness"] == 9.5)
     self.assertTrue(waterproof["is_complete"])
-    self.assertAlmostEqual(float(waterproof["E_GPa"]), 1.9)
+    self.assertAlmostEqual(float(waterproof["E_GPa"]), 4.72)
 
     studs = self.client.get("/api/db/studs")
     self.assertEqual(studs.status_code, 200)
@@ -111,6 +111,22 @@ class ApiCheckTest(unittest.TestCase):
     body = response.json()
     self.assertTrue(body["success"])
     self.assertIsNone(body["error"])
+
+  def test_check_accepts_stud_only_strength_mode(self) -> None:
+    payload = asdict(request_from_golden_case(dict(self.cases[0])))
+    payload["strength_check_mode"] = "stud_only"
+
+    response = self.client.post("/api/check", json=payload)
+    self.assertEqual(response.status_code, 200)
+    body = response.json()
+    self.assertTrue(body["success"])
+    self.assertEqual(body["data"]["strength_check_mode"], "stud_only")
+    self.assertEqual(float(body["data"]["max_height_mm"]), 5200.0)
+    self.assertAlmostEqual(
+      float(body["data"]["Mn_kNm"]),
+      float(body["data"]["intermediate"]["Mn_stud_only_kNm"]),
+    )
+    self.assertEqual(body["data"]["stress_verdict"], "N.G")
 
   def test_check_calculates_fa_from_site_class(self) -> None:
     payload = asdict(request_from_golden_case(dict(self.cases[0])))

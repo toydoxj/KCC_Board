@@ -24,14 +24,19 @@ import {
   type WallCheckPayload,
   type WallCheckResult,
 } from "@/lib/api";
-import { calculationModeLabels, type CalculationMode } from "@/lib/calculation-mode";
+import {
+  calculationModeLabels,
+  strengthCheckModeLabels,
+  type CalculationMode,
+  type StrengthCheckMode,
+} from "@/lib/calculation-mode";
 import { cn } from "@/lib/utils";
 import { useCheckStore } from "@/store/check-store";
 
 const noneBoardValue = "NONE";
 const noThicknessValue = "";
 const fallbackStudMethod = "기본";
-const hiddenOmega = 1.67;
+const hiddenOmega = 1.65;
 const hiddenBoltDiameter = 3.5;
 const hiddenBoltYieldStrength = 480;
 const hiddenBoltCountOuter = 2;
@@ -47,6 +52,10 @@ const calculationModeOptions: Array<{ value: CalculationMode; label: string }> =
   { value: "heightCheck", label: calculationModeLabels.heightCheck },
   { value: "maxHeight", label: calculationModeLabels.maxHeight },
 ];
+const strengthCheckModeOptions: Array<{ value: StrengthCheckMode; label: string }> = [
+  { value: "composite", label: strengthCheckModeLabels.composite },
+  { value: "stud_only", label: strengthCheckModeLabels.stud_only },
+];
 const designCaseOptions: Array<{ value: DesignCase; label: string }> = [
   { value: "seismic", label: "내진" },
   { value: "non_seismic", label: "비내진" },
@@ -61,6 +70,7 @@ const siteClassOptions: Array<{ value: SiteClass; label: string }> = [
 
 const formSchema = z.object({
   calculationMode: z.enum(["heightCheck", "maxHeight"]),
+  strengthCheckMode: z.enum(["composite", "stud_only"]),
   designCase: z.enum(["seismic", "non_seismic"]),
   rearBoardOuterKind: z.string().min(1),
   rearBoardOuterThickness: z.string(),
@@ -126,6 +136,7 @@ const noProductValue = "";
 
 const defaultValues: CheckFormValues = {
   calculationMode: "heightCheck",
+  strengthCheckMode: "composite",
   designCase: "seismic",
   rearBoardOuterKind: noneBoardValue,
   rearBoardOuterThickness: noThicknessValue,
@@ -265,9 +276,11 @@ export default function Home() {
   );
   const selectedSiteClass = (formValues.seismicSiteClass ?? defaultValues.seismicSiteClass) as SiteClass;
   const selectedCalculationMode = (formValues.calculationMode ?? defaultValues.calculationMode) as CalculationMode;
+  const selectedStrengthCheckMode = (formValues.strengthCheckMode ?? defaultValues.strengthCheckMode) as StrengthCheckMode;
   const heightFieldLabel = selectedCalculationMode === "maxHeight" ? "산정 높이 mm" : "검토 높이 mm";
   const submitButtonLabel = selectedCalculationMode === "maxHeight" ? "최대높이 산정" : "높이 검토";
   const calculationModeRegister = register("calculationMode");
+  const strengthCheckModeRegister = register("strengthCheckMode");
   const studGroupRegister = register("studGroup");
   const [reportData, setReportData] = useState<CalculationReportData | null>(null);
   const [selectedProductId, setSelectedProductId] = useState(noProductValue);
@@ -382,6 +395,11 @@ export default function Home() {
     clearCalculationResult();
   }
 
+  function handleStrengthCheckModeChange(event: ChangeEvent<HTMLInputElement>) {
+    strengthCheckModeRegister.onChange(event);
+    clearCalculationResult();
+  }
+
   function handleProductChange(event: ChangeEvent<HTMLSelectElement>) {
     const productId = event.target.value;
     setSelectedProductId(productId);
@@ -428,6 +446,38 @@ export default function Home() {
                   checked={selected}
                   {...calculationModeRegister}
                   onChange={handleCalculationModeChange}
+                />
+                {option.label}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderStrengthCheckModeControl() {
+    return (
+      <div className="grid gap-1.5">
+        <div className="text-sm font-medium text-foreground">강도 체크</div>
+        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-input bg-muted p-1">
+          {strengthCheckModeOptions.map((option) => {
+            const selected = selectedStrengthCheckMode === option.value;
+            return (
+              <label
+                key={option.value}
+                className={cn(
+                  "flex h-10 cursor-pointer items-center justify-center rounded px-3 text-sm font-semibold transition-colors",
+                  selected ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <input
+                  className="sr-only"
+                  type="radio"
+                  value={option.value}
+                  checked={selected}
+                  {...strengthCheckModeRegister}
+                  onChange={handleStrengthCheckModeChange}
                 />
                 {option.label}
               </label>
@@ -569,7 +619,10 @@ export default function Home() {
 	                  </div>
 	                </div>
 
-	                {renderCalculationModeControl()}
+	                <div className="grid gap-3 md:grid-cols-2">
+	                  {renderCalculationModeControl()}
+	                  {renderStrengthCheckModeControl()}
+	                </div>
 
 	                <div className="grid gap-3 sm:grid-cols-3">
                   {renderBoardSlot("후면 외측 보드", "rearBoardOuterKind", "rearBoardOuterThickness", {
@@ -1170,6 +1223,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
       method: values.studMethod,
     },
     design_case: values.designCase,
+    strength_check_mode: values.strengthCheckMode,
     horizontal_load_kg_m2: values.horizontalLoadKgM2,
     spacing_mm: values.spacingMm,
     span_mm: values.spanMm,

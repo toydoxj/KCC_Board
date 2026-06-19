@@ -1,7 +1,7 @@
 import { CheckCircle2, Ruler, XCircle } from "lucide-react";
 
 import type { WallCheckResult } from "@/lib/api";
-import type { CalculationMode } from "@/lib/calculation-mode";
+import { strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 
 interface ResultPanelProps {
   result: WallCheckResult | null;
@@ -24,6 +24,7 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
   const stressOk = result.stress_verdict === "O.K";
   const deflectionOk = result.deflection_verdict === "O.K";
   const designCaseLabel = result.design_case === "non_seismic" ? "비내진" : "내진";
+  const strengthCheckModeLabel = strengthCheckModeLabels[result.strength_check_mode] ?? result.strength_check_mode;
 
   if (mode === "maxHeight") {
     return (
@@ -47,9 +48,12 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
         </div>
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <CaseMetric label="검토 CASE" value={designCaseLabel} />
+          <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
           <Metric label="응력비" value={result.stress_ratio} suffix="" />
           <Metric label="Mu" value={result.Mu_kNm} suffix="kN·m" />
-          <Metric label="Mn" value={result.Mn_kNm} suffix="kN·m" />
+          <Metric label="Mn(적용)" value={result.Mn_kNm} suffix="kN·m" />
+          <Metric label="Mn(부분합성)" value={intermediateValue(result, "Mn_composite_kNm")} suffix="kN·m" />
+          <Metric label="Mn(STUD)" value={intermediateValue(result, "Mn_stud_only_kNm")} suffix="kN·m" />
           <Metric label="처짐" value={result.deflection_mm} suffix="mm" />
           <Metric label="처짐한계" value={result.deflection_limit_mm} suffix="mm" />
         </div>
@@ -74,9 +78,12 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
       </div>
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
         <CaseMetric label="검토 CASE" value={designCaseLabel} />
+        <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
         <Metric label="응력비" value={result.stress_ratio} suffix="" />
         <Metric label="Mu" value={result.Mu_kNm} suffix="kN·m" />
-        <Metric label="Mn" value={result.Mn_kNm} suffix="kN·m" />
+        <Metric label="Mn(적용)" value={result.Mn_kNm} suffix="kN·m" />
+        <Metric label="Mn(부분합성)" value={intermediateValue(result, "Mn_composite_kNm")} suffix="kN·m" />
+        <Metric label="Mn(STUD)" value={intermediateValue(result, "Mn_stud_only_kNm")} suffix="kN·m" />
         <Metric label="처짐" value={result.deflection_mm} suffix="mm" />
         <Metric label="처짐한계" value={result.deflection_limit_mm} suffix="mm" />
         <Metric label="지진모멘트" value={result.seismic_moment_kNm} suffix="kN·m" />

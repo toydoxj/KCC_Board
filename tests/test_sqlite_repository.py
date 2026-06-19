@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Mapping, cast
 
 from backend.engine.calculator import calculate_wall_check, request_from_golden_case
+from backend.engine.constants import BOARD_YIELD_RATIO_FROM_FRACTURE
 from backend.engine.repository import (
   DEFAULT_BOARD_E_GPA,
   JsonSeedRepository,
@@ -63,7 +64,8 @@ class SqliteRepositoryTest(unittest.TestCase):
     waterproof = next(board for board in catalog if board.kind == "방수" and board.thickness == 9.5)
     self.assertTrue(waterproof.is_complete)
     self.assertEqual(waterproof.missing_fields, ())
-    self.assertAlmostEqual(waterproof.E_GPa or 0.0, DEFAULT_BOARD_E_GPA)
+    self.assertAlmostEqual(waterproof.E_GPa or 0.0, 4.72)
+    self.assertAlmostEqual(waterproof.Fy or 0.0, (waterproof.Fu or 0.0) * BOARD_YIELD_RATIO_FROM_FRACTURE)
 
   def test_stud_method_catalog_preserves_seed_rows(self) -> None:
     methods = self.sqlite_repository.list_stud_methods()
@@ -74,8 +76,29 @@ class SqliteRepositoryTest(unittest.TestCase):
     self.assertIn(None, [item.method for item in methods if item.stud_type == "CH-STUD"])
 
   def test_missing_elastic_modulus_uses_default_value(self) -> None:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute(
+        "UPDATE board_property SET E_GPa = NULL WHERE kind = ? AND thickness = ?",
+        ("방수", 9.5),
+      )
+      connection.commit()
+
     board = self.sqlite_repository.get_board("방수", 9.5)
     self.assertAlmostEqual(board.E_GPa, DEFAULT_BOARD_E_GPA)
+
+  def test_existing_sqlite_board_properties_are_migrated_to_current_rules(self) -> None:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute(
+        "UPDATE board_property SET Fy = ?, E_GPa = ? WHERE kind = ? AND thickness = ?",
+        (999.0, 1.9, "방수", 9.5),
+      )
+      connection.commit()
+
+    migrated_repository = SqliteRepository(self.db_path)
+    board = migrated_repository.get_board("방수", 9.5)
+
+    self.assertAlmostEqual(board.Fy, board.Fu * BOARD_YIELD_RATIO_FROM_FRACTURE)
+    self.assertAlmostEqual(board.E_GPa, 4.72)
 
   def test_existing_sqlite_without_fu_column_is_migrated(self) -> None:
     with closing(sqlite3.connect(self.db_path)) as connection:
@@ -91,7 +114,7 @@ class SqliteRepositoryTest(unittest.TestCase):
     migrated_repository = SqliteRepository(self.db_path)
     board = migrated_repository.get_board("방화", 19.0)
 
-    self.assertAlmostEqual(board.Fu, board.Fy)
+    self.assertAlmostEqual(board.Fy, board.Fu * BOARD_YIELD_RATIO_FROM_FRACTURE)
     with closing(sqlite3.connect(self.db_path)) as connection:
       columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(board_property)").fetchall()}
     self.assertIn("Fu", columns)

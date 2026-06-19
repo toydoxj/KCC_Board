@@ -65,6 +65,22 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertLess(reduced_middle_count.eta, base.eta)
     self.assertLess(reduced_middle_count.Mn_kNm, base.Mn_kNm)
 
+  def test_stud_only_strength_check_uses_only_stud_moment(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    composite = calculate_wall_check(request, self.repository)
+    stud_only = calculate_wall_check(
+      replace(request, strength_check_mode="stud_only"),
+      self.repository,
+    )
+
+    self.assertEqual(composite.strength_check_mode, "composite")
+    self.assertEqual(stud_only.strength_check_mode, "stud_only")
+    self.assertAlmostEqual(stud_only.Mn_kNm, stud_only.intermediate["Mn_stud_only_kNm"])
+    self.assertAlmostEqual(composite.Mn_kNm, composite.intermediate["Mn_composite_kNm"])
+    self.assertLess(stud_only.Mn_kNm, composite.Mn_kNm)
+    self.assertEqual(stud_only.max_height_mm, 5200.0)
+    self.assertEqual(stud_only.stress_verdict, "N.G")
+
   def test_bolt_shear_uses_half_and_yield_conversion_factors(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
     bolt = replace(

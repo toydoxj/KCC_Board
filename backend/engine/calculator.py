@@ -38,6 +38,9 @@ R_STUD_BOARD_STUD_CLEAR_GAP_MM = 12.0
 DESIGN_CASE_SEISMIC = "seismic"
 DESIGN_CASE_NON_SEISMIC = "non_seismic"
 DESIGN_CASES = {DESIGN_CASE_SEISMIC, DESIGN_CASE_NON_SEISMIC}
+STRENGTH_CHECK_COMPOSITE = "composite"
+STRENGTH_CHECK_STUD_ONLY = "stud_only"
+STRENGTH_CHECK_MODES = {STRENGTH_CHECK_COMPOSITE, STRENGTH_CHECK_STUD_ONLY}
 
 
 @dataclass(frozen=True)
@@ -109,6 +112,7 @@ def _calculate_wall_check_once(
   repository: MaterialRepository,
 ) -> WallCheckResult:
   _validate_design_case(request.design_case)
+  _validate_strength_check_mode(request.strength_check_mode)
   repo = repository
   section = _build_section(request, repo)
   neutral_axis = _neutral_axis(section.layers)
@@ -124,7 +128,14 @@ def _calculate_wall_check_once(
   )
   I_eff_correction_factor = _effective_inertia_correction_factor(group, method)
   I_eff = I_eff_raw * I_eff_correction_factor
-  Mn = _nominal_moment(layer_results, shear_by_name, section.stud_section_modulus_depth_mm)
+  Mn_composite = _nominal_moment(layer_results, shear_by_name, section.stud_section_modulus_depth_mm)
+  Mn_stud_only = _nominal_moment(
+    layer_results,
+    shear_by_name,
+    section.stud_section_modulus_depth_mm,
+    include_board_layers=False,
+  )
+  Mn = _strength_check_nominal_moment(request.strength_check_mode, Mn_composite, Mn_stud_only)
   deflection = _deflection_mm(request, I_eff)
   deflection_limit = request.span_mm / request.deflection_limit_denom
   seismic_moment, seismic_weight, sds, fp = _seismic_moment_kNm(request, section.layers)
@@ -148,6 +159,7 @@ def _calculate_wall_check_once(
   )
 
   return WallCheckResult(
+    strength_check_mode=request.strength_check_mode,
     design_case=request.design_case,
     neutral_axis_mm=neutral_axis,
     I_full_mm4=I_full,
@@ -168,6 +180,8 @@ def _calculate_wall_check_once(
       "stud_section_height_mm": section.stud_layer.thickness_mm,
       "stud_section_modulus_depth_mm": section.stud_section_modulus_depth_mm,
       "stud_connection_inertia_factor": section.stud_connection_inertia_factor,
+      "Mn_composite_kNm": Mn_composite,
+      "Mn_stud_only_kNm": Mn_stud_only,
       "I_eff_raw_mm4": I_eff_raw,
       "I_eff_correction_factor": I_eff_correction_factor,
       "live_moment_kNm": live_moment,
@@ -245,6 +259,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
       Fa=float(seismic_raw["Fa"]),
     ),
     design_case=str(inputs.get("design_case", DESIGN_CASE_SEISMIC)),
+    strength_check_mode=str(inputs.get("strength_check_mode", STRENGTH_CHECK_COMPOSITE)),
     omega=DEFAULT_OMEGA,
     anchor_capacity_kN=float(inputs.get("anchor_capacity_kN", DEFAULT_ANCHOR_CAPACITY_KN)),
   )
@@ -595,16 +610,29 @@ def _nominal_moment(
   layers: tuple[LayerResult, ...],
   shear_by_name: dict[str, float],
   stud_section_modulus_depth_mm: float,
+  include_board_layers: bool = True,
 ) -> float:
   total = 0.0
   for layer in layers:
     if layer.layer_type == "board":
+      if not include_board_layers:
+        continue
       force = min(layer.axial_strength_kN, shear_by_name.get(layer.name, 0.0))
       total += abs(force * layer.distance_to_neutral_axis_mm * 1e-3)
     else:
       section_modulus = layer.inertia_about_neutral_axis_mm4 / stud_section_modulus_depth_mm * 2.0
       total += STUD_YIELD_STRENGTH * section_modulus * 1e-6
   return total
+
+
+def _strength_check_nominal_moment(
+  strength_check_mode: str,
+  composite_moment_kNm: float,
+  stud_only_moment_kNm: float,
+) -> float:
+  if strength_check_mode == STRENGTH_CHECK_STUD_ONLY:
+    return stud_only_moment_kNm
+  return composite_moment_kNm
 
 
 def _maximum_allowable_height_mm(
@@ -708,3 +736,8 @@ def _seismic_fa(request: WallCheckRequest) -> float:
 def _validate_design_case(design_case: str) -> None:
   if design_case not in DESIGN_CASES:
     raise ValueError(f"지원하지 않는 검토 CASE입니다: {design_case}")
+
+
+def _validate_strength_check_mode(strength_check_mode: str) -> None:
+  if strength_check_mode not in STRENGTH_CHECK_MODES:
+    raise ValueError(f"지원하지 않는 강도 체크 기준입니다: {strength_check_mode}")

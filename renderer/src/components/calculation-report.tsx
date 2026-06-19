@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { LayerResult, WallCheckResult } from "@/lib/api";
-import { calculationModeLabels, type CalculationMode } from "@/lib/calculation-mode";
+import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 
 export interface ReportBoardSlot {
   label: string;
@@ -87,6 +87,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   const deflectionOk = data.result.deflection_verdict === "O.K";
   const isSeismic = data.result.design_case !== "non_seismic";
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
+  const strengthCheckModeLabel = strengthCheckModeLabels[data.result.strength_check_mode] ?? data.result.strength_check_mode;
+  const isStudOnlyStrengthCheck = data.result.strength_check_mode === "stud_only";
   const heightLabel = data.calculationMode === "maxHeight" ? "산정 높이" : "검토 높이";
   const reactionFormula =
     data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7E, 0.75L + 0.7E)";
@@ -104,7 +106,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-normal">석고보드 건식벽체 구조검토 계산서</h1>
-            <p className="mt-1 text-sm text-slate-600">{calculationModeLabel} / 부분합성 단면 검토</p>
+            <p className="mt-1 text-sm text-slate-600">{calculationModeLabel} / 강도 기준: {strengthCheckModeLabel}</p>
           </div>
           <div className="text-right text-sm">
             <div className="font-semibold">작성일</div>
@@ -129,6 +131,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
+                <KeyValue label="강도 기준" value={strengthCheckModeLabel} />
                 <KeyValue label="산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
                 <KeyValue label="응력비" value={formatNumber(data.result.stress_ratio)} />
                 <KeyValue label="처짐" value={`${formatNumber(data.result.deflection_mm)} mm`} />
@@ -142,9 +145,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
+                <KeyValue label="강도 기준" value={strengthCheckModeLabel} />
                 <KeyValue label="응력비" value={formatNumber(data.result.stress_ratio)} />
                 <KeyValue label="Mu" value={`${formatNumber(data.result.Mu_kNm)} kN·m`} />
-                <KeyValue label="Mn" value={`${formatNumber(data.result.Mn_kNm)} kN·m`} />
+                <KeyValue label="Mn(적용)" value={`${formatNumber(data.result.Mn_kNm)} kN·m`} />
                 <KeyValue label="처짐" value={`${formatNumber(data.result.deflection_mm)} mm`} />
                 <KeyValue label="처짐한계" value={`${formatNumber(data.result.deflection_limit_mm)} mm`} />
               </div>
@@ -158,6 +162,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="스터드 간격" value={`${formatNumber(data.geometry.spacingMm)} mm`} />
             <KeyValue label={heightLabel} value={`${formatNumber(data.geometry.spanMm)} mm`} />
             <KeyValue label="검토 CASE" value={data.loads.designCaseLabel} />
+            <KeyValue label="강도 기준" value={strengthCheckModeLabel} />
             <KeyValue label="수평하중" value={`${formatNumber(data.loads.horizontalLoadKgM2)} kg/m²`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
             {data.calculationMode === "maxHeight" ? (
@@ -268,6 +273,9 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             {data.calculationMode === "maxHeight" ? (
               <KeyValue label="최대 가능 높이" value={`${formatNumber(data.result.max_height_mm)} mm`} />
             ) : null}
+            <KeyValue label="Mn(적용)" value={`${formatNumber(data.result.Mn_kNm)} kN·m`} />
+            <KeyValue label="Mn(부분합성)" value={`${formatNumber(data.result.intermediate.Mn_composite_kNm ?? data.result.Mn_kNm)} kN·m`} />
+            <KeyValue label="Mn(STUD)" value={`${formatNumber(data.result.intermediate.Mn_stud_only_kNm ?? data.result.Mn_kNm)} kN·m`} />
             <KeyValue label="지진모멘트" value={`${formatNumber(data.result.seismic_moment_kNm)} kN·m`} />
             <KeyValue label="지진중량 Wp" value={unitValue(data.result.intermediate.seismic_weight_kN, "kN")} />
           </div>
@@ -314,7 +322,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
       <section className="mt-5">
         <ReportBlock title="Mn 산정 상세">
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
-            <div className="font-semibold">Mn = ΣM보드 + M스터드</div>
+            <div className="font-semibold">{isStudOnlyStrengthCheck ? "Mn = M스터드" : "Mn = ΣM보드 + M스터드"}</div>
+            <div>강도 기준 = {strengthCheckModeLabel}</div>
             <div>M보드,i = |min(Pn,i, Vc,i) × d_i| × 10^-3</div>
             <div>M스터드 = Fy,stud × S스터드 × 10^-6, S스터드 = I_stud / h_ref × 2</div>
             {data.stud.gapMm === null ? null : (
@@ -461,19 +470,21 @@ function MnTermRow({ term }: { term: NominalMomentTerm }) {
 
 function nominalMomentTerms(data: CalculationReportData) {
   const sectionModulusDepth = data.stud.sectionModulusDepth ?? data.stud.H ?? 0;
+  const includeBoardMoment = data.result.strength_check_mode !== "stud_only";
   return data.result.layers.map<NominalMomentTerm>((layer) => {
     if (layer.layer_type === "board") {
       const appliedForce = Math.min(layer.axial_strength_kN, layer.cumulative_shear_kN);
+      const boardMoment = Math.abs(appliedForce * layer.distance_to_neutral_axis_mm * 1e-3);
       return {
         name: layer.name,
         type: "board",
-        expression: "|min(Pn,Vc)×d|×10^-3",
+        expression: includeBoardMoment ? "|min(Pn,Vc)×d|×10^-3" : "강도판정 미반영",
         axialStrength_kN: layer.axial_strength_kN,
         cumulativeShear_kN: layer.cumulative_shear_kN,
         appliedForce_kN: appliedForce,
         distanceOrSection: Math.abs(layer.distance_to_neutral_axis_mm),
         distanceOrSectionUnit: "mm",
-        moment_kNm: Math.abs(appliedForce * layer.distance_to_neutral_axis_mm * 1e-3),
+        moment_kNm: includeBoardMoment ? boardMoment : 0,
       };
     }
 
