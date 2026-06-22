@@ -48,7 +48,7 @@ class WallCheckRequest:
   seismic: SeismicInput
   design_case: str = "seismic"
   strength_check_mode: str = "composite"
-  omega: float = 1.65
+  omega: float = 1.5
   anchor_capacity_kN: float = 0.4
 
 

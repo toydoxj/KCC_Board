@@ -78,7 +78,7 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(stud_only.Mn_kNm, stud_only.intermediate["Mn_stud_only_kNm"])
     self.assertAlmostEqual(composite.Mn_kNm, composite.intermediate["Mn_composite_kNm"])
     self.assertLess(stud_only.Mn_kNm, composite.Mn_kNm)
-    self.assertEqual(stud_only.max_height_mm, 5200.0)
+    self.assertEqual(stud_only.max_height_mm, 5450.0)
     self.assertEqual(stud_only.stress_verdict, "N.G")
 
   def test_bolt_shear_uses_half_and_yield_conversion_factors(self) -> None:

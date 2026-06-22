@@ -139,7 +139,7 @@ class ApiCheckTest(unittest.TestCase):
     body = response.json()
     self.assertTrue(body["success"])
     self.assertEqual(body["data"]["strength_check_mode"], "stud_only")
-    self.assertEqual(float(body["data"]["max_height_mm"]), 5200.0)
+    self.assertEqual(float(body["data"]["max_height_mm"]), 5450.0)
     self.assertAlmostEqual(
       float(body["data"]["Mn_kNm"]),
       float(body["data"]["intermediate"]["Mn_stud_only_kNm"]),

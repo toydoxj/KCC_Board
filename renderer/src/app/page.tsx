@@ -36,7 +36,7 @@ import { useCheckStore } from "@/store/check-store";
 const noneBoardValue = "NONE";
 const noThicknessValue = "";
 const fallbackStudMethod = "기본";
-const hiddenOmega = 1.65;
+const hiddenOmega = 1.5;
 const hiddenBoltDiameter = 3.5;
 const hiddenBoltYieldStrength = 480;
 const hiddenBoltCountOuter = 2;
