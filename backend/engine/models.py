@@ -41,6 +41,7 @@ class WallCheckRequest:
   stud: StudInput
   horizontal_load_kg_m2: float
   live_load_kN_m2: float
+  vertical_load_kN_m: float
   spacing_mm: float
   span_mm: float
   deflection_limit_denom: int
@@ -50,6 +51,7 @@ class WallCheckRequest:
   strength_check_mode: str = "composite"
   omega: float = 1.5
   anchor_capacity_kN: float = 0.4
+  anchor_spacing_mm: float = 450.0
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,8 @@ class WallCheckResult:
   deflection_verdict: str
   stress_verdict: str
   max_height_mm: float = 0.0
+  anchor_max_height_mm: float = 0.0
   max_height_increment_mm: float = 50.0
+  anchor_spacing_increment_mm: float = 50.0
   layers: tuple[LayerResult, ...] = field(default_factory=tuple)
   intermediate: dict[str, float] = field(default_factory=dict)

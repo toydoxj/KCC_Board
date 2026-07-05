@@ -1,5 +1,8 @@
 # Electron 배포 절차
 
+현재 배포 설정은 `electron@42.4.1`, `electron-builder@26.15.3` 기준입니다.
+`electron-builder` 최신 계열은 Node.js 22.12 이상을 요구하므로, Windows 배포 빌드는 Node.js 22.12 이상에서 실행합니다.
+
 ## 1. Windows용 Python 가상환경 준비
 
 현재 저장소의 `.venv`가 POSIX형 구조라면 Windows 빌드에는 `.venv-win`을 별도로 사용합니다.
@@ -28,6 +31,7 @@ npm run dist
 
 `npm run dist`는 FastAPI 백엔드를 `renderer/backend-dist/kcc-board-api/kcc-board-api.exe`로 먼저 패키징한 뒤,
 Next 정적 파일과 Electron 설치 파일을 생성합니다. 빌드 결과는 `renderer/dist`에 생성됩니다.
+현재 버전의 Windows 설치 파일명은 `KCC Board Setup 0.3.0.exe`입니다.
 
 ## 개발 실행
 

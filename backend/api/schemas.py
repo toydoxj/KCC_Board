@@ -5,7 +5,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.engine.constants import (
+  ANCHOR_SPACING_INCREMENT_MM,
+  ANCHOR_SPACING_MAX_MM,
+  ANCHOR_SPACING_MIN_MM,
   DEFAULT_ANCHOR_CAPACITY_KN,
+  DEFAULT_ANCHOR_SPACING_MM,
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
@@ -139,6 +143,7 @@ class WallCheckRequestPayload(ApiModel):
   strength_check_mode: Literal["composite", "stud_only"] = "composite"
   horizontal_load_kg_m2: float = Field(default=DEFAULT_HORIZONTAL_LOAD_KG_M2, gt=0)
   live_load_kN_m2: float | None = Field(default=None, ge=0)
+  vertical_load_kN_m: float = Field(default=0.0, ge=0)
   spacing_mm: float = Field(gt=0)
   span_mm: float = Field(gt=0)
   deflection_limit_denom: int = Field(default=DEFAULT_DEFLECTION_LIMIT_DENOM, ge=1)
@@ -146,6 +151,19 @@ class WallCheckRequestPayload(ApiModel):
   seismic: SeismicPayload
   omega: float = Field(default=DEFAULT_OMEGA, gt=0)
   anchor_capacity_kN: float = Field(default=DEFAULT_ANCHOR_CAPACITY_KN, gt=0)
+  anchor_spacing_mm: float = Field(
+    default=DEFAULT_ANCHOR_SPACING_MM,
+    ge=ANCHOR_SPACING_MIN_MM,
+    le=ANCHOR_SPACING_MAX_MM,
+  )
+
+  @field_validator("anchor_spacing_mm")
+  @classmethod
+  def validate_anchor_spacing(cls, anchor_spacing_mm: float) -> float:
+    quotient = anchor_spacing_mm / ANCHOR_SPACING_INCREMENT_MM
+    if not quotient.is_integer():
+      raise ValueError(f"앵커 간격은 {ANCHOR_SPACING_INCREMENT_MM:g}mm 단위로 입력해야 합니다.")
+    return anchor_spacing_mm
 
   def to_engine(self) -> WallCheckRequest:
     live_load = self.live_load_kN_m2
@@ -159,6 +177,7 @@ class WallCheckRequestPayload(ApiModel):
       strength_check_mode=self.strength_check_mode,
       horizontal_load_kg_m2=self.horizontal_load_kg_m2,
       live_load_kN_m2=live_load,
+      vertical_load_kN_m=self.vertical_load_kN_m,
       spacing_mm=self.spacing_mm,
       span_mm=self.span_mm,
       deflection_limit_denom=self.deflection_limit_denom,
@@ -166,6 +185,7 @@ class WallCheckRequestPayload(ApiModel):
       seismic=self.seismic.to_engine(),
       omega=self.omega,
       anchor_capacity_kN=self.anchor_capacity_kN,
+      anchor_spacing_mm=self.anchor_spacing_mm,
     )
 
 
@@ -209,7 +229,9 @@ class WallCheckResultData(ApiModel):
   deflection_verdict: str
   stress_verdict: str
   max_height_mm: float
+  anchor_max_height_mm: float
   max_height_increment_mm: float
+  anchor_spacing_increment_mm: float
   layers: list[LayerResultData]
   intermediate: dict[str, float]
 
@@ -231,7 +253,9 @@ class WallCheckResultData(ApiModel):
       deflection_verdict=result.deflection_verdict,
       stress_verdict=result.stress_verdict,
       max_height_mm=result.max_height_mm,
+      anchor_max_height_mm=result.anchor_max_height_mm,
       max_height_increment_mm=result.max_height_increment_mm,
+      anchor_spacing_increment_mm=result.anchor_spacing_increment_mm,
       layers=[LayerResultData.from_engine(layer) for layer in result.layers],
       intermediate=result.intermediate,
     )

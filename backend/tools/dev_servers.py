@@ -45,7 +45,7 @@ def start_servers() -> None:
     pid_path=RENDERER_PID,
     log_path=LOCAL_DIR / "renderer.log",
     cwd=ROOT_DIR / "renderer",
-    command=["npm", "run", "start", "--", "--port", "3000"],
+    command=["npm", "run", "dev", "--", "--port", "3000"],
   )
   print("개발 서버 시작 요청 완료")
 

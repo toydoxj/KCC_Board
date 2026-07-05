@@ -43,6 +43,9 @@ const hiddenBoltCountOuter = 2;
 const hiddenBoltCountMiddle = 2;
 const hiddenBoltCountInner = 1;
 const gravity = 9.81;
+const anchorSpacingMinMm = 150;
+const anchorSpacingMaxMm = 600;
+const anchorSpacingIncrementMm = 50;
 const centralJointStudGapMm = 25;
 const studConnectionInertiaFactor = 1;
 const chStudRearBoardThicknessMm = 25;
@@ -50,8 +53,9 @@ const chStudImprovedRearBoardThicknessMm = 12.5;
 const iStudRearBoardKind = "방화";
 const iStudRearBoardThicknessMm = 25;
 const calculationModeOptions: Array<{ value: CalculationMode; label: string }> = [
-  { value: "heightCheck", label: calculationModeLabels.heightCheck },
-  { value: "maxHeight", label: calculationModeLabels.maxHeight },
+  { value: "heightCheck", label: "높이검토" },
+  { value: "maxHeight", label: "최대높이" },
+  { value: "anchorHeight", label: "앵커높이" },
 ];
 const strengthCheckModeOptions: Array<{ value: StrengthCheckMode; label: string }> = [
   { value: "composite", label: strengthCheckModeLabels.composite },
@@ -70,7 +74,7 @@ const siteClassOptions: Array<{ value: SiteClass; label: string }> = [
 ];
 
 const formSchema = z.object({
-  calculationMode: z.enum(["heightCheck", "maxHeight"]),
+  calculationMode: z.enum(["heightCheck", "maxHeight", "anchorHeight"]),
   strengthCheckMode: z.enum(["composite", "stud_only"]),
   designCase: z.enum(["seismic", "non_seismic"]),
   rearBoardOuterKind: z.string().min(1),
@@ -89,10 +93,16 @@ const formSchema = z.object({
   studMethod: z.string().min(1),
   studSpec: z.string().min(1),
   liveLoadKnM2: z.coerce.number().positive(),
+  verticalLoadKnM: z.coerce.number().min(0),
   spacingMm: z.coerce.number().positive(),
   spanMm: z.coerce.number().positive(),
   deflectionLimitDenom: z.coerce.number().int().positive(),
   anchorCapacityKn: z.coerce.number().positive(),
+  anchorSpacingMm: z.coerce
+    .number()
+    .min(anchorSpacingMinMm)
+    .max(anchorSpacingMaxMm)
+    .refine((value) => value % anchorSpacingIncrementMm === 0, "50mm 단위로 입력해야 합니다."),
   boltPitchOuter: z.coerce.number().positive(),
   boltPitchMiddle: z.coerce.number().positive(),
   boltPitchInner: z.coerce.number().positive(),
@@ -124,6 +134,7 @@ type ProgressCase = {
   studType: string | null;
   studSize: string | null;
   spacingMm: number | null;
+  anchorSpacingMm: number | null;
   rearBoards: string[];
   heightSeismicMm: number | null;
   isNew: boolean;
@@ -155,10 +166,12 @@ const defaultValues: CheckFormValues = {
   studMethod: "맞댐이음",
   studSpec: "50S-45-08",
   liveLoadKnM2: 0.25,
+  verticalLoadKnM: 0,
   spacingMm: 450,
   spanMm: 7500,
   deflectionLimitDenom: 240,
   anchorCapacityKn: 0.4,
+  anchorSpacingMm: 450,
   boltPitchOuter: 300,
   boltPitchMiddle: 300,
   boltPitchInner: 600,
@@ -278,8 +291,18 @@ export default function Home() {
   const selectedSiteClass = (formValues.seismicSiteClass ?? defaultValues.seismicSiteClass) as SiteClass;
   const selectedCalculationMode = (formValues.calculationMode ?? defaultValues.calculationMode) as CalculationMode;
   const selectedStrengthCheckMode = (formValues.strengthCheckMode ?? defaultValues.strengthCheckMode) as StrengthCheckMode;
-  const heightFieldLabel = selectedCalculationMode === "maxHeight" ? "산정 높이 mm" : "검토 높이 mm";
-  const submitButtonLabel = selectedCalculationMode === "maxHeight" ? "최대높이 산정" : "높이 검토";
+  const heightFieldLabel =
+    selectedCalculationMode === "heightCheck"
+      ? "검토 높이 mm"
+      : selectedCalculationMode === "anchorHeight"
+        ? "앵커 산정 기준높이 mm"
+        : "산정 높이 mm";
+  const submitButtonLabel =
+    selectedCalculationMode === "heightCheck"
+      ? "높이 검토"
+      : selectedCalculationMode === "anchorHeight"
+        ? "앵커높이 산정"
+        : "최대높이 산정";
   const calculationModeRegister = register("calculationMode");
   const strengthCheckModeRegister = register("strengthCheckMode");
   const studGroupRegister = register("studGroup");
@@ -347,10 +370,16 @@ export default function Home() {
       let nextValues = values;
       let nextResult = await checkWall(buildPayload(values));
 
-      if (values.calculationMode === "maxHeight" && nextResult.max_height_mm > 0 && nextResult.max_height_mm !== values.spanMm) {
+      const nextTargetHeight =
+        values.calculationMode === "anchorHeight" ? nextResult.anchor_max_height_mm : nextResult.max_height_mm;
+      if (
+        values.calculationMode !== "heightCheck"
+        && nextTargetHeight > 0
+        && nextTargetHeight !== values.spanMm
+      ) {
         nextValues = {
           ...values,
-          spanMm: nextResult.max_height_mm,
+          spanMm: nextTargetHeight,
         };
         nextResult = await checkWall(buildPayload(nextValues));
         setValue("spanMm", nextValues.spanMm, {
@@ -429,14 +458,14 @@ export default function Home() {
     return (
       <div className="grid gap-1.5">
         <div className="text-sm font-medium text-foreground">계산 방향</div>
-        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-input bg-muted p-1">
+        <div className="grid grid-cols-3 overflow-hidden rounded-md border border-input bg-muted p-1">
           {calculationModeOptions.map((option) => {
             const selected = selectedCalculationMode === option.value;
             return (
               <label
                 key={option.value}
                 className={cn(
-                  "flex h-10 cursor-pointer items-center justify-center rounded px-3 text-sm font-semibold transition-colors",
+                  "flex h-10 cursor-pointer items-center justify-center whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:text-sm",
                   selected ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -468,7 +497,7 @@ export default function Home() {
               <label
                 key={option.value}
                 className={cn(
-                  "flex h-10 cursor-pointer items-center justify-center rounded px-3 text-sm font-semibold transition-colors",
+                  "flex h-10 cursor-pointer items-center justify-center whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:text-sm",
                   selected ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -556,20 +585,20 @@ export default function Home() {
   return (
     <main className="min-h-screen">
       <div className="border-b border-border bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4">
-          <div>
+        <div className="mx-auto flex max-w-7xl flex-col items-start gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold tracking-normal">KCC Board</h1>
             <p className="mt-1 text-sm text-muted-foreground">석고보드·스터드 부분합성 건식벽체 구조검토</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
             <Link
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring"
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring"
               href="/prototype"
             >
-              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+              <FileSpreadsheet className="h-4 w-4 shrink-0" aria-hidden="true" />
               프리셋결과
             </Link>
-            <div className="rounded-md border border-border px-3 py-2 text-sm font-medium">
+            <div className="shrink-0 whitespace-nowrap rounded-md border border-border px-3 py-2 text-sm font-medium">
               API {catalogLoading ? "확인 중" : catalog ? "연결됨" : "대기"}
             </div>
           </div>
@@ -583,11 +612,11 @@ export default function Home() {
               <h2 className="text-base font-semibold">검토 입력</h2>
               <div className="flex gap-2">
                 <Button type="button" variant="secondary" onClick={handleReset} title="기본값">
-                  <RefreshCcw className="h-4 w-4" aria-hidden="true" />
+                  <RefreshCcw className="h-4 w-4 shrink-0" aria-hidden="true" />
                   기본값
                 </Button>
                 <Button type="submit" disabled={checking || catalogLoading} title={submitButtonLabel}>
-                  <Calculator className="h-4 w-4" aria-hidden="true" />
+                  <Calculator className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {checking ? "계산 중" : submitButtonLabel}
                 </Button>
               </div>
@@ -688,7 +717,7 @@ export default function Home() {
                   </Field>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-6">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <Field label="검토 CASE" error={errors.designCase?.message}>
                     <select className={inputClassName} {...register("designCase")}>
                       {designCaseOptions.map((option) => (
@@ -707,13 +736,35 @@ export default function Home() {
                   <Field label="활하중 kN/m²" error={errors.liveLoadKnM2?.message}>
                     <input className={inputClassName} type="number" step="0.01" {...register("liveLoadKnM2")} />
                   </Field>
+                  <Field label="연직하중 kN/m" error={errors.verticalLoadKnM?.message}>
+                    <input className={inputClassName} type="number" step="0.01" min="0" {...register("verticalLoadKnM")} />
+                  </Field>
                   <Field label="처짐한계 L/" error={errors.deflectionLimitDenom?.message}>
                     <input className={inputClassName} type="number" step="1" {...register("deflectionLimitDenom")} />
                   </Field>
                   <Field label="앵커 성능 kN/개" error={errors.anchorCapacityKn?.message}>
                     <input className={inputClassName} type="number" step="0.01" {...register("anchorCapacityKn")} />
                   </Field>
+                  <Field label="앵커 간격 mm" error={errors.anchorSpacingMm?.message}>
+                    <input
+                      className={inputClassName}
+                      type="number"
+                      min={anchorSpacingMinMm}
+                      max={anchorSpacingMaxMm}
+                      step={anchorSpacingIncrementMm}
+                      {...register("anchorSpacingMm")}
+                    />
+                  </Field>
                 </div>
+
+                <div className="rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-muted-foreground">
+                  런너는 0.8T 이상 전부 적용 가능
+                </div>
+                {selectedStudMethod.includes("이중") ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+                    이중스터드 적용 시 석고보드 일면 구성 적용 여부 확인 필요
+                  </div>
+                ) : null}
 
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field label="3번(외측) 피치 mm" error={errors.boltPitchOuter?.message}>
@@ -774,7 +825,7 @@ export default function Home() {
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold">결과</h2>
               <Button type="button" variant="secondary" disabled={!reportData} onClick={handlePrintReport} title="계산서 출력">
-                <Printer className="h-4 w-4" aria-hidden="true" />
+                <Printer className="h-4 w-4 shrink-0" aria-hidden="true" />
                 출력
               </Button>
             </div>
@@ -788,7 +839,7 @@ export default function Home() {
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold">계산서 미리보기</h2>
               <Button type="button" onClick={handlePrintReport} title="계산서 출력">
-                <Printer className="h-4 w-4" aria-hidden="true" />
+                <Printer className="h-4 w-4 shrink-0" aria-hidden="true" />
                 계산서 출력
               </Button>
             </div>
@@ -831,6 +882,9 @@ function createProductPreset(
   };
   if (product.spacingMm !== null) {
     values.spacingMm = product.spacingMm;
+  }
+  if (product.anchorSpacingMm !== null) {
+    values.anchorSpacingMm = normalizeAnchorSpacing(product.anchorSpacingMm, warnings);
   }
   if (product.heightSeismicMm !== null) {
     values.spanMm = product.heightSeismicMm;
@@ -1071,6 +1125,15 @@ function firstCompleteThicknessValue(boards: BoardProperty[], kind: string) {
   return board ? thicknessValue(board.thickness) : noThicknessValue;
 }
 
+function normalizeAnchorSpacing(value: number, warnings: string[]) {
+  const rounded = Math.round(value / anchorSpacingIncrementMm) * anchorSpacingIncrementMm;
+  const limited = Math.min(anchorSpacingMaxMm, Math.max(anchorSpacingMinMm, rounded));
+  if (limited !== value) {
+    warnings.push(`앵커 간격은 ${anchorSpacingMinMm}~${anchorSpacingMaxMm}mm 범위의 50mm 단위로 보정했습니다.`);
+  }
+  return limited;
+}
+
 function boardKindForFixedThickness(
   boards: BoardProperty[],
   thickness: number,
@@ -1132,7 +1195,7 @@ function studMethodOptions(studMethods: StudMethod[] | undefined, group: string)
   const matchedMethods = (studMethods ?? [])
     .filter((item) => normalizeStudType(item.stud_type) === normalizeStudType(group))
     .map((item) => item.method ?? fallbackStudMethod);
-  const methods = uniqueValues(matchedMethods);
+  const methods = uniqueValues(matchedMethods).filter((method) => method !== "겹침");
   const source = methods.length > 0 ? methods : [fallbackStudMethod];
   return source.map((method) => ({
     value: method,
@@ -1231,6 +1294,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
     strength_check_mode: values.strengthCheckMode,
     horizontal_load_kg_m2: liveLoadKnM2ToKgM2(values.liveLoadKnM2),
     live_load_kN_m2: values.liveLoadKnM2,
+    vertical_load_kN_m: values.verticalLoadKnM,
     spacing_mm: values.spacingMm,
     span_mm: values.spanMm,
     deflection_limit_denom: values.deflectionLimitDenom,
@@ -1248,6 +1312,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
     },
     omega: hiddenOmega,
     anchor_capacity_kN: values.anchorCapacityKn,
+    anchor_spacing_mm: values.anchorSpacingMm,
   };
 }
 
@@ -1311,10 +1376,13 @@ function createReportData(
       spacingMm: values.spacingMm,
       spanMm: values.spanMm,
       deflectionLimitDenom: values.deflectionLimitDenom,
+      anchorSpacingMm: values.anchorSpacingMm,
+      anchorCapacityKn: values.anchorCapacityKn,
     },
     loads: {
       designCaseLabel,
       liveLoadKnM2: values.liveLoadKnM2,
+      verticalLoadKnM: values.verticalLoadKnM,
       seismicS: values.seismicS,
       seismicSiteClass: siteClassLabel,
       s5BedrockDepthUnknown: values.seismicSiteClass === "S5" && values.s5BedrockDepthUnknown,

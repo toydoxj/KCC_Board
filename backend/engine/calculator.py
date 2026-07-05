@@ -6,8 +6,12 @@ import math
 from dataclasses import dataclass, replace
 
 from backend.engine.constants import (
+  ANCHOR_SPACING_INCREMENT_MM,
+  ANCHOR_SPACING_MAX_MM,
+  ANCHOR_SPACING_MIN_MM,
   BOLT_YIELD_RATIO_FROM_FRACTURE,
   DEFAULT_ANCHOR_CAPACITY_KN,
+  DEFAULT_ANCHOR_SPACING_MM,
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
@@ -92,6 +96,9 @@ class _ReactionResult:
   required_kN_per_m: float
   anchor_capacity_kN: float
   anchor_spacing_mm: float
+  anchor_allowable_spacing_mm: float
+  anchor_capacity_kN_per_m: float
+  anchor_utilization: float
 
 
 def calculate_wall_check(
@@ -101,10 +108,13 @@ def calculate_wall_check(
   repo = repository or JsonSeedRepository()
   result = _calculate_wall_check_once(request, repo)
   max_height = _maximum_allowable_height_mm(request, repo)
+  anchor_max_height = _maximum_anchor_allowable_height_mm(request, repo)
   return replace(
     result,
     max_height_mm=max_height,
+    anchor_max_height_mm=anchor_max_height,
     max_height_increment_mm=float(MAX_HEIGHT_INCREMENT_MM),
+    anchor_spacing_increment_mm=float(ANCHOR_SPACING_INCREMENT_MM),
   )
 
 
@@ -114,6 +124,7 @@ def _calculate_wall_check_once(
 ) -> WallCheckResult:
   _validate_design_case(request.design_case)
   _validate_strength_check_mode(request.strength_check_mode)
+  _validate_anchor_spacing(request.anchor_spacing_mm)
   repo = repository
   section = _build_section(request, repo)
   neutral_axis = _neutral_axis(section.layers)
@@ -189,6 +200,7 @@ def _calculate_wall_check_once(
       "moment_L_kNm": live_moment,
       "moment_0_7E_kNm": 0.7 * seismic_moment,
       "moment_0_75L_0_7E_kNm": 0.75 * live_moment + 0.7 * seismic_moment,
+      "vertical_load_kN_m": request.vertical_load_kN_m,
       "seismic_weight_kN": seismic_weight,
       "Fa": _seismic_fa(request),
       "Sds": sds,
@@ -196,8 +208,6 @@ def _calculate_wall_check_once(
       "reaction_live_kN_per_m": reaction.live_kN_per_m,
       "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
       **_reaction_intermediate(request, reaction),
-      "anchor_capacity_kN": reaction.anchor_capacity_kN,
-      "anchor_spacing_mm": reaction.anchor_spacing_mm,
     },
   )
 
@@ -251,6 +261,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
         float(inputs.get("horizontal_load_kg_m2", DEFAULT_HORIZONTAL_LOAD_KG_M2)) * GRAVITY / 1000.0,
       )
     ),
+    vertical_load_kN_m=float(inputs.get("vertical_load_kN_m", 0.0)),
     spacing_mm=float(inputs["spacing_mm"]),
     span_mm=float(inputs["span_mm"]),
     deflection_limit_denom=int(inputs.get("deflection_limit_denom", DEFAULT_DEFLECTION_LIMIT_DENOM)),
@@ -268,6 +279,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
     strength_check_mode=str(inputs.get("strength_check_mode", STRENGTH_CHECK_COMPOSITE)),
     omega=DEFAULT_OMEGA,
     anchor_capacity_kN=float(inputs.get("anchor_capacity_kN", DEFAULT_ANCHOR_CAPACITY_KN)),
+    anchor_spacing_mm=float(inputs.get("anchor_spacing_mm", DEFAULT_ANCHOR_SPACING_MM)),
   )
 
 
@@ -426,7 +438,7 @@ def _is_central_joint_method(method: str) -> bool:
 def _effective_inertia_correction_factor(group: str, method: str) -> float:
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
-    return 0.22 if _is_central_joint_method(method) else 1.0
+    return 0.22 if _is_central_joint_method(method) else 0.7
   if normalized_group.startswith("CH-STUD"):
     return 0.58
   if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
@@ -658,6 +670,30 @@ def _maximum_allowable_height_mm(
   return max_height
 
 
+def _maximum_anchor_allowable_height_mm(
+  request: WallCheckRequest,
+  repository: MaterialRepository,
+) -> float:
+  if request.design_case == DESIGN_CASE_NON_SEISMIC:
+    return 0.0
+  search_limit = max(
+    MAX_HEIGHT_SEARCH_LIMIT_MM,
+    math.ceil(request.span_mm / MAX_HEIGHT_INCREMENT_MM) * MAX_HEIGHT_INCREMENT_MM,
+  )
+  max_height = 0.0
+  for height_mm in range(MAX_HEIGHT_INCREMENT_MM, int(search_limit) + MAX_HEIGHT_INCREMENT_MM, MAX_HEIGHT_INCREMENT_MM):
+    trial_request = replace(request, span_mm=float(height_mm))
+    result = _calculate_wall_check_once(trial_request, repository)
+    anchor_utilization = result.intermediate.get("anchor_utilization", math.inf)
+    if (
+      result.stress_verdict == "O.K"
+      and result.deflection_verdict == "O.K"
+      and anchor_utilization <= 1.0
+    ):
+      max_height = float(height_mm)
+  return max_height
+
+
 def _deflection_mm(request: WallCheckRequest, I_eff_mm4: float) -> float:
   line_load_N_mm = request.live_load_kN_m2 * (request.spacing_mm / 1000.0)
   return 5.0 * line_load_N_mm * request.span_mm**4 / (384.0 * STUD_ELASTIC_MODULUS * I_eff_mm4)
@@ -701,7 +737,11 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
     required = load_combination_L
   else:
     required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_7E)
-  anchor_spacing_mm = request.anchor_capacity_kN / required * 1000.0 if required > 0.0 else 0.0
+  anchor_allowable_spacing_mm = _anchor_spacing_floor_mm(
+    request.anchor_capacity_kN / required * 1000.0 if required > 0.0 else 0.0,
+  )
+  anchor_capacity_kN_per_m = request.anchor_capacity_kN / (request.anchor_spacing_mm / 1000.0)
+  anchor_utilization = required / anchor_capacity_kN_per_m if anchor_capacity_kN_per_m > 0.0 else math.inf
   return _ReactionResult(
     live_kN_per_m=live_kN_per_m,
     seismic_kN_per_m=seismic_kN_per_m,
@@ -710,7 +750,10 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
     load_combination_0_75L_0_7E_kN_per_m=load_combination_0_75L_0_7E,
     required_kN_per_m=required,
     anchor_capacity_kN=request.anchor_capacity_kN,
-    anchor_spacing_mm=anchor_spacing_mm,
+    anchor_spacing_mm=request.anchor_spacing_mm,
+    anchor_allowable_spacing_mm=anchor_allowable_spacing_mm,
+    anchor_capacity_kN_per_m=anchor_capacity_kN_per_m,
+    anchor_utilization=anchor_utilization,
   )
 
 
@@ -724,9 +767,20 @@ def _reaction_intermediate(request: WallCheckRequest, reaction: _ReactionResult)
       {
         "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
         "reaction_0_75L_0_7E_kN_per_m": reaction.load_combination_0_75L_0_7E_kN_per_m,
+        "anchor_capacity_kN": reaction.anchor_capacity_kN,
+        "anchor_spacing_mm": reaction.anchor_spacing_mm,
+        "anchor_allowable_spacing_mm": reaction.anchor_allowable_spacing_mm,
+        "anchor_capacity_kN_per_m": reaction.anchor_capacity_kN_per_m,
+        "anchor_utilization": reaction.anchor_utilization,
       }
     )
   return values
+
+
+def _anchor_spacing_floor_mm(value: float) -> float:
+  if value <= 0.0 or not math.isfinite(value):
+    return 0.0
+  return math.floor(value / ANCHOR_SPACING_INCREMENT_MM) * ANCHOR_SPACING_INCREMENT_MM
 
 
 def _seismic_fa(request: WallCheckRequest) -> float:
@@ -747,3 +801,13 @@ def _validate_design_case(design_case: str) -> None:
 def _validate_strength_check_mode(strength_check_mode: str) -> None:
   if strength_check_mode not in STRENGTH_CHECK_MODES:
     raise ValueError(f"지원하지 않는 강도 체크 기준입니다: {strength_check_mode}")
+
+
+def _validate_anchor_spacing(anchor_spacing_mm: float) -> None:
+  if anchor_spacing_mm < ANCHOR_SPACING_MIN_MM or anchor_spacing_mm > ANCHOR_SPACING_MAX_MM:
+    raise ValueError(
+      f"앵커 간격은 {ANCHOR_SPACING_MIN_MM:g}mm 이상 {ANCHOR_SPACING_MAX_MM:g}mm 이하로 입력해야 합니다.",
+    )
+  quotient = anchor_spacing_mm / ANCHOR_SPACING_INCREMENT_MM
+  if not math.isclose(quotient, round(quotient), rel_tol=0.0, abs_tol=1e-9):
+    raise ValueError(f"앵커 간격은 {ANCHOR_SPACING_INCREMENT_MM:g}mm 단위로 입력해야 합니다.")

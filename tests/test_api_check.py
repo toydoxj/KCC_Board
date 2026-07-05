@@ -58,10 +58,11 @@ class ApiCheckTest(unittest.TestCase):
     self.assertEqual(stud_methods.status_code, 200)
     stud_methods_body = stud_methods.json()
     self.assertTrue(stud_methods_body["success"])
-    self.assertEqual(len(stud_methods_body["data"]), 10)
+    self.assertEqual(len(stud_methods_body["data"]), 9)
     c_stud_methods = [
       item["method"] for item in stud_methods_body["data"] if item["stud_type"] == "C-STUD"
     ]
+    self.assertNotIn("겹침", c_stud_methods)
     self.assertIn("맞댐이음", c_stud_methods)
     self.assertIn("중앙부 이음", c_stud_methods)
 
@@ -208,7 +209,7 @@ class ApiCheckTest(unittest.TestCase):
       body = response.json()
       self.assertTrue(body["success"])
       self.assertEqual(body["data"]["stress_verdict"], "O.K")
-      self.assertEqual(body["data"]["deflection_verdict"], "O.K")
+      self.assertEqual(body["data"]["deflection_verdict"], "N.G")
 
   def _assert_close(self, key: str, actual: float, expected: Mapping[str, object]) -> None:
     target = float(expected[key])

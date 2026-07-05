@@ -42,10 +42,13 @@ export interface CalculationReportData {
     spacingMm: number;
     spanMm: number;
     deflectionLimitDenom: number;
+    anchorSpacingMm: number;
+    anchorCapacityKn: number;
   };
   loads: {
     designCaseLabel: string;
     liveLoadKnM2: number;
+    verticalLoadKnM: number;
     seismicS: number;
     seismicSiteClass: string;
     s5BedrockDepthUnknown: boolean;
@@ -89,7 +92,15 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
   const strengthCheckModeLabel = strengthCheckModeLabels[data.result.strength_check_mode] ?? data.result.strength_check_mode;
   const isStudOnlyStrengthCheck = data.result.strength_check_mode === "stud_only";
-  const heightLabel = data.calculationMode === "maxHeight" ? "산정 높이" : "검토 높이";
+  const heightLabel =
+    data.calculationMode === "heightCheck"
+      ? "검토 높이"
+      : data.calculationMode === "anchorHeight"
+        ? "앵커 산정 기준높이"
+        : "산정 높이";
+  const isHeightSearchMode = data.calculationMode === "maxHeight" || data.calculationMode === "anchorHeight";
+  const heightSearchLabel = data.calculationMode === "anchorHeight" ? "앵커 기준 최대높이" : "최대 가능 높이";
+  const heightSearchValue = data.calculationMode === "anchorHeight" ? data.result.anchor_max_height_mm : data.result.max_height_mm;
   const reactionFormula =
     data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7E, 0.75L + 0.7E)";
   const mnTerms = nominalMomentTerms(data);
@@ -117,12 +128,12 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
 
       <section className="mt-5 grid gap-3 md:grid-cols-2">
         <ReportBlock title="판정 요약">
-          {data.calculationMode === "maxHeight" ? (
+          {isHeightSearchMode ? (
             <>
               <div className="rounded-md border border-cyan-700 bg-cyan-50 p-3">
-                <div className="text-xs font-medium text-slate-600">최대 가능 높이</div>
+                <div className="text-xs font-medium text-slate-600">{heightSearchLabel}</div>
                 <div className="mt-1 text-2xl font-bold text-cyan-900">
-                  {formatNumber(data.result.max_height_mm)} mm
+                  {formatNumber(heightSearchValue)} mm
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -164,8 +175,15 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="검토 CASE" value={data.loads.designCaseLabel} />
             <KeyValue label="강도 기준" value={strengthCheckModeLabel} />
             <KeyValue label="활하중" value={`${formatNumber(data.loads.liveLoadKnM2)} kN/m²`} />
+            <KeyValue label="연직하중" value={`${formatNumber(data.loads.verticalLoadKnM)} kN/m`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
-            {data.calculationMode === "maxHeight" ? (
+            {isSeismic ? <KeyValue label="앵커 성능" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="앵커 간격" value={`${formatNumber(data.geometry.anchorSpacingMm)} mm`} /> : null}
+            <KeyValue label="런너 기준" value="런너는 0.8T 이상 전부 적용 가능" />
+            {data.stud.method.includes("이중") ? (
+              <KeyValue label="이중스터드" value="석고보드 일면 구성 적용 여부 확인 필요" />
+            ) : null}
+            {isHeightSearchMode ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
             ) : null}
             <KeyValue label="지진 입력" value={`${data.loads.seismicSiteClass}, S=${formatNumber(data.loads.seismicS)}, Ip=${formatNumber(data.loads.seismicIp)}`} />
@@ -273,51 +291,93 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             {data.calculationMode === "maxHeight" ? (
               <KeyValue label="최대 가능 높이" value={`${formatNumber(data.result.max_height_mm)} mm`} />
             ) : null}
+            {data.calculationMode === "anchorHeight" ? (
+              <KeyValue label="앵커 기준 최대높이" value={`${formatNumber(data.result.anchor_max_height_mm)} mm`} />
+            ) : null}
             <KeyValue label="Mn(적용)" value={`${formatNumber(data.result.Mn_kNm)} kN·m`} />
             <KeyValue label="Mn(부분합성)" value={`${formatNumber(data.result.intermediate.Mn_composite_kNm ?? data.result.Mn_kNm)} kN·m`} />
             <KeyValue label="Mn(STUD)" value={`${formatNumber(data.result.intermediate.Mn_stud_only_kNm ?? data.result.Mn_kNm)} kN·m`} />
-            <KeyValue label="지진모멘트" value={`${formatNumber(data.result.seismic_moment_kNm)} kN·m`} />
-            <KeyValue label="지진중량 Wp" value={unitValue(data.result.intermediate.seismic_weight_kN, "kN")} />
+            {isSeismic ? <KeyValue label="지진모멘트" value={`${formatNumber(data.result.seismic_moment_kNm)} kN·m`} /> : null}
+            {isSeismic ? <KeyValue label="지진중량 Wp" value={unitValue(data.result.intermediate.seismic_weight_kN, "kN")} /> : null}
           </div>
         </ReportBlock>
       </section>
 
       <section className="mt-5">
-        <ReportBlock title="반력 산정">
+        <ReportBlock title="설계하중 조합">
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
-            <div>Rh,L = (L × H × B) / 2 / B</div>
-            {isSeismic ? <div>Rh,E = (Fp / 2 × 2) / B</div> : null}
-            <div>{reactionFormula}</div>
-            <div>앵커 간격 = 앵커 성능 / Rh × 1000</div>
+            <div>Mu = {isSeismic ? "max(M(L), M(0.7E), M(0.75L+0.7E))" : "M(L)"}</div>
+            <div>M(L) = L × B × H² / 8</div>
+            {isSeismic ? <div>M(0.7E) = 0.7 × M(E)</div> : null}
+            {isSeismic ? <div>M(0.75L+0.7E) = 0.75 × M(L) + 0.7 × M(E)</div> : null}
           </div>
           <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
-            <KeyValue
-              label="반력 L"
-              value={`${formatNumber(data.result.intermediate.reaction_L_kN_per_m ?? 0)} kN/m`}
-            />
-            <KeyValue
-              label="반력 0.7E"
-              value={`${formatNumber(data.result.intermediate.reaction_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
-            />
-            <KeyValue
-              label="반력 0.75L+0.7E"
-              value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
-            />
-            <KeyValue
-              label="필요 반력"
-              value={`${formatNumber(data.result.intermediate.reaction_required_kN_per_m ?? 0)} kN/m`}
-            />
-            <KeyValue
-              label="앵커 성능"
-              value={`${formatNumber(data.result.intermediate.anchor_capacity_kN ?? 0)} kN/개`}
-            />
-            <KeyValue
-              label="앵커 간격"
-              value={`${formatNumber(data.result.intermediate.anchor_spacing_mm ?? 0)} mm`}
-            />
+            <KeyValue label="M(L)" value={`${formatNumber(data.result.intermediate.moment_L_kNm ?? 0)} kN·m`} />
+            {isSeismic ? (
+              <KeyValue label="M(0.7E)" value={`${formatNumber(data.result.intermediate.moment_0_7E_kNm ?? 0)} kN·m`} />
+            ) : null}
+            {isSeismic ? (
+              <KeyValue
+                label="M(0.75L+0.7E)"
+                value={`${formatNumber(data.result.intermediate.moment_0_75L_0_7E_kNm ?? 0)} kN·m`}
+              />
+            ) : null}
+            <KeyValue label="Mu" value={`${formatNumber(data.result.Mu_kNm)} kN·m`} />
+            <KeyValue label="연직하중" value={`${formatNumber(data.loads.verticalLoadKnM)} kN/m`} />
           </div>
         </ReportBlock>
       </section>
+
+      {isSeismic ? (
+        <section className="mt-5">
+          <ReportBlock title="반력 산정">
+            <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
+              <div>Rh,L = (L × H × B) / 2 / B</div>
+              <div>Rh,E = (Fp / 2 × 2) / B</div>
+              <div>{reactionFormula}</div>
+              <div>허용 앵커 간격 = 앵커 성능 / Rh × 1000</div>
+            </div>
+            <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
+              <KeyValue
+                label="반력 L"
+                value={`${formatNumber(data.result.intermediate.reaction_L_kN_per_m ?? 0)} kN/m`}
+              />
+              <KeyValue
+                label="반력 0.7E"
+                value={`${formatNumber(data.result.intermediate.reaction_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
+              />
+              <KeyValue
+                label="반력 0.75L+0.7E"
+                value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
+              />
+              <KeyValue
+                label="필요 반력"
+                value={`${formatNumber(data.result.intermediate.reaction_required_kN_per_m ?? 0)} kN/m`}
+              />
+              <KeyValue
+                label="앵커 성능"
+                value={`${formatNumber(data.result.intermediate.anchor_capacity_kN ?? 0)} kN/개`}
+              />
+              <KeyValue
+                label="검토 앵커 간격"
+                value={`${formatNumber(data.result.intermediate.anchor_spacing_mm ?? 0)} mm`}
+              />
+              <KeyValue
+                label="허용 앵커 간격"
+                value={`${formatNumber(data.result.intermediate.anchor_allowable_spacing_mm ?? 0)} mm`}
+              />
+              <KeyValue
+                label="앵커 저항"
+                value={`${formatNumber(data.result.intermediate.anchor_capacity_kN_per_m ?? 0)} kN/m`}
+              />
+              <KeyValue
+                label="앵커 사용률"
+                value={formatNumber(data.result.intermediate.anchor_utilization ?? 0)}
+              />
+            </div>
+          </ReportBlock>
+        </section>
+      ) : null}
 
       <section className="mt-5">
         <ReportBlock title="Mn 산정 상세">

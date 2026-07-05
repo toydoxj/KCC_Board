@@ -80,6 +80,7 @@ export interface WallCheckPayload {
   strength_check_mode: StrengthCheckMode;
   horizontal_load_kg_m2: number;
   live_load_kN_m2?: number;
+  vertical_load_kN_m: number;
   spacing_mm: number;
   span_mm: number;
   deflection_limit_denom: number;
@@ -98,6 +99,7 @@ export interface WallCheckPayload {
   };
   omega: number;
   anchor_capacity_kN: number;
+  anchor_spacing_mm: number;
 }
 
 export interface LayerResult {
@@ -127,7 +129,9 @@ export interface WallCheckResult {
   deflection_verdict: string;
   stress_verdict: string;
   max_height_mm: number;
+  anchor_max_height_mm: number;
   max_height_increment_mm: number;
+  anchor_spacing_increment_mm: number;
   layers: LayerResult[];
   intermediate: Record<string, number>;
 }

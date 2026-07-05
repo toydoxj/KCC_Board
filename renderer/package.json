@@ -37,7 +37,6 @@
       "target": "nsis"
     }
   },
-  "dependencies": {},
   "devDependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@types/node": "^22.10.0",
@@ -46,8 +45,8 @@
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.16.0",
     "eslint-config-next": "^15.0.0",
     "lucide-react": "^0.468.0",

@@ -25,17 +25,21 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
   const deflectionOk = result.deflection_verdict === "O.K";
   const designCaseLabel = result.design_case === "non_seismic" ? "비내진" : "내진";
   const strengthCheckModeLabel = strengthCheckModeLabels[result.strength_check_mode] ?? result.strength_check_mode;
+  const isSeismic = result.design_case !== "non_seismic";
+  const isHeightSearchMode = mode === "maxHeight" || mode === "anchorHeight";
+  const heightSearchLabel = mode === "anchorHeight" ? "앵커 기준 최대높이" : "최대 가능 높이";
+  const heightSearchValue = mode === "anchorHeight" ? result.anchor_max_height_mm : result.max_height_mm;
 
-  if (mode === "maxHeight") {
+  if (isHeightSearchMode) {
     return (
       <div className="grid gap-4">
         <div className="rounded-md border border-primary/40 bg-cyan-50 p-4">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-semibold text-primary">최대 가능 높이</span>
+            <span className="text-sm font-semibold text-primary">{heightSearchLabel}</span>
             <Ruler className="h-5 w-5 text-primary" aria-hidden="true" />
           </div>
           <div className="mt-3 text-3xl font-bold text-foreground">
-            {numberFormat.format(result.max_height_mm)}
+            {numberFormat.format(heightSearchValue)}
             <span className="ml-1 text-base font-semibold text-muted-foreground">mm</span>
           </div>
           <div className="mt-1 text-xs font-medium text-muted-foreground">
@@ -57,6 +61,7 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
           <Metric label="처짐" value={result.deflection_mm} suffix="mm" />
           <Metric label="처짐한계" value={result.deflection_limit_mm} suffix="mm" />
         </div>
+        <LoadCombinationMetrics result={result} isSeismic={isSeismic} />
         <ReactionMetrics result={result} />
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <Metric label="중립축" value={result.neutral_axis_mm} suffix="mm" />
@@ -86,8 +91,9 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
         <Metric label="Mn(STUD)" value={intermediateValue(result, "Mn_stud_only_kNm")} suffix="kN·m" />
         <Metric label="처짐" value={result.deflection_mm} suffix="mm" />
         <Metric label="처짐한계" value={result.deflection_limit_mm} suffix="mm" />
-        <Metric label="지진모멘트" value={result.seismic_moment_kNm} suffix="kN·m" />
+        {isSeismic ? <Metric label="지진모멘트" value={result.seismic_moment_kNm} suffix="kN·m" /> : null}
       </div>
+      <LoadCombinationMetrics result={result} isSeismic={isSeismic} />
       <ReactionMetrics result={result} />
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
         <Metric label="중립축" value={result.neutral_axis_mm} suffix="mm" />
@@ -101,7 +107,29 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
   );
 }
 
+function LoadCombinationMetrics({ result, isSeismic }: { result: WallCheckResult; isSeismic: boolean }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
+      <Metric label="M(L)" value={intermediateValue(result, "moment_L_kNm")} suffix="kN·m" />
+      {isSeismic ? <Metric label="M(0.7E)" value={intermediateValue(result, "moment_0_7E_kNm")} suffix="kN·m" /> : null}
+      {isSeismic ? (
+        <Metric
+          label="M(0.75L+0.7E)"
+          value={intermediateValue(result, "moment_0_75L_0_7E_kNm")}
+          suffix="kN·m"
+        />
+      ) : null}
+      <Metric label="Mu" value={result.Mu_kNm} suffix="kN·m" />
+      <Metric label="연직하중" value={intermediateValue(result, "vertical_load_kN_m")} suffix="kN/m" />
+    </div>
+  );
+}
+
 function ReactionMetrics({ result }: { result: WallCheckResult }) {
+  if (result.design_case === "non_seismic") {
+    return null;
+  }
+
   return (
     <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
       <Metric label="반력 L" value={intermediateValue(result, "reaction_L_kN_per_m")} suffix="kN/m" />
@@ -113,7 +141,10 @@ function ReactionMetrics({ result }: { result: WallCheckResult }) {
       />
       <Metric label="필요 반력" value={intermediateValue(result, "reaction_required_kN_per_m")} suffix="kN/m" />
       <Metric label="앵커 성능" value={intermediateValue(result, "anchor_capacity_kN")} suffix="kN/개" />
-      <Metric label="앵커 간격" value={intermediateValue(result, "anchor_spacing_mm")} suffix="mm" />
+      <Metric label="검토 앵커 간격" value={intermediateValue(result, "anchor_spacing_mm")} suffix="mm" />
+      <Metric label="허용 앵커 간격" value={intermediateValue(result, "anchor_allowable_spacing_mm")} suffix="mm" />
+      <Metric label="앵커 저항" value={intermediateValue(result, "anchor_capacity_kN_per_m")} suffix="kN/m" />
+      <Metric label="앵커 사용률" value={intermediateValue(result, "anchor_utilization")} suffix="" />
     </div>
   );
 }

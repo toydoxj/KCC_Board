@@ -40,7 +40,7 @@ class SqliteRepositoryTest(unittest.TestCase):
       self.assertEqual(_count_rows(connection, "board_property"), 22)
       self.assertEqual(_count_rows(connection, "stud_section"), 69)
       self.assertEqual(_count_rows(connection, "bolt_material"), 9)
-      self.assertEqual(_count_rows(connection, "stud_method"), 10)
+      self.assertEqual(_count_rows(connection, "stud_method"), 9)
 
   def test_lookup_matches_json_repository(self) -> None:
     json_board = self.json_repository.get_board("방화", 19.0)
@@ -69,8 +69,9 @@ class SqliteRepositoryTest(unittest.TestCase):
 
   def test_stud_method_catalog_preserves_seed_rows(self) -> None:
     methods = self.sqlite_repository.list_stud_methods()
-    self.assertEqual(len(methods), 10)
+    self.assertEqual(len(methods), 9)
     c_stud_methods = [item.method for item in methods if item.stud_type == "C-STUD"]
+    self.assertNotIn("겹침", c_stud_methods)
     self.assertIn("맞댐이음", c_stud_methods)
     self.assertIn("중앙부 이음", c_stud_methods)
     self.assertIn(None, [item.method for item in methods if item.stud_type == "CH-STUD"])

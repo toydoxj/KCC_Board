@@ -178,8 +178,8 @@ class GoldenCaseTest(unittest.TestCase):
 
   def test_effective_inertia_correction_factor_mapping(self) -> None:
     cases = [
-      ("C-STUD", "기본", 1.0),
-      ("C-STUD", "맞댐이음", 1.0),
+      ("C-STUD", "기본", 0.7),
+      ("C-STUD", "맞댐이음", 0.7),
       ("C-STUD", "중앙부 이음", 0.22),
       ("C-STUD", "중앙부연결", 0.22),
       ("CH-STUD", "기본", 0.58),
@@ -238,7 +238,9 @@ class GoldenCaseTest(unittest.TestCase):
     expected_0_7E = 0.7 * expected_seismic
     expected_0_75L_0_7E = 0.75 * expected_live + 0.7 * expected_seismic
     expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_7E)
-    expected_anchor_spacing = request.anchor_capacity_kN / expected_required * 1000.0
+    expected_anchor_allowable_spacing = 200.0
+    expected_anchor_capacity_per_m = request.anchor_capacity_kN / (request.anchor_spacing_mm / 1000.0)
+    expected_anchor_utilization = expected_required / expected_anchor_capacity_per_m
 
     self.assertAlmostEqual(result.intermediate["reaction_L_kN_per_m"], expected_live)
     self.assertAlmostEqual(result.intermediate["reaction_0_7E_kN_per_m"], expected_0_7E)
@@ -248,14 +250,17 @@ class GoldenCaseTest(unittest.TestCase):
     )
     self.assertAlmostEqual(result.intermediate["reaction_required_kN_per_m"], expected_required)
     self.assertAlmostEqual(result.intermediate["anchor_capacity_kN"], 0.4)
-    self.assertAlmostEqual(result.intermediate["anchor_spacing_mm"], expected_anchor_spacing)
+    self.assertAlmostEqual(result.intermediate["anchor_spacing_mm"], request.anchor_spacing_mm)
+    self.assertAlmostEqual(result.intermediate["anchor_allowable_spacing_mm"], expected_anchor_allowable_spacing)
+    self.assertAlmostEqual(result.intermediate["anchor_capacity_kN_per_m"], expected_anchor_capacity_per_m)
+    self.assertAlmostEqual(result.intermediate["anchor_utilization"], expected_anchor_utilization)
 
     stronger_anchor_result = _calculate_wall_check_once(
       replace(request, anchor_capacity_kN=0.8),
       self.repository,
     )
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
-    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_spacing_mm"], expected_anchor_spacing * 2.0)
+    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], 400.0)
 
   def test_deflection_uses_live_load_kn_m2(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
@@ -282,12 +287,10 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertEqual(result.design_case, "non_seismic")
     self.assertNotIn("reaction_0_7E_kN_per_m", result.intermediate)
     self.assertNotIn("reaction_0_75L_0_7E_kN_per_m", result.intermediate)
+    self.assertNotIn("anchor_capacity_kN", result.intermediate)
+    self.assertNotIn("anchor_spacing_mm", result.intermediate)
     self.assertAlmostEqual(result.Mu_kNm, expected_live_moment)
     self.assertAlmostEqual(result.intermediate["reaction_required_kN_per_m"], expected_live_reaction)
-    self.assertAlmostEqual(
-      result.intermediate["anchor_spacing_mm"],
-      non_seismic_request.anchor_capacity_kN / expected_live_reaction * 1000.0,
-    )
 
   def test_ch_stud_rear_board_is_inserted_without_offsetting_stud_centroid(self) -> None:
     request = replace(
