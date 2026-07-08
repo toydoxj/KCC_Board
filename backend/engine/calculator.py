@@ -138,7 +138,11 @@ def _calculate_wall_check_once(
   I_eff_raw = stud_result.inertia_about_neutral_axis_mm4 + math.sqrt(eta) * (
     I_full - stud_result.inertia_about_neutral_axis_mm4
   )
-  I_eff_correction_factor = _effective_inertia_correction_factor(group, method)
+  I_eff_correction_factor = _effective_inertia_correction_factor(
+    group,
+    method,
+    has_rear_board=bool(request.rear_boards),
+  )
   I_eff = I_eff_raw * I_eff_correction_factor
   Mn_composite = _nominal_moment(layer_results, shear_by_name, section.stud_section_modulus_depth_mm)
   Mn_stud_only = _nominal_moment(
@@ -435,24 +439,37 @@ def _is_central_joint_method(method: str) -> bool:
   return "중앙부이음" in normalized or "중앙부연결" in normalized
 
 
-def _effective_inertia_correction_factor(group: str, method: str) -> float:
+def _is_basic_method(method: str) -> bool:
+  normalized = method.replace(".", "-").replace(" ", "").upper()
+  return normalized == "C-STUD" or "기본" in normalized
+
+
+def _effective_inertia_correction_factor(
+  group: str,
+  method: str,
+  has_rear_board: bool = True,
+) -> float:
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
-    return 0.22 if _is_central_joint_method(method) else 0.7
+    if _is_central_joint_method(method):
+      return 0.23
+    if _is_basic_method(method) and not has_rear_board:
+      return 1.0
+    return 0.7
   if normalized_group.startswith("CH-STUD"):
-    return 0.58
+    return 0.62
   if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
-    return 0.44
+    return 0.38
   if normalized_group == "R-STUD":
-    return 0.28
+    return 0.24
   if normalized_group == "I-STUD":
-    return 0.8
+    return 0.85
   if normalized_group == "HR-STUD":
-    return 0.78
+    return 0.67
   if normalized_group == "RV-STUD":
-    return 0.45
+    return 0.4
   if normalized_group == "MP-STUD":
-    return 0.45
+    return 0.38
   return 1.0
 
 

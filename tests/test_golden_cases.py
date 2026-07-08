@@ -180,23 +180,32 @@ class GoldenCaseTest(unittest.TestCase):
     cases = [
       ("C-STUD", "기본", 0.7),
       ("C-STUD", "맞댐이음", 0.7),
-      ("C-STUD", "중앙부 이음", 0.22),
-      ("C-STUD", "중앙부연결", 0.22),
-      ("CH-STUD", "기본", 0.58),
-      ("CH-STUD(개량형)", "기본", 0.58),
-      ("T-Silent", "기본", 0.44),
-      ("T.silent-STUD", "기본", 0.44),
-      ("R.STUD", "기본", 0.28),
-      ("R-STUD", "기본", 0.28),
-      ("I-STUD", "기본", 0.8),
-      ("HR-STUD", "기본", 0.78),
-      ("RV-STUD", "기본", 0.45),
-      ("MP-STUD", "기본", 0.45),
+      ("C-STUD", "중앙부 이음", 0.23),
+      ("C-STUD", "중앙부연결", 0.23),
+      ("CH-STUD", "기본", 0.62),
+      ("CH-STUD(개량형)", "기본", 0.62),
+      ("T-Silent", "기본", 0.38),
+      ("T.silent-STUD", "기본", 0.38),
+      ("R.STUD", "기본", 0.24),
+      ("R-STUD", "기본", 0.24),
+      ("I-STUD", "기본", 0.85),
+      ("HR-STUD", "기본", 0.67),
+      ("RV-STUD", "기본", 0.4),
+      ("MP-STUD", "기본", 0.38),
     ]
 
     for group, method, expected in cases:
       with self.subTest(group=group, method=method):
         self.assertAlmostEqual(_effective_inertia_correction_factor(group, method), expected)
+
+    self.assertAlmostEqual(
+      _effective_inertia_correction_factor("C-STUD", "기본", has_rear_board=False),
+      1.0,
+    )
+    self.assertAlmostEqual(
+      _effective_inertia_correction_factor("C-STUD", "C-STUD", has_rear_board=False),
+      1.0,
+    )
 
   def test_effective_inertia_correction_factor_applies_only_to_i_eff(self) -> None:
     request = replace(
@@ -209,7 +218,7 @@ class GoldenCaseTest(unittest.TestCase):
     result = _calculate_wall_check_once(request, self.repository)
     layer_inertia_sum = sum(layer.inertia_about_neutral_axis_mm4 for layer in result.layers)
 
-    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.58)
+    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.62)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
     self.assertAlmostEqual(
       result.I_eff_mm4,
@@ -222,10 +231,10 @@ class GoldenCaseTest(unittest.TestCase):
     )
     central_result = _calculate_wall_check_once(central_request, self.repository)
 
-    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.22)
+    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.23)
     self.assertAlmostEqual(
       central_result.I_eff_mm4,
-      central_result.intermediate["I_eff_raw_mm4"] * 0.22,
+      central_result.intermediate["I_eff_raw_mm4"] * 0.23,
     )
 
   def test_reaction_result_is_converted_to_required_kN_per_m(self) -> None:
