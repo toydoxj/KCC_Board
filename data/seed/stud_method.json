@@ -18,6 +18,10 @@
       "method": "이중스터드"
     },
     {
+      "stud_type": "C-STUD",
+      "method": "일면마감"
+    },
+    {
       "stud_type": "CH-STUD",
       "method": null
     },

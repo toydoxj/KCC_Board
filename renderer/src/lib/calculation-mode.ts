@@ -4,7 +4,7 @@ export type StrengthCheckMode = "composite" | "stud_only";
 export const calculationModeLabels = {
   heightCheck: "높이 검토",
   maxHeight: "최대높이 산정",
-  anchorHeight: "앵커높이 산정",
+  anchorHeight: "앵커간격 산정",
 } satisfies Record<CalculationMode, string>;
 
 export const strengthCheckModeLabels = {

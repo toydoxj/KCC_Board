@@ -26,9 +26,7 @@ import {
 } from "@/lib/api";
 import {
   calculationModeLabels,
-  strengthCheckModeLabels,
   type CalculationMode,
-  type StrengthCheckMode,
 } from "@/lib/calculation-mode";
 import { cn } from "@/lib/utils";
 import { useCheckStore } from "@/store/check-store";
@@ -52,14 +50,12 @@ const chStudRearBoardThicknessMm = 25;
 const chStudImprovedRearBoardThicknessMm = 12.5;
 const iStudRearBoardKind = "방화";
 const iStudRearBoardThicknessMm = 25;
+const doubleStudMethod = "이중스터드";
+const oneSideFinishMethod = "일면마감";
 const calculationModeOptions: Array<{ value: CalculationMode; label: string }> = [
   { value: "heightCheck", label: "높이검토" },
   { value: "maxHeight", label: "최대높이" },
-  { value: "anchorHeight", label: "앵커높이" },
-];
-const strengthCheckModeOptions: Array<{ value: StrengthCheckMode; label: string }> = [
-  { value: "composite", label: strengthCheckModeLabels.composite },
-  { value: "stud_only", label: strengthCheckModeLabels.stud_only },
+  { value: "anchorHeight", label: "앵커간격" },
 ];
 const designCaseOptions: Array<{ value: DesignCase; label: string }> = [
   { value: "seismic", label: "내진" },
@@ -241,19 +237,23 @@ export default function Home() {
   const selectedFixedRearBoardThickness = fixedRearBoardThicknessForGroup(selectedStudGroup);
   const selectedFixedRearBoardKind = fixedRearBoardKindForGroup(selectedStudGroup);
   const selectedHasFixedRearBoard = selectedFixedRearBoardThickness !== null;
+  const selectedIsOneSideFinish = isOneSideFinishMethod(selectedStudMethod);
+  const selectedRearBoardInputsDisabled = selectedHasFixedRearBoard || selectedIsOneSideFinish;
   const selectedRearBoards = useMemo(
     () =>
       compactBoards(
         catalog?.boards ?? [],
-        selectedFixedRearBoardThickness === null
-          ? [
-              boardSelection(formValues.rearBoardOuterKind, formValues.rearBoardOuterThickness),
-              boardSelection(formValues.rearBoardMiddleKind, formValues.rearBoardMiddleThickness),
-              boardSelection(formValues.rearBoardInnerKind, formValues.rearBoardInnerThickness),
-            ]
-          : [
-              boardSelection(selectedFixedRearBoardKind ?? formValues.rearBoardInnerKind, thicknessValue(selectedFixedRearBoardThickness)),
-            ],
+        selectedIsOneSideFinish
+          ? []
+          : selectedFixedRearBoardThickness === null
+            ? [
+                boardSelection(formValues.rearBoardOuterKind, formValues.rearBoardOuterThickness),
+                boardSelection(formValues.rearBoardMiddleKind, formValues.rearBoardMiddleThickness),
+                boardSelection(formValues.rearBoardInnerKind, formValues.rearBoardInnerThickness),
+              ]
+            : [
+                boardSelection(selectedFixedRearBoardKind ?? formValues.rearBoardInnerKind, thicknessValue(selectedFixedRearBoardThickness)),
+              ],
       ),
     [
       catalog?.boards,
@@ -265,6 +265,7 @@ export default function Home() {
       formValues.rearBoardOuterThickness,
       selectedFixedRearBoardKind,
       selectedFixedRearBoardThickness,
+      selectedIsOneSideFinish,
     ],
   );
   const selectedFrontBoards = useMemo(
@@ -290,7 +291,6 @@ export default function Home() {
   );
   const selectedSiteClass = (formValues.seismicSiteClass ?? defaultValues.seismicSiteClass) as SiteClass;
   const selectedCalculationMode = (formValues.calculationMode ?? defaultValues.calculationMode) as CalculationMode;
-  const selectedStrengthCheckMode = (formValues.strengthCheckMode ?? defaultValues.strengthCheckMode) as StrengthCheckMode;
   const heightFieldLabel =
     selectedCalculationMode === "heightCheck"
       ? "검토 높이 mm"
@@ -301,16 +301,25 @@ export default function Home() {
     selectedCalculationMode === "heightCheck"
       ? "높이 검토"
       : selectedCalculationMode === "anchorHeight"
-        ? "앵커높이 산정"
+        ? "앵커간격 산정"
         : "최대높이 산정";
   const calculationModeRegister = register("calculationMode");
-  const strengthCheckModeRegister = register("strengthCheckMode");
   const studGroupRegister = register("studGroup");
   const [reportData, setReportData] = useState<CalculationReportData | null>(null);
   const [selectedProductId, setSelectedProductId] = useState(noProductValue);
   const [productMessage, setProductMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (selectedIsOneSideFinish) {
+      setRearBoardValue("rearBoardOuterKind", noneBoardValue, formValues.rearBoardOuterKind);
+      setRearBoardValue("rearBoardOuterThickness", noThicknessValue, formValues.rearBoardOuterThickness);
+      setRearBoardValue("rearBoardMiddleKind", noneBoardValue, formValues.rearBoardMiddleKind);
+      setRearBoardValue("rearBoardMiddleThickness", noThicknessValue, formValues.rearBoardMiddleThickness);
+      setRearBoardValue("rearBoardInnerKind", noneBoardValue, formValues.rearBoardInnerKind);
+      setRearBoardValue("rearBoardInnerThickness", noThicknessValue, formValues.rearBoardInnerThickness);
+      return;
+    }
+
     if (!catalog || selectedFixedRearBoardThickness === null) {
       return;
     }
@@ -329,14 +338,14 @@ export default function Home() {
       return;
     }
 
-    setChBoardValue("rearBoardOuterKind", noneBoardValue, formValues.rearBoardOuterKind);
-    setChBoardValue("rearBoardOuterThickness", noThicknessValue, formValues.rearBoardOuterThickness);
-    setChBoardValue("rearBoardMiddleKind", noneBoardValue, formValues.rearBoardMiddleKind);
-    setChBoardValue("rearBoardMiddleThickness", noThicknessValue, formValues.rearBoardMiddleThickness);
-    setChBoardValue("rearBoardInnerKind", fixedRearBoardKind, formValues.rearBoardInnerKind);
-    setChBoardValue("rearBoardInnerThickness", thicknessValue(selectedFixedRearBoardThickness), formValues.rearBoardInnerThickness);
+    setRearBoardValue("rearBoardOuterKind", noneBoardValue, formValues.rearBoardOuterKind);
+    setRearBoardValue("rearBoardOuterThickness", noThicknessValue, formValues.rearBoardOuterThickness);
+    setRearBoardValue("rearBoardMiddleKind", noneBoardValue, formValues.rearBoardMiddleKind);
+    setRearBoardValue("rearBoardMiddleThickness", noThicknessValue, formValues.rearBoardMiddleThickness);
+    setRearBoardValue("rearBoardInnerKind", fixedRearBoardKind, formValues.rearBoardInnerKind);
+    setRearBoardValue("rearBoardInnerThickness", thicknessValue(selectedFixedRearBoardThickness), formValues.rearBoardInnerThickness);
 
-    function setChBoardValue(
+    function setRearBoardValue(
       field: BoardKindField | BoardThicknessField,
       nextValue: string,
       currentValue: string | undefined,
@@ -358,6 +367,7 @@ export default function Home() {
     formValues.rearBoardOuterThickness,
     selectedFixedRearBoardKind,
     selectedFixedRearBoardThickness,
+    selectedIsOneSideFinish,
     selectedStudGroup,
     setErrorMessage,
     setValue,
@@ -425,11 +435,6 @@ export default function Home() {
     clearCalculationResult();
   }
 
-  function handleStrengthCheckModeChange(event: ChangeEvent<HTMLInputElement>) {
-    strengthCheckModeRegister.onChange(event);
-    clearCalculationResult();
-  }
-
   function handleProductChange(event: ChangeEvent<HTMLSelectElement>) {
     const productId = event.target.value;
     setSelectedProductId(productId);
@@ -476,38 +481,6 @@ export default function Home() {
                   checked={selected}
                   {...calculationModeRegister}
                   onChange={handleCalculationModeChange}
-                />
-                {option.label}
-              </label>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  function renderStrengthCheckModeControl() {
-    return (
-      <div className="grid gap-1.5">
-        <div className="text-sm font-medium text-foreground">강도 체크</div>
-        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-input bg-muted p-1">
-          {strengthCheckModeOptions.map((option) => {
-            const selected = selectedStrengthCheckMode === option.value;
-            return (
-              <label
-                key={option.value}
-                className={cn(
-                  "flex h-10 cursor-pointer items-center justify-center whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:text-sm",
-                  selected ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <input
-                  className="sr-only"
-                  type="radio"
-                  value={option.value}
-                  checked={selected}
-                  {...strengthCheckModeRegister}
-                  onChange={handleStrengthCheckModeChange}
                 />
                 {option.label}
               </label>
@@ -649,19 +622,17 @@ export default function Home() {
 	                  </div>
 	                </div>
 
-	                <div className="grid gap-3 md:grid-cols-2">
-	                  {renderCalculationModeControl()}
-	                  {renderStrengthCheckModeControl()}
-	                </div>
+	                {renderCalculationModeControl()}
 
 	                <div className="grid gap-3 sm:grid-cols-3">
                   {renderBoardSlot("후면 외측 보드", "rearBoardOuterKind", "rearBoardOuterThickness", {
-                    disabled: selectedHasFixedRearBoard,
+                    disabled: selectedRearBoardInputsDisabled,
                   })}
                   {renderBoardSlot("후면 중간 보드", "rearBoardMiddleKind", "rearBoardMiddleThickness", {
-                    disabled: selectedHasFixedRearBoard,
+                    disabled: selectedRearBoardInputsDisabled,
                   })}
                   {renderBoardSlot("후면 내측 보드", "rearBoardInnerKind", "rearBoardInnerThickness", {
+                    disabled: selectedIsOneSideFinish,
                     fixedThickness: selectedFixedRearBoardThickness ?? undefined,
                     required: selectedHasFixedRearBoard,
                   })}
@@ -760,11 +731,6 @@ export default function Home() {
                 <div className="rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-muted-foreground">
                   런너는 0.8T 이상 전부 적용 가능
                 </div>
-                {selectedStudMethod.includes("이중") ? (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
-                    이중스터드 적용 시 석고보드 일면 구성 적용 여부 확인 필요
-                  </div>
-                ) : null}
 
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field label="3번(외측) 피치 mm" error={errors.boltPitchOuter?.message}>
@@ -898,7 +864,7 @@ function createProductPreset(
   values.studSpec = studSpec;
 
   applyFrontBoardPreset(values, product.frontBoards, boards, warnings);
-  applyRearBoardPreset(values, product.rearBoards, boards, warnings, studGroup);
+  applyRearBoardPreset(values, product.rearBoards, boards, warnings, studGroup, studMethod);
 
   return { values, warnings };
 }
@@ -921,7 +887,15 @@ function applyRearBoardPreset(
   boards: BoardProperty[],
   warnings: string[],
   studGroup: string,
+  studMethod: string,
 ) {
+  if (isOneSideFinishMethod(studMethod)) {
+    setBoardSlot(values, "rearBoardOuterKind", "rearBoardOuterThickness", null);
+    setBoardSlot(values, "rearBoardMiddleKind", "rearBoardMiddleThickness", null);
+    setBoardSlot(values, "rearBoardInnerKind", "rearBoardInnerThickness", null);
+    return;
+  }
+
   const fixedRearThickness = fixedRearBoardThicknessForGroup(studGroup);
   if (fixedRearThickness !== null) {
     const fixedKind = fixedRearBoardKindForGroup(studGroup);
@@ -1013,8 +987,13 @@ function resolveProductStudMethod(
   studMethods: StudMethod[],
   warnings: string[],
 ) {
-  const preferredMethod = (studType ?? "").includes("이중") ? "이중스터드" : fallbackStudMethod;
   const methodOptions = studMethodOptions(studMethods, studGroup).map((option) => option.value);
+  const preferredMethod =
+    (studType ?? "").includes("이중") && methodOptions.includes(oneSideFinishMethod)
+      ? oneSideFinishMethod
+      : (studType ?? "").includes("이중")
+        ? doubleStudMethod
+        : fallbackStudMethod;
   if (methodOptions.includes(preferredMethod)) {
     return preferredMethod;
   }
@@ -1196,6 +1175,13 @@ function studMethodOptions(studMethods: StudMethod[] | undefined, group: string)
     .filter((item) => normalizeStudType(item.stud_type) === normalizeStudType(group))
     .map((item) => item.method ?? fallbackStudMethod);
   const methods = uniqueValues(matchedMethods).filter((method) => method !== "겹침");
+  if (
+    normalizeStudType(group) === "C-STUD"
+    && methods.includes(doubleStudMethod)
+    && !methods.includes(oneSideFinishMethod)
+  ) {
+    methods.push(oneSideFinishMethod);
+  }
   const source = methods.length > 0 ? methods : [fallbackStudMethod];
   return source.map((method) => ({
     value: method,
@@ -1221,6 +1207,10 @@ function studSpecOptions(studs: StudSection[] | undefined, group: string) {
 
 function firstStudSpecValue(studs: StudSection[], group: string) {
   return studSpecOptions(studs, group)[0]?.value ?? defaultValues.studSpec;
+}
+
+function isOneSideFinishMethod(method: string | undefined) {
+  return (method ?? "").replace(/\s/g, "") === oneSideFinishMethod;
 }
 
 function fixedRearBoardThicknessForGroup(group: string) {
@@ -1263,6 +1253,10 @@ function compactBoardPayloads(selections: Array<{ kind: string; thickness: numbe
 }
 
 function rearBoardPayloads(values: CheckFormValues) {
+  if (isOneSideFinishMethod(values.studMethod)) {
+    return [];
+  }
+
   const fixedRearBoardThickness = fixedRearBoardThicknessForGroup(values.studGroup);
   const fixedRearBoardKind = fixedRearBoardKindForGroup(values.studGroup);
   if (fixedRearBoardThickness !== null) {
@@ -1328,12 +1322,19 @@ function createReportData(
   const studAssembly = createStudAssembly(stud, values.studMethod);
   const fixedRearBoardThickness = fixedRearBoardThicknessForGroup(values.studGroup);
   const fixedRearBoardKind = fixedRearBoardKindForGroup(values.studGroup);
+  const isOneSideFinish = isOneSideFinishMethod(values.studMethod);
 
   return {
     generatedAt: new Date().toISOString(),
     calculationMode: values.calculationMode,
     rearBoards:
-      fixedRearBoardThickness === null
+      isOneSideFinish
+        ? [
+            reportBoardSlot("후면 3번(외측)", noneBoardValue, noThicknessValue, boards),
+            reportBoardSlot("후면 2번(중간)", noneBoardValue, noThicknessValue, boards),
+            reportBoardSlot("후면 1번(내측)", noneBoardValue, noThicknessValue, boards),
+          ]
+        : fixedRearBoardThickness === null
         ? [
             reportBoardSlot("후면 3번(외측)", values.rearBoardOuterKind, values.rearBoardOuterThickness, boards),
             reportBoardSlot("후면 2번(중간)", values.rearBoardMiddleKind, values.rearBoardMiddleThickness, boards),

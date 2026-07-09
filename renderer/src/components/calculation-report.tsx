@@ -180,9 +180,6 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             {isSeismic ? <KeyValue label="앵커 성능" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
             {isSeismic ? <KeyValue label="앵커 간격" value={`${formatNumber(data.geometry.anchorSpacingMm)} mm`} /> : null}
             <KeyValue label="런너 기준" value="런너는 0.8T 이상 전부 적용 가능" />
-            {data.stud.method.includes("이중") ? (
-              <KeyValue label="이중스터드" value="석고보드 일면 구성 적용 여부 확인 필요" />
-            ) : null}
             {isHeightSearchMode ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
             ) : null}

@@ -58,13 +58,14 @@ class ApiCheckTest(unittest.TestCase):
     self.assertEqual(stud_methods.status_code, 200)
     stud_methods_body = stud_methods.json()
     self.assertTrue(stud_methods_body["success"])
-    self.assertEqual(len(stud_methods_body["data"]), 9)
+    self.assertEqual(len(stud_methods_body["data"]), 10)
     c_stud_methods = [
       item["method"] for item in stud_methods_body["data"] if item["stud_type"] == "C-STUD"
     ]
     self.assertNotIn("겹침", c_stud_methods)
     self.assertIn("맞댐이음", c_stud_methods)
     self.assertIn("중앙부 이음", c_stud_methods)
+    self.assertIn("일면마감", c_stud_methods)
 
     bolts = self.client.get("/api/db/bolts")
     self.assertEqual(bolts.status_code, 200)
