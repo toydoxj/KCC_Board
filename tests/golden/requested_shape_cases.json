@@ -63,10 +63,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 7600.0,
-        "Mu_at_max_height_kNm": 1.6655840184383173,
+        "max_height_mm": 7850.0,
+        "Mu_at_max_height_kNm": 1.7769641824136984,
         "I_eff_raw_at_2400_mm4": 2306353.938612483,
-        "I_eff_correction_factor": 0.23
+        "I_eff_correction_factor": 0.25
       }
     },
     {
@@ -198,10 +198,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 5750.0,
-        "Mu_at_max_height_kNm": 1.195820966623763,
+        "max_height_mm": 5850.0,
+        "Mu_at_max_height_kNm": 1.237776424356347,
         "I_eff_raw_at_2400_mm4": 550708.9828193213,
-        "I_eff_correction_factor": 0.62
+        "I_eff_correction_factor": 0.65
       }
     },
     {
@@ -234,10 +234,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 10400.0,
-        "Mu_at_max_height_kNm": 3.0894618052806253,
+        "max_height_mm": 10650.0,
+        "Mu_at_max_height_kNm": 3.2397788610340394,
         "I_eff_raw_at_2400_mm4": 1592514.5154365862,
-        "I_eff_correction_factor": 0.67
+        "I_eff_correction_factor": 0.71
       }
     },
     {
@@ -270,10 +270,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 6100.0,
-        "Mu_at_max_height_kNm": 1.0564621158069256,
+        "max_height_mm": 6350.0,
+        "Mu_at_max_height_kNm": 1.1448318641393378,
         "I_eff_raw_at_2400_mm4": 672536.3692526447,
-        "I_eff_correction_factor": 0.38
+        "I_eff_correction_factor": 0.42
       }
     },
     {
@@ -306,10 +306,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 6150.0,
-        "Mu_at_max_height_kNm": 1.0687557509637728,
+        "max_height_mm": 6350.0,
+        "Mu_at_max_height_kNm": 1.1393986058096826,
         "I_eff_raw_at_2400_mm4": 654316.1176403153,
-        "I_eff_correction_factor": 0.4
+        "I_eff_correction_factor": 0.43
       }
     },
     {
@@ -342,10 +342,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 6300.0,
-        "Mu_at_max_height_kNm": 1.1432883682457273,
+        "max_height_mm": 6400.0,
+        "Mu_at_max_height_kNm": 1.1798712915934744,
         "I_eff_raw_at_2400_mm4": 762783.0161803198,
-        "I_eff_correction_factor": 0.38
+        "I_eff_correction_factor": 0.4
       }
     },
     {
@@ -378,10 +378,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 5900.0,
-        "Mu_at_max_height_kNm": 0.9858483686751369,
+        "max_height_mm": 6050.0,
+        "Mu_at_max_height_kNm": 1.0366134706817496,
         "I_eff_raw_at_2400_mm4": 969263.7823909685,
-        "I_eff_correction_factor": 0.24
+        "I_eff_correction_factor": 0.26
       }
     },
     {
@@ -414,10 +414,10 @@
         ]
       },
       "expected": {
-        "max_height_mm": 6350.0,
-        "Mu_at_max_height_kNm": 1.4530080658926368,
+        "max_height_mm": 6400.0,
+        "Mu_at_max_height_kNm": 1.4759801693586065,
         "I_eff_raw_at_2400_mm4": 518526.507483473,
-        "I_eff_correction_factor": 0.85
+        "I_eff_correction_factor": 0.87
       }
     }
   ]

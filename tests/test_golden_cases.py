@@ -180,18 +180,18 @@ class GoldenCaseTest(unittest.TestCase):
     cases = [
       ("C-STUD", "기본", 0.7),
       ("C-STUD", "맞댐이음", 0.7),
-      ("C-STUD", "중앙부 이음", 0.23),
-      ("C-STUD", "중앙부연결", 0.23),
-      ("CH-STUD", "기본", 0.62),
-      ("CH-STUD(개량형)", "기본", 0.62),
-      ("T-Silent", "기본", 0.38),
-      ("T.silent-STUD", "기본", 0.38),
-      ("R.STUD", "기본", 0.24),
-      ("R-STUD", "기본", 0.24),
-      ("I-STUD", "기본", 0.85),
-      ("HR-STUD", "기본", 0.67),
-      ("RV-STUD", "기본", 0.4),
-      ("MP-STUD", "기본", 0.38),
+      ("C-STUD", "중앙부 이음", 0.25),
+      ("C-STUD", "중앙부연결", 0.25),
+      ("CH-STUD", "기본", 0.65),
+      ("CH-STUD(개량형)", "기본", 0.65),
+      ("T-Silent", "기본", 0.4),
+      ("T.silent-STUD", "기본", 0.4),
+      ("R.STUD", "기본", 0.26),
+      ("R-STUD", "기본", 0.26),
+      ("I-STUD", "기본", 0.87),
+      ("HR-STUD", "기본", 0.71),
+      ("RV-STUD", "기본", 0.43),
+      ("MP-STUD", "기본", 0.42),
     ]
 
     for group, method, expected in cases:
@@ -218,7 +218,7 @@ class GoldenCaseTest(unittest.TestCase):
     result = _calculate_wall_check_once(request, self.repository)
     layer_inertia_sum = sum(layer.inertia_about_neutral_axis_mm4 for layer in result.layers)
 
-    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.62)
+    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.65)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
     self.assertAlmostEqual(
       result.I_eff_mm4,
@@ -231,10 +231,10 @@ class GoldenCaseTest(unittest.TestCase):
     )
     central_result = _calculate_wall_check_once(central_request, self.repository)
 
-    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.23)
+    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.25)
     self.assertAlmostEqual(
       central_result.I_eff_mm4,
-      central_result.intermediate["I_eff_raw_mm4"] * 0.23,
+      central_result.intermediate["I_eff_raw_mm4"] * 0.25,
     )
 
   def test_reaction_result_is_converted_to_required_kN_per_m(self) -> None:

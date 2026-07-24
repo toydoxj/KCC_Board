@@ -452,24 +452,24 @@ def _effective_inertia_correction_factor(
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
     if _is_central_joint_method(method):
-      return 0.23
+      return 0.25
     if _is_basic_method(method) and not has_rear_board:
       return 1.0
     return 0.7
   if normalized_group.startswith("CH-STUD"):
-    return 0.62
+    return 0.65
   if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
-    return 0.38
-  if normalized_group == "R-STUD":
-    return 0.24
-  if normalized_group == "I-STUD":
-    return 0.85
-  if normalized_group == "HR-STUD":
-    return 0.67
-  if normalized_group == "RV-STUD":
     return 0.4
+  if normalized_group == "R-STUD":
+    return 0.26
+  if normalized_group == "I-STUD":
+    return 0.87
+  if normalized_group == "HR-STUD":
+    return 0.71
+  if normalized_group == "RV-STUD":
+    return 0.43
   if normalized_group == "MP-STUD":
-    return 0.38
+    return 0.42
   return 1.0
 
 
