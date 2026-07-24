@@ -20,6 +20,7 @@ class StudInput:
 @dataclass(frozen=True)
 class BoltInput:
   diameter: float
+  # 피스 항복강도 Fy. 전단강도 Fv = 0.6 × Fy 로 유도해 전단식에 사용
   yield_strength: float
   pitch: tuple[float, ...]
   count: tuple[float, ...] = (2.0,)

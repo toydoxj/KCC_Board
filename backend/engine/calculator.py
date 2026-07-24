@@ -9,7 +9,7 @@ from backend.engine.constants import (
   ANCHOR_SPACING_INCREMENT_MM,
   ANCHOR_SPACING_MAX_MM,
   ANCHOR_SPACING_MIN_MM,
-  BOLT_YIELD_RATIO_FROM_FRACTURE,
+  BOLT_SHEAR_TO_YIELD_RATIO,
   DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_ANCHOR_SPACING_MM,
   DEFAULT_DEFLECTION_LIMIT_DENOM,
@@ -250,7 +250,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
   pitch_raw = inputs["bolt_pitch"]
   if not isinstance(pitch_raw, list):
     raise ValueError("골든 케이스 bolt_pitch 형식이 올바르지 않습니다.")
-  yield_strength_raw = inputs.get("bolt_yield_strength", inputs.get("bolt_fracture"))
+  yield_strength_raw = inputs.get("bolt_yield_strength")
   if yield_strength_raw is None:
     raise ValueError("골든 케이스 bolt_yield_strength 형식이 올바르지 않습니다.")
 
@@ -591,11 +591,11 @@ def _connection_capacity_kN(layer: _Layer, bolt: BoltInput, span_mm: float) -> f
   pitch = _pitch_for_order(bolt.pitch, layer.order)
   count = _count_for_order(bolt.count, layer.order)
   board_bearing_strength = layer.board_property.Fu
+  # 피스 1개당 전단강도 = 0.5 × Fv × Ab / 1.25 (EN 1993-1-8 인용), Fv = 0.6 × Fy
   shear_n = (
     0.5
-    * 0.6
+    * BOLT_SHEAR_TO_YIELD_RATIO
     * bolt.yield_strength
-    * BOLT_YIELD_RATIO_FROM_FRACTURE
     * math.pi
     / 4.0
     * bolt.diameter**2

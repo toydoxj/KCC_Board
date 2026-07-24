@@ -2,7 +2,7 @@
   "_purpose": "사용자 요청 11개 스터드 형상의 반복 검토 기준값",
   "_generated_on": "2026-07-07",
   "_source": "backend.engine.calculator current engine output",
-  "_tolerance_rel": 1e-9,
+  "_tolerance_rel": 1e-09,
   "common": {
     "span_for_ieff_mm": 2400.0,
     "horizontal_load_kg_m2": 25.4841997961264,
@@ -11,9 +11,15 @@
     "deflection_limit_denom": 240,
     "bolt": {
       "diameter": 3.5,
-      "yield_strength": 480.0,
-      "pitch": [600.0, 300.0, 300.0],
-      "count": [2.0]
+      "yield_strength": 340.0,
+      "pitch": [
+        600.0,
+        300.0,
+        300.0
+      ],
+      "count": [
+        2.0
+      ]
     },
     "seismic": {
       "S": 0.22,
@@ -36,18 +42,30 @@
         "method": "중앙부 이음",
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 7750.0,
-        "Mu_at_max_height_kNm": 1.7319795724974278,
-        "I_eff_raw_at_2400_mm4": 2416771.9047358073,
+        "max_height_mm": 7600.0,
+        "Mu_at_max_height_kNm": 1.6655840184383173,
+        "I_eff_raw_at_2400_mm4": 2306353.938612483,
         "I_eff_correction_factor": 0.23
       }
     },
@@ -61,14 +79,20 @@
         "spacing_mm": 450.0,
         "rear_boards": [],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
         "max_height_mm": 5000.0,
         "Mu_at_max_height_kNm": 0.49228954259832003,
-        "I_eff_raw_at_2400_mm4": 199868.1023863578,
+        "I_eff_raw_at_2400_mm4": 196937.67459179685,
         "I_eff_correction_factor": 1.0
       }
     },
@@ -81,18 +105,30 @@
         "method": "맞댐이음",
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 6800.0,
-        "Mu_at_max_height_kNm": 1.3333899759797057,
-        "I_eff_raw_at_2400_mm4": 502331.9370218577,
+        "max_height_mm": 6600.0,
+        "Mu_at_max_height_kNm": 1.2561087230466257,
+        "I_eff_raw_at_2400_mm4": 468756.58080863603,
         "I_eff_correction_factor": 0.7
       }
     },
@@ -105,18 +141,30 @@
         "method": "기본",
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 6600.0,
-        "Mu_at_max_height_kNm": 1.2296519520011528,
-        "I_eff_raw_at_2400_mm4": 443841.9370218577,
+        "max_height_mm": 6400.0,
+        "Mu_at_max_height_kNm": 1.1562567482545278,
+        "I_eff_raw_at_2400_mm4": 410266.58080863603,
         "I_eff_correction_factor": 0.7
       }
     },
@@ -129,18 +177,30 @@
         "method": null,
         "spacing_mm": 600.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 25.0}
+          {
+            "kind": "방화",
+            "thickness": 25.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 15.0},
-          {"kind": "방화", "thickness": 15.0},
-          {"kind": "방화", "thickness": 15.0}
+          {
+            "kind": "방화",
+            "thickness": 15.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 15.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 15.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 5850.0,
-        "Mu_at_max_height_kNm": 1.237776424356347,
-        "I_eff_raw_at_2400_mm4": 569361.5368403238,
+        "max_height_mm": 5750.0,
+        "Mu_at_max_height_kNm": 1.195820966623763,
+        "I_eff_raw_at_2400_mm4": 550708.9828193213,
         "I_eff_correction_factor": 0.62
       }
     },
@@ -153,18 +213,30 @@
         "method": null,
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 10700.0,
-        "Mu_at_max_height_kNm": 3.2702707293507647,
-        "I_eff_raw_at_2400_mm4": 1701605.84951631,
+        "max_height_mm": 10400.0,
+        "Mu_at_max_height_kNm": 3.0894618052806253,
+        "I_eff_raw_at_2400_mm4": 1592514.5154365862,
         "I_eff_correction_factor": 0.67
       }
     },
@@ -177,18 +249,30 @@
         "method": null,
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 6300.0,
-        "Mu_at_max_height_kNm": 1.126873995602711,
-        "I_eff_raw_at_2400_mm4": 725705.0602636616,
+        "max_height_mm": 6100.0,
+        "Mu_at_max_height_kNm": 1.0564621158069256,
+        "I_eff_raw_at_2400_mm4": 672536.3692526447,
         "I_eff_correction_factor": 0.38
       }
     },
@@ -201,18 +285,30 @@
         "method": null,
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 6350.0,
-        "Mu_at_max_height_kNm": 1.1393986058096826,
-        "I_eff_raw_at_2400_mm4": 707489.4628535996,
+        "max_height_mm": 6150.0,
+        "Mu_at_max_height_kNm": 1.0687557509637728,
+        "I_eff_raw_at_2400_mm4": 654316.1176403153,
         "I_eff_correction_factor": 0.4
       }
     },
@@ -225,18 +321,30 @@
         "method": null,
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 6500.0,
-        "Mu_at_max_height_kNm": 1.2170303239703197,
-        "I_eff_raw_at_2400_mm4": 816409.9054894726,
+        "max_height_mm": 6300.0,
+        "Mu_at_max_height_kNm": 1.1432883682457273,
+        "I_eff_raw_at_2400_mm4": 762783.0161803198,
         "I_eff_correction_factor": 0.38
       }
     },
@@ -249,18 +357,30 @@
         "method": null,
         "spacing_mm": 450.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 19.0},
-          {"kind": "방화", "thickness": 19.0}
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 19.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 6100.0,
-        "Mu_at_max_height_kNm": 1.0538183797300156,
-        "I_eff_raw_at_2400_mm4": 1047842.5794678759,
+        "max_height_mm": 5900.0,
+        "Mu_at_max_height_kNm": 0.9858483686751369,
+        "I_eff_raw_at_2400_mm4": 969263.7823909685,
         "I_eff_correction_factor": 0.24
       }
     },
@@ -273,18 +393,30 @@
         "method": null,
         "spacing_mm": 600.0,
         "rear_boards": [
-          {"kind": "방화", "thickness": 25.0}
+          {
+            "kind": "방화",
+            "thickness": 25.0
+          }
         ],
         "front_boards": [
-          {"kind": "방화", "thickness": 15.0},
-          {"kind": "방화", "thickness": 15.0},
-          {"kind": "방화", "thickness": 15.0}
+          {
+            "kind": "방화",
+            "thickness": 15.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 15.0
+          },
+          {
+            "kind": "방화",
+            "thickness": 15.0
+          }
         ]
       },
       "expected": {
-        "max_height_mm": 6450.0,
-        "Mu_at_max_height_kNm": 1.4991324461850932,
-        "I_eff_raw_at_2400_mm4": 536606.7964998935,
+        "max_height_mm": 6350.0,
+        "Mu_at_max_height_kNm": 1.4530080658926368,
+        "I_eff_raw_at_2400_mm4": 518526.507483473,
         "I_eff_correction_factor": 0.85
       }
     }

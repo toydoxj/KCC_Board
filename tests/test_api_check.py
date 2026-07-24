@@ -103,17 +103,6 @@ class ApiCheckTest(unittest.TestCase):
         self.assertEqual(data["deflection_verdict"], expected["deflection_verdict"])
         self.assertEqual(data["stress_verdict"], expected["stress_verdict"])
 
-  def test_check_accepts_legacy_bolt_fracture_strength_field(self) -> None:
-    payload = asdict(request_from_golden_case(dict(self.cases[0])))
-    bolt = cast(dict[str, object], payload["bolt"])
-    bolt["fracture_strength"] = bolt.pop("yield_strength")
-
-    response = self.client.post("/api/check", json=payload)
-    self.assertEqual(response.status_code, 200)
-    body = response.json()
-    self.assertTrue(body["success"])
-    self.assertIsNone(body["error"])
-
   def test_check_defaults_to_0_25_kn_m2_live_load(self) -> None:
     payload = asdict(request_from_golden_case(dict(self.cases[0])))
     payload.pop("horizontal_load_kg_m2")

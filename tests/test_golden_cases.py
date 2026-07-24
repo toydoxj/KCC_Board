@@ -97,7 +97,7 @@ class GoldenCaseTest(unittest.TestCase):
 
     actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
     bolt_area = math.pi / 4.0 * request.bolt.diameter**2
-    expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * 0.85 * bolt_area / 1.25
+    expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * bolt_area / 1.25
     expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
 
     self.assertAlmostEqual(actual, expected)
@@ -118,7 +118,7 @@ class GoldenCaseTest(unittest.TestCase):
 
     actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
     bolt_area = math.pi / 4.0 * request.bolt.diameter**2
-    expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * 0.85 * bolt_area / 1.25
+    expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * bolt_area / 1.25
     expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
 
     self.assertAlmostEqual(actual, expected)

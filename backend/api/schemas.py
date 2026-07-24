@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.engine.constants import (
   ANCHOR_SPACING_INCREMENT_MM,
@@ -73,18 +73,10 @@ class StudPayload(ApiModel):
 
 class BoltPayload(ApiModel):
   diameter: float = Field(gt=0)
+  # 피스 항복강도 Fy(전단강도 Fv = 0.6 × Fy). 과거 Fu 값을 받던 fracture_strength 별칭은 제거됨
   yield_strength: float = Field(gt=0)
   pitch: list[float] = Field(min_length=1)
   count: float | list[float] = 2.0
-
-  @model_validator(mode="before")
-  @classmethod
-  def normalize_legacy_strength(cls, data: object) -> object:
-    if isinstance(data, dict) and "yield_strength" not in data and "fracture_strength" in data:
-      normalized = dict(data)
-      normalized["yield_strength"] = normalized.pop("fracture_strength")
-      return normalized
-    return data
 
   @field_validator("pitch")
   @classmethod
