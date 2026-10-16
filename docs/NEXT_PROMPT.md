@@ -28,10 +28,12 @@
 5. 이상 없으면 `git push -u origin fix/review-round1-strength` (main 병합·PR 생성은 사용자 확인 후)
 6. bundle 파일은 커밋하지 않는다.
 
-### 2단계 (사용자 선택 1건만 진행 — 착수 전 선택 질문)
+> 1단계 완료(2026-10-16, Windows): pytest 50 passed + 36 subtests, `npm run build` 성공, `origin/fix/review-round1-strength` 생성.
+
+### 2단계 (사용자 선택 1건만 진행 — 착수 전 선택 질문, B~E 보류 중)
 | 후보 | 관련 의견 | 내용 |
 |---|---|---|
-| A | C-2 | 강도 검토 기본값 composite → stud_only 변경(schemas.py·models.py·renderer page.tsx 기본값, 골든·테스트 영향 검토) |
+| ~~A~~ | C-2 | **종결(2026-10-16)**: composite 기본값 유지 확정, 피스 인장(풀아웃·풀스루) 검토로 대응. stud_only 변경 안 함 |
 | B | E-9 | 중립축 위치 검사 추가(NA가 스터드 밖이면 경고·누적 방향 재설정) |
 | C | B-2·D-1 | 실험 검증범위 초과 경고(결과 화면·계산서) |
 | D | E-8 (c) | 피스 활용도 기준 곡선형 보정 I_sec(u)=R_ref·I_calc·(u/u_ref)^(1−m) — 사전 설계 검토 필요 |
