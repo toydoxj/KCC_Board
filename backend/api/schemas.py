@@ -13,6 +13,7 @@ from backend.engine.constants import (
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
+  DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N,
   GRAVITY,
 )
 from backend.engine.models import (
@@ -148,6 +149,7 @@ class WallCheckRequestPayload(ApiModel):
     ge=ANCHOR_SPACING_MIN_MM,
     le=ANCHOR_SPACING_MAX_MM,
   )
+  screw_pull_through_nominal_N: float = Field(default=DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, gt=0)
 
   @field_validator("anchor_spacing_mm")
   @classmethod
@@ -178,6 +180,7 @@ class WallCheckRequestPayload(ApiModel):
       omega=self.omega,
       anchor_capacity_kN=self.anchor_capacity_kN,
       anchor_spacing_mm=self.anchor_spacing_mm,
+      screw_pull_through_nominal_N=self.screw_pull_through_nominal_N,
     )
 
 
@@ -220,6 +223,7 @@ class WallCheckResultData(ApiModel):
   seismic_moment_kNm: float
   deflection_verdict: str
   stress_verdict: str
+  screw_tension_verdict: str
   max_height_mm: float
   anchor_max_height_mm: float
   max_height_increment_mm: float
@@ -244,6 +248,7 @@ class WallCheckResultData(ApiModel):
       seismic_moment_kNm=result.seismic_moment_kNm,
       deflection_verdict=result.deflection_verdict,
       stress_verdict=result.stress_verdict,
+      screw_tension_verdict=result.screw_tension_verdict,
       max_height_mm=result.max_height_mm,
       anchor_max_height_mm=result.anchor_max_height_mm,
       max_height_increment_mm=result.max_height_increment_mm,

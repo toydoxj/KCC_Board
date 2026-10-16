@@ -137,6 +137,15 @@ class ApiCheckTest(unittest.TestCase):
     )
     self.assertEqual(body["data"]["stress_verdict"], "N.G")
 
+  def test_check_returns_screw_tension_verdict(self) -> None:
+    payload = asdict(request_from_golden_case(dict(self.cases[0])))
+    payload["screw_pull_through_nominal_N"] = 500.0
+    response = self.client.post("/api/check", json=payload)
+    self.assertEqual(response.status_code, 200)
+    data = response.json()["data"]
+    self.assertEqual(data["screw_tension_verdict"], "O.K")
+    self.assertAlmostEqual(float(data["intermediate"]["screw_pull_through_allowable_N"]), 500.0 / 3.0)
+
   def test_check_calculates_fa_from_site_class(self) -> None:
     payload = asdict(request_from_golden_case(dict(self.cases[0])))
     seismic = cast(dict[str, object], payload["seismic"])

@@ -17,6 +17,13 @@
 | 출력 키 | — | `moment_0_75L_0_7E_kNm`, `reaction_0_75L_0_7E_kN_per_m` | `..._0_75L_0_525E_...`; 신규 `stud_Se_*`, `stud_extreme_fiber_*`, `I_eff_lower_bound_*`, `stud_yield_strength_MPa` | calculator.py, renderer |
 | 렌더러 | — | Fy 275·S=I/h×2 자체 계산 | 백엔드 중간값(Se, Fy) 사용, 조합 표기 정정, 중앙부 이음 식 정정 | renderer/src |
 
+## 1-1. 피스 인장 검토 신설 (D-7, B안)
+
+- `_screw_tension_result`: T = q·s·p_max, 풀아웃 Pnot = 0.85·tc·d·Fu2 (AISI S100-16 Eq. J4.4.1-1, Ω 3.0), 풀스루 = 입력 공칭값(기본 343 N)/Ω
+- 요청 필드 `screw_pull_through_nominal_N`, 결과 `screw_tension_verdict`, 중간값 `screw_*`
+- N.G이면 최대 산정높이·앵커 기준높이 0 (모든 검토 만족 조건에 포함)
+- 11개 시편: 풀아웃 사용률 0.11~0.39, 풀스루 0.30~0.81 → 전부 O.K, 허용높이 불변
+
 ## 2. R 재보정
 
 R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
@@ -54,6 +61,6 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 
 ## 5. 검증
 
-- `python -m pytest` : 46 passed + 36 subtests (골든값 재산정, 종전 엑셀값은 `expected_legacy` 보존)
+- `python -m pytest` : 50 passed + 36 subtests (골든값 재산정, 종전 엑셀값은 `expected_legacy` 보존)
 - 신규 테스트: Ieff 하한, 비대칭 스터드 단독 c_max
 - `npm run build` 성공

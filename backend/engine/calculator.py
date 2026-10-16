@@ -19,8 +19,12 @@ from backend.engine.constants import (
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
   GRAVITY,
+  SCREW_PULLOUT_COEFFICIENT,
+  SCREW_TENSION_OMEGA,
+  SEISMIC_FP_COEFFICIENT,
   STEEL_DENSITY_KG_M3,
   STUD_ELASTIC_MODULUS,
+  STUD_TENSILE_STRENGTH,
   STUD_YIELD_STRENGTH,
 )
 from backend.engine.models import (
@@ -129,6 +133,7 @@ def _calculate_wall_check_once(
   _validate_design_case(request.design_case)
   _validate_strength_check_mode(request.strength_check_mode)
   _validate_anchor_spacing(request.anchor_spacing_mm)
+  _validate_pull_through(request.screw_pull_through_nominal_N)
   repo = repository
   section = _build_section(request, repo)
   neutral_axis = _neutral_axis(section.layers)
@@ -168,6 +173,7 @@ def _calculate_wall_check_once(
   reaction = _reaction_result_kN_per_m(request, fp)
   Mu = _required_moment_kNm(request, live_moment, seismic_moment)
   stress_ratio = request.omega * Mu / Mn
+  screw_tension = _screw_tension_result(request, section, sds)
 
   enriched_layers = tuple(
     LayerResult(
@@ -198,6 +204,7 @@ def _calculate_wall_check_once(
     seismic_moment_kNm=seismic_moment,
     deflection_verdict="O.K" if deflection <= deflection_limit else "N.G",
     stress_verdict="O.K" if stress_ratio <= 1.0 else "N.G",
+    screw_tension_verdict="O.K" if screw_tension["screw_tension_utilization"] <= 1.0 else "N.G",
     layers=enriched_layers,
     intermediate={
       "stud_I_mm4": stud_result.inertia_about_neutral_axis_mm4,
@@ -229,6 +236,7 @@ def _calculate_wall_check_once(
       "reaction_live_kN_per_m": reaction.live_kN_per_m,
       "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
       **_reaction_intermediate(request, reaction),
+      **screw_tension,
     },
   )
 
@@ -739,7 +747,7 @@ def _maximum_allowable_height_mm(
   for height_mm in range(MAX_HEIGHT_INCREMENT_MM, int(search_limit) + MAX_HEIGHT_INCREMENT_MM, MAX_HEIGHT_INCREMENT_MM):
     trial_request = replace(request, span_mm=float(height_mm))
     result = _calculate_wall_check_once(trial_request, repository)
-    if result.stress_verdict == "O.K" and result.deflection_verdict == "O.K":
+    if _all_checks_ok(result):
       max_height = float(height_mm)
   return max_height
 
@@ -759,11 +767,7 @@ def _maximum_anchor_allowable_height_mm(
     trial_request = replace(request, span_mm=float(height_mm))
     result = _calculate_wall_check_once(trial_request, repository)
     anchor_utilization = result.intermediate.get("anchor_utilization", math.inf)
-    if (
-      result.stress_verdict == "O.K"
-      and result.deflection_verdict == "O.K"
-      and anchor_utilization <= 1.0
-    ):
+    if _all_checks_ok(result) and anchor_utilization <= 1.0:
       max_height = float(height_mm)
   return max_height
 
@@ -801,7 +805,7 @@ def _seismic_moment_kNm(
   seismic_weight = sum(layer.mass_kN for layer in layers)
   fa = _seismic_fa(request)
   sds = request.seismic.S * 2.5 * 2.0 / 3.0 * fa
-  fp = 0.48 * sds * request.seismic.Ip * seismic_weight
+  fp = SEISMIC_FP_COEFFICIENT * sds * request.seismic.Ip * seismic_weight
   moment = 0.25 * fp * (request.span_mm / 1000.0)
   return moment, seismic_weight, sds, fp
 
@@ -884,6 +888,85 @@ def _validate_design_case(design_case: str) -> None:
 def _validate_strength_check_mode(strength_check_mode: str) -> None:
   if strength_check_mode not in STRENGTH_CHECK_MODES:
     raise ValueError(f"지원하지 않는 강도 체크 기준입니다: {strength_check_mode}")
+
+
+def _all_checks_ok(result: WallCheckResult) -> bool:
+  return (
+    result.stress_verdict == "O.K"
+    and result.deflection_verdict == "O.K"
+    and result.screw_tension_verdict == "O.K"
+  )
+
+
+def _screw_tension_result(
+  request: WallCheckRequest,
+  section: _Section,
+  sds: float,
+) -> dict[str, float]:
+  """피스 인장(면외 이탈) 검토 — AISI S100-16 J4.4.
+
+  - 요구 인장력 T = q × s × p_max [N/개] (피치당 피스 1개, 보수측)
+    q: 면별 설계 횡압력(kN/m²) = L 또는 max(L, 0.7E, 0.75L + 0.75(0.7E)),
+       E = 0.48·SDS·Ip × (해당 면 보드 자중). 면의 전체 하중을 피스가 가장 성긴 층이 부담한다고 가정(보수측).
+  - 풀아웃 Pnot = 0.85·tc·d·Fu2 (Eq. J4.4.1-1), tc = 스터드 두께, Ω = 3.0
+  - 풀스루(석고보드) = 입력 공칭값 / Ω (AISI 강판식 J4.4.2는 석고보드에 적용 불가)
+  벽 높이와 무관한 검토이다.
+  """
+  stud = section.stud_section
+  if stud.t is None:
+    raise ValueError(f"스터드 두께 t가 등록되지 않아 피스 풀아웃 검토를 할 수 없습니다: {stud.group} {stud.name}")
+  stud_index = next(index for index, layer in enumerate(section.layers) if layer.layer_type == "stud")
+  faces = (
+    tuple(layer for layer in section.layers[:stud_index] if layer.layer_type == "board"),
+    tuple(layer for layer in section.layers[stud_index + 1 :] if layer.layer_type == "board"),
+  )
+  demand_N = 0.0
+  governing_pressure = 0.0
+  governing_spacing = 0.0
+  for face in faces:
+    if not face:
+      continue
+    face_weight_kN_m2 = sum(
+      layer.board_property.mass_kg_m2 * GRAVITY / 1000.0
+      for layer in face
+      if layer.board_property is not None
+    )
+    seismic_kN_m2 = SEISMIC_FP_COEFFICIENT * sds * request.seismic.Ip * face_weight_kN_m2
+    live = request.live_load_kN_m2
+    if request.design_case == DESIGN_CASE_NON_SEISMIC:
+      pressure = live
+    else:
+      pressure = max(live, ASD_SEISMIC_FACTOR * seismic_kN_m2, _combined_live_seismic(live, seismic_kN_m2))
+    # 보수측: 피치당 피스 1개로 봄(bolt.count는 보드 이음부 2열 체결 등을 포함할 수 있어 인장 분담에는 미적용 — 확인 필요)
+    spacing_per_screw = max(_pitch_for_order(request.bolt.pitch, layer.order) for layer in face)
+    face_demand = pressure * 1e-3 * request.spacing_mm * spacing_per_screw
+    if face_demand > demand_N:
+      demand_N = face_demand
+      governing_pressure = pressure
+      governing_spacing = spacing_per_screw
+  pullout_nominal = SCREW_PULLOUT_COEFFICIENT * stud.t * request.bolt.diameter * STUD_TENSILE_STRENGTH
+  pullout_allowable = pullout_nominal / SCREW_TENSION_OMEGA
+  pull_through_allowable = request.screw_pull_through_nominal_N / SCREW_TENSION_OMEGA
+  pullout_utilization = demand_N / pullout_allowable
+  pull_through_utilization = demand_N / pull_through_allowable
+  return {
+    "screw_tension_pressure_kN_m2": governing_pressure,
+    "screw_tension_spacing_mm": governing_spacing,
+    "screw_tension_demand_N": demand_N,
+    "screw_pullout_tc_mm": stud.t,
+    "screw_pullout_nominal_N": pullout_nominal,
+    "screw_pullout_allowable_N": pullout_allowable,
+    "screw_pull_through_nominal_N": request.screw_pull_through_nominal_N,
+    "screw_pull_through_allowable_N": pull_through_allowable,
+    "screw_pullout_utilization": pullout_utilization,
+    "screw_pull_through_utilization": pull_through_utilization,
+    "screw_tension_utilization": max(pullout_utilization, pull_through_utilization),
+  }
+
+
+def _validate_pull_through(value_N: float) -> None:
+  if not math.isfinite(value_N) or value_N <= 0.0:
+    raise ValueError("석고보드 풀스루 공칭강도는 0보다 커야 합니다.")
 
 
 def _validate_anchor_spacing(anchor_spacing_mm: float) -> None:

@@ -313,6 +313,46 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(expected_stronger_spacing, 450.0)
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], expected_stronger_spacing)
 
+  def test_screw_tension_pullout_and_pull_through(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    result = _calculate_wall_check_once(request, self.repository)
+    stud = self.repository.get_stud("C-STUD", request.stud.spec)
+    intermediate = result.intermediate
+    max_pitch = max(request.bolt.pitch)
+    # 양면 2P → 피치는 order 1·2 기준. 요구 인장력 = q × s × p
+    expected_demand = (
+      intermediate["screw_tension_pressure_kN_m2"] * 1e-3 * request.spacing_mm * intermediate["screw_tension_spacing_mm"]
+    )
+    expected_pullout = 0.85 * stud.t * request.bolt.diameter * 400.0
+
+    self.assertLessEqual(intermediate["screw_tension_spacing_mm"], max_pitch)
+    self.assertGreaterEqual(intermediate["screw_tension_pressure_kN_m2"], request.live_load_kN_m2)
+    self.assertAlmostEqual(intermediate["screw_tension_demand_N"], expected_demand)
+    self.assertAlmostEqual(intermediate["screw_pullout_nominal_N"], expected_pullout)
+    self.assertAlmostEqual(intermediate["screw_pullout_allowable_N"], expected_pullout / 3.0)
+    self.assertAlmostEqual(intermediate["screw_pull_through_allowable_N"], 343.0 / 3.0)
+    self.assertAlmostEqual(
+      intermediate["screw_tension_utilization"],
+      max(intermediate["screw_pullout_utilization"], intermediate["screw_pull_through_utilization"]),
+    )
+    self.assertEqual(result.screw_tension_verdict, "O.K")
+
+    non_seismic = _calculate_wall_check_once(replace(request, design_case="non_seismic"), self.repository)
+    self.assertAlmostEqual(non_seismic.intermediate["screw_tension_pressure_kN_m2"], request.live_load_kN_m2)
+
+  def test_screw_tension_ng_blocks_allowable_height(self) -> None:
+    request = replace(request_from_golden_case(dict(self.cases[0])), screw_pull_through_nominal_N=10.0)
+    result = calculate_wall_check(request, self.repository)
+
+    self.assertEqual(result.screw_tension_verdict, "N.G")
+    self.assertEqual(result.max_height_mm, 0.0)
+    self.assertEqual(result.anchor_max_height_mm, 0.0)
+
+  def test_screw_pull_through_must_be_positive(self) -> None:
+    request = replace(request_from_golden_case(dict(self.cases[0])), screw_pull_through_nominal_N=0.0)
+    with self.assertRaisesRegex(ValueError, "풀스루"):
+      _calculate_wall_check_once(request, self.repository)
+
   def test_deflection_uses_live_load_kn_m2(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
     base = _calculate_wall_check_once(request, self.repository)

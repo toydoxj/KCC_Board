@@ -129,6 +129,7 @@ export interface WallCheckResult {
   seismic_moment_kNm: number;
   deflection_verdict: string;
   stress_verdict: string;
+  screw_tension_verdict: string;
   max_height_mm: number;
   anchor_max_height_mm: number;
   max_height_increment_mm: number;

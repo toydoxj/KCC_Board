@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from backend.engine.constants import DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N
+
 
 @dataclass(frozen=True)
 class BoardLayer:
@@ -53,6 +55,8 @@ class WallCheckRequest:
   omega: float = 1.5
   anchor_capacity_kN: float = 0.4
   anchor_spacing_mm: float = 450.0
+  # 석고보드 풀스루 공칭강도(N/개) — 시험값 확보 전 입력값
+  screw_pull_through_nominal_N: float = DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,7 @@ class WallCheckResult:
   seismic_moment_kNm: float
   deflection_verdict: str
   stress_verdict: str
+  screw_tension_verdict: str = "O.K"
   max_height_mm: float = 0.0
   anchor_max_height_mm: float = 0.0
   max_height_increment_mm: float = 50.0

@@ -88,6 +88,7 @@ const defaultStudYieldStrength = 295;
 export function CalculationReport({ data, className = "" }: CalculationReportProps) {
   const stressOk = data.result.stress_verdict === "O.K";
   const deflectionOk = data.result.deflection_verdict === "O.K";
+  const screwTensionOk = data.result.screw_tension_verdict === "O.K";
   const isSeismic = data.result.design_case !== "non_seismic";
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
   const strengthCheckModeLabel = strengthCheckModeLabels[data.result.strength_check_mode] ?? data.result.strength_check_mode;
@@ -136,9 +137,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                   {formatNumber(heightSearchValue)} mm
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 <Verdict label="산정 응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="산정 처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
+                <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
@@ -150,9 +152,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             </>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Verdict label="응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
+                <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
@@ -413,6 +416,27 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               ))}
             </tbody>
           </table>
+        </ReportBlock>
+      </section>
+
+      <section className="mt-5">
+        <ReportBlock title="피스 인장 검토 (AISI S100-16 J4.4)">
+          <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
+            <div>T = q × s × p_max (피치당 피스 1개, 면 하중 전체를 가장 성긴 층 피스가 부담 — 보수측)</div>
+            <div>q = {isSeismic ? "max(L, 0.7E, 0.75L+0.75(0.7E)), E = 0.48·SDS·Ip·W보드(면)" : "L"}</div>
+            <div>풀아웃 Pnot = 0.85 × tc × d × Fu2 (Eq. J4.4.1-1), Ω = 3.0</div>
+            <div>풀스루(석고보드) = 입력 공칭값 / Ω (시험값 확보 전 잠정값)</div>
+          </div>
+          <div className="grid gap-1 text-sm md:grid-cols-2">
+            <KeyValue label="횡압력 q" value={`${formatNumber(data.result.intermediate.screw_tension_pressure_kN_m2 ?? Number.NaN)} kN/m²`} />
+            <KeyValue label="피스 부담 피치" value={`${formatNumber(data.result.intermediate.screw_tension_spacing_mm ?? Number.NaN)} mm`} />
+            <KeyValue label="피스 인장 T" value={`${formatNumber(data.result.intermediate.screw_tension_demand_N ?? Number.NaN)} N/개`} />
+            <KeyValue label="tc (스터드 두께)" value={`${formatNumber(data.result.intermediate.screw_pullout_tc_mm ?? Number.NaN)} mm`} />
+            <KeyValue label="Pnot / Ω" value={`${formatNumber(data.result.intermediate.screw_pullout_allowable_N ?? Number.NaN)} N/개`} />
+            <KeyValue label="풀아웃 사용률" value={formatNumber(data.result.intermediate.screw_pullout_utilization ?? Number.NaN)} />
+            <KeyValue label="풀스루 허용" value={`${formatNumber(data.result.intermediate.screw_pull_through_allowable_N ?? Number.NaN)} N/개`} />
+            <KeyValue label="풀스루 사용률" value={formatNumber(data.result.intermediate.screw_pull_through_utilization ?? Number.NaN)} />
+          </div>
         </ReportBlock>
       </section>
 
