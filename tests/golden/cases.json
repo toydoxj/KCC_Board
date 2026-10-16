@@ -69,6 +69,20 @@
       },
       "expected": {
         "neutral_axis_mm": 63.0,
+        "I_full_mm4": 1124745.714285714,
+        "eta": 0.3831251882290465,
+        "I_eff_mm4": 519357.3100667071,
+        "Mn_kNm": 6.204338217520625,
+        "Mu_kNm": 1.3672931109002664,
+        "stress_ratio": 0.33056541962181984,
+        "deflection_mm": 42.49626998138716,
+        "deflection_limit_mm": 31.25,
+        "seismic_moment_kNm": 1.4743455088576507,
+        "deflection_verdict": "N.G",
+        "stress_verdict": "O.K"
+      },
+      "expected_legacy": {
+        "neutral_axis_mm": 63.0,
         "I_full_mm4": 1121645.714285714,
         "eta": 0.3831251882290465,
         "I_eff_mm4": 517187.3100667071,
@@ -149,6 +163,20 @@
       },
       "expected": {
         "neutral_axis_mm": 63.0,
+        "I_full_mm4": 1124745.714285714,
+        "eta": 0.30650015058323715,
+        "I_eff_mm4": 473401.3280015482,
+        "Mn_kNm": 5.242610312458816,
+        "Mu_kNm": 0.8750675909761705,
+        "stress_ratio": 0.25037172481519754,
+        "deflection_mm": 19.096225626555505,
+        "deflection_limit_mm": 25.0,
+        "seismic_moment_kNm": 0.9435811256688964,
+        "deflection_verdict": "O.K",
+        "stress_verdict": "O.K"
+      },
+      "expected_legacy": {
+        "neutral_axis_mm": 63.0,
         "I_full_mm4": 1121645.714285714,
         "eta": 0.30650015058323715,
         "I_eff_mm4": 471231.3280015482,
@@ -228,6 +256,20 @@
         ]
       },
       "expected": {
+        "neutral_axis_mm": 63.0,
+        "I_full_mm4": 789857.142857143,
+        "eta": 0.5746877823435699,
+        "I_eff_mm4": 439478.0313428265,
+        "Mn_kNm": 5.852329982212286,
+        "Mu_kNm": 0.9294264380065164,
+        "stress_ratio": 0.2382195913844839,
+        "deflection_mm": 33.480245338566064,
+        "deflection_limit_mm": 31.25,
+        "seismic_moment_kNm": 1.0169878581076504,
+        "deflection_verdict": "N.G",
+        "stress_verdict": "O.K"
+      },
+      "expected_legacy": {
         "neutral_axis_mm": 63.00000000000001,
         "I_full_mm4": 786757.1428571428,
         "eta": 0.5746877823435699,
@@ -243,5 +285,6 @@
       }
     }
   ],
-  "_fix01_status": "현재 엑셀에 FIX-01(N13=SUM(G13:M13), 지진중량 후면보드 포함) 반영됨. expected는 이 상태 기준."
+  "_fix01_status": "현재 엑셀에 FIX-01(N13=SUM(G13:M13), 지진중량 후면보드 포함) 반영됨. expected는 이 상태 기준.",
+  "_recalc_note": "2026-10-16 1차 심사의견 반영 재산정(DXF 단면성능·Se·Fy 295·S=I/c_max·KDS 0.75L+0.75(0.7E)·중앙부이음 관성 수정·R 재보정). 이전 엑셀 기준값은 expected_legacy 참조."
 }

@@ -77,6 +77,8 @@ class StudSection:
   rx: float
   ry: float
   section_class: str
+  # 유효단면계수(AISI S100-16 부록 1, f = Fy). 미등록(None)이면 계산엔진이 명시적 오류를 발생시킨다.
+  Se: float | None = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +211,7 @@ class JsonSeedRepository:
         rx=float(item["rx"]),
         ry=float(item["ry"]),
         section_class=str(item["section_class"]),
+        Se=_nullable_float(item.get("Se")),
       )
       studs[(stud.group, stud.name)] = stud
     return studs
@@ -269,7 +272,7 @@ class SqliteRepository:
     if key in self._stud_cache:
       return self._stud_cache[key]
     query = """
-      SELECT group_name, name, H, B, t, A, cx, cy, Ix, Iy, Sx, Sy, rx, ry, section_class
+      SELECT group_name, name, H, B, t, A, cx, cy, Ix, Iy, Sx, Sy, rx, ry, section_class, Se
       FROM stud_section
       WHERE group_name = ? AND name = ?
     """
@@ -292,6 +295,7 @@ class SqliteRepository:
       rx=float(row["rx"]),
       ry=float(row["ry"]),
       section_class=str(row["section_class"]),
+      Se=_nullable_float(row["Se"]),
     )
     self._stud_cache[key] = stud
     return stud
@@ -344,7 +348,7 @@ class SqliteRepository:
 
   def list_studs(self) -> tuple[StudSection, ...]:
     query = """
-      SELECT group_name, name, H, B, t, A, cx, cy, Ix, Iy, Sx, Sy, rx, ry, section_class
+      SELECT group_name, name, H, B, t, A, cx, cy, Ix, Iy, Sx, Sy, rx, ry, section_class, Se
       FROM stud_section
       ORDER BY group_name, name
     """
@@ -368,6 +372,7 @@ class SqliteRepository:
         rx=float(row["rx"]),
         ry=float(row["ry"]),
         section_class=str(row["section_class"]),
+        Se=_nullable_float(row["Se"]),
       )
       for row in rows
     )
@@ -411,6 +416,10 @@ class SqliteRepository:
       )
       if "Fu" not in columns:
         connection.execute("ALTER TABLE board_property ADD COLUMN Fu REAL")
+      stud_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(stud_section)").fetchall()}
+      if stud_columns and "Se" not in stud_columns:
+        # 구 로컬 DB: Se 열만 추가(NULL). 단면성능이 구버전이므로 계산 시 명시적 오류로 init_db 재실행을 유도한다.
+        connection.execute("ALTER TABLE stud_section ADD COLUMN Se REAL")
       # 기존 로컬 DB는 Fu가 없었으므로 저장된 Fy를 레거시 항복강도로 보고 Fu를 역산한다.
       connection.execute(
         "UPDATE board_property SET Fu = Fy / ? WHERE Fu IS NULL AND Fy IS NOT NULL",
@@ -429,7 +438,7 @@ class SqliteRepository:
       )
       connection.execute(
         "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
-        ("schema_version", "4"),
+        ("schema_version", "5"),
       )
       connection.commit()
 
@@ -497,6 +506,7 @@ def _create_tables(connection: sqlite3.Connection) -> None:
       rx REAL NOT NULL,
       ry REAL NOT NULL,
       section_class TEXT NOT NULL,
+      Se REAL,
       PRIMARY KEY (group_name, name)
     );
 
@@ -534,9 +544,9 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
   connection.executemany(
     """
     INSERT INTO stud_section (
-      group_name, name, H, B, t, A, cx, cy, Ix, Iy, Sx, Sy, rx, ry, section_class
+      group_name, name, H, B, t, A, cx, cy, Ix, Iy, Sx, Sy, rx, ry, section_class, Se
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
     [
       (
@@ -555,6 +565,7 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
         float(item["rx"]),
         float(item["ry"]),
         str(item["section_class"]),
+        _nullable_float(item.get("Se")),
       )
       for item in stud_items
     ],
@@ -572,7 +583,7 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
     [(str(item["stud_type"]), None if item.get("method") is None else str(item["method"])) for item in method_items],
   )
 
-  connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", "4"))
+  connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", "5"))
   connection.commit()
 
 

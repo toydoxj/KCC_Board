@@ -9,6 +9,9 @@ from backend.engine.constants import (
   ANCHOR_SPACING_INCREMENT_MM,
   ANCHOR_SPACING_MAX_MM,
   ANCHOR_SPACING_MIN_MM,
+  ASD_COMBINED_LIVE_FACTOR,
+  ASD_COMBINED_SEISMIC_FACTOR,
+  ASD_SEISMIC_FACTOR,
   BOLT_SHEAR_TO_YIELD_RATIO,
   DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_ANCHOR_SPACING_MM,
@@ -71,7 +74,7 @@ class _Section:
   stud_multiplier: float
   stud_unfactored_self_inertia_mm4: float
   stud_connection_inertia_factor: float
-  stud_section_modulus_depth_mm: float
+  stud_assembly: "_StudAssembly"
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,8 @@ class _StudAssembly:
   unfactored_self_inertia_mm4: float
   connection_inertia_factor: float
   multiplier: float
-  section_modulus_depth_mm: float
+  # 유효단면계수비 Se/Sx (AISI S100-16 부록 1, f = Fy) — 스터드 휨강도 항에 적용
+  effective_section_ratio: float
 
 
 @dataclass(frozen=True)
@@ -92,7 +96,7 @@ class _ReactionResult:
   seismic_kN_per_m: float
   load_combination_L_kN_per_m: float
   load_combination_0_7E_kN_per_m: float
-  load_combination_0_75L_0_7E_kN_per_m: float
+  load_combination_0_75L_0_525E_kN_per_m: float
   required_kN_per_m: float
   anchor_capacity_kN: float
   anchor_spacing_mm: float
@@ -143,12 +147,17 @@ def _calculate_wall_check_once(
     method,
     has_rear_board=bool(request.rear_boards),
   )
-  I_eff = I_eff_raw * I_eff_correction_factor
-  Mn_composite = _nominal_moment(layer_results, shear_by_name, section.stud_section_modulus_depth_mm)
+  # 하한: 부분합성 강성은 스터드 단독 강성(자체 도심 기준) 이상
+  I_eff_lower_bound = section.stud_assembly.self_inertia_mm4
+  I_eff = max(I_eff_raw * I_eff_correction_factor, I_eff_lower_bound)
+  stud_assembly = section.stud_assembly
+  S_stud_composite, c_stud_composite = _stud_section_modulus(stud_result, stud_assembly, composite=True)
+  S_stud_only, c_stud_only = _stud_section_modulus(stud_result, stud_assembly, composite=False)
+  Mn_composite = _nominal_moment(layer_results, shear_by_name, S_stud_composite)
   Mn_stud_only = _nominal_moment(
     layer_results,
     shear_by_name,
-    section.stud_section_modulus_depth_mm,
+    S_stud_only,
     include_board_layers=False,
   )
   Mn = _strength_check_nominal_moment(request.strength_check_mode, Mn_composite, Mn_stud_only)
@@ -194,16 +203,24 @@ def _calculate_wall_check_once(
       "stud_I_mm4": stud_result.inertia_about_neutral_axis_mm4,
       "stud_I_unfactored_mm4": section.stud_unfactored_self_inertia_mm4,
       "stud_section_height_mm": section.stud_layer.thickness_mm,
-      "stud_section_modulus_depth_mm": section.stud_section_modulus_depth_mm,
+      "stud_self_inertia_mm4": stud_assembly.self_inertia_mm4,
+      "stud_yield_strength_MPa": STUD_YIELD_STRENGTH,
+      "stud_effective_section_ratio": stud_assembly.effective_section_ratio,
+      "stud_extreme_fiber_composite_mm": c_stud_composite,
+      "stud_extreme_fiber_stud_only_mm": c_stud_only,
+      "stud_Se_composite_mm3": S_stud_composite,
+      "stud_Se_stud_only_mm3": S_stud_only,
       "stud_connection_inertia_factor": section.stud_connection_inertia_factor,
       "Mn_composite_kNm": Mn_composite,
       "Mn_stud_only_kNm": Mn_stud_only,
       "I_eff_raw_mm4": I_eff_raw,
       "I_eff_correction_factor": I_eff_correction_factor,
+      "I_eff_lower_bound_mm4": I_eff_lower_bound,
+      "I_eff_lower_bound_governs": 1.0 if I_eff_raw * I_eff_correction_factor < I_eff_lower_bound else 0.0,
       "live_moment_kNm": live_moment,
       "moment_L_kNm": live_moment,
-      "moment_0_7E_kNm": 0.7 * seismic_moment,
-      "moment_0_75L_0_7E_kNm": 0.75 * live_moment + 0.7 * seismic_moment,
+      "moment_0_7E_kNm": ASD_SEISMIC_FACTOR * seismic_moment,
+      "moment_0_75L_0_525E_kNm": _combined_live_seismic(live_moment, seismic_moment),
       "vertical_load_kN_m": request.vertical_load_kN_m,
       "seismic_weight_kN": seismic_weight,
       "Fa": _seismic_fa(request),
@@ -333,7 +350,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
     stud_multiplier=stud_assembly.multiplier,
     stud_unfactored_self_inertia_mm4=stud_assembly.unfactored_self_inertia_mm4,
     stud_connection_inertia_factor=stud_assembly.connection_inertia_factor,
-    stud_section_modulus_depth_mm=stud_assembly.section_modulus_depth_mm,
+    stud_assembly=stud_assembly,
   )
 
 
@@ -406,9 +423,22 @@ def _stud_layer(
   )
 
 
+def _stud_effective_section_ratio(stud: StudSection) -> float:
+  if stud.Se is None:
+    raise ValueError(
+      f"스터드 유효단면계수 Se가 등록되지 않았습니다: {stud.group} {stud.name} "
+      "(자재 DB를 data/seed 기준으로 재초기화(init_db)해야 합니다.)",
+    )
+  if stud.Sx <= 0.0:
+    raise ValueError(f"스터드 단면계수 Sx가 0 이하입니다: {stud.group} {stud.name}")
+  return min(1.0, stud.Se / stud.Sx)
+
+
 def _stud_assembly(stud: StudSection, method: str) -> _StudAssembly:
+  effective_section_ratio = _stud_effective_section_ratio(stud)
   if _is_central_joint_method(method):
-    distance = stud.H + CENTRAL_JOINT_STUD_GAP_MM / 2.0
+    # 두 스터드를 깊이 방향으로 간격 g만큼 띄워 배치: 조립 도심 ~ 각 스터드 도심 거리 = H + g/2 - cy
+    distance = stud.H + CENTRAL_JOINT_STUD_GAP_MM / 2.0 - stud.cy
     self_inertia = 2.0 * (stud.A * distance**2 + stud.Ix)
     return _StudAssembly(
       area_mm2=2.0 * stud.A,
@@ -418,7 +448,7 @@ def _stud_assembly(stud: StudSection, method: str) -> _StudAssembly:
       unfactored_self_inertia_mm4=self_inertia,
       connection_inertia_factor=1.0,
       multiplier=2.0,
-      section_modulus_depth_mm=stud.H,
+      effective_section_ratio=effective_section_ratio,
     )
 
   multiplier = 2.0 if "맞댐" in method else 1.0
@@ -430,7 +460,7 @@ def _stud_assembly(stud: StudSection, method: str) -> _StudAssembly:
     unfactored_self_inertia_mm4=stud.Ix * multiplier,
     connection_inertia_factor=1.0,
     multiplier=multiplier,
-    section_modulus_depth_mm=stud.H,
+    effective_section_ratio=effective_section_ratio,
   )
 
 
@@ -449,17 +479,20 @@ def _effective_inertia_correction_factor(
   method: str,
   has_rear_board: bool = True,
 ) -> float:
+  # 시험 보정계수 R. 2026-10 재산정(DXF 단면성능·중앙부이음 관성 수정): 시험체 조건(L=2400)의
+  # 보정 강성 R·Ieff_raw를 유지하도록 R_new = R_old × Ieff_raw,old / Ieff_raw,new (소수 2자리).
+  # 변동 0.7% 미만 유형(C 기본·맞댐, HR, RV, R)은 기존값 유지.
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
     if _is_central_joint_method(method):
-      return 0.25
+      return 0.35
     if _is_basic_method(method) and not has_rear_board:
       return 1.0
     return 0.7
   if normalized_group.startswith("CH-STUD"):
     return 0.65
   if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
-    return 0.4
+    return 0.45
   if normalized_group == "R-STUD":
     return 0.26
   if normalized_group == "I-STUD":
@@ -641,10 +674,35 @@ def _composite_ratio(layers: tuple[_Layer, ...], shear_by_name: dict[str, float]
   return max(0.0, min(1.0, min(ratios)))
 
 
+def _stud_section_modulus(
+  stud_layer: LayerResult,
+  assembly: _StudAssembly,
+  composite: bool,
+) -> tuple[float, float]:
+  """스터드 유효단면계수 Se(mm³)와 최외단 거리 c(mm)를 반환한다.
+
+  - 부분합성: 합성 중립축 기준 스터드 I / 합성 중립축~스터드 최외단 거리
+  - 스터드 단독: 스터드 자체 도심 기준 I / 자체 도심~최외단 거리(비대칭 단면은 큰 쪽)
+  두 경우 모두 총단면 S에 Se/Sx 비(AISI S100-16 부록 1)를 곱한다.
+  """
+  if composite:
+    neutral_axis = stud_layer.y_centroid_mm - stud_layer.distance_to_neutral_axis_mm
+    y_bottom = stud_layer.y_centroid_mm - assembly.centroid_mm
+    y_top = y_bottom + assembly.height_mm
+    extreme_fiber = max(neutral_axis - y_bottom, y_top - neutral_axis)
+    inertia = stud_layer.inertia_about_neutral_axis_mm4
+  else:
+    extreme_fiber = max(assembly.centroid_mm, assembly.height_mm - assembly.centroid_mm)
+    inertia = assembly.self_inertia_mm4
+  if extreme_fiber <= 0.0:
+    raise ValueError("스터드 최외단 거리가 0 이하입니다.")
+  return inertia / extreme_fiber * assembly.effective_section_ratio, extreme_fiber
+
+
 def _nominal_moment(
   layers: tuple[LayerResult, ...],
   shear_by_name: dict[str, float],
-  stud_section_modulus_depth_mm: float,
+  stud_section_modulus_mm3: float,
   include_board_layers: bool = True,
 ) -> float:
   total = 0.0
@@ -655,8 +713,7 @@ def _nominal_moment(
       force = min(layer.axial_strength_kN, shear_by_name.get(layer.name, 0.0))
       total += abs(force * layer.distance_to_neutral_axis_mm * 1e-3)
     else:
-      section_modulus = layer.inertia_about_neutral_axis_mm4 / stud_section_modulus_depth_mm * 2.0
-      total += STUD_YIELD_STRENGTH * section_modulus * 1e-6
+      total += STUD_YIELD_STRENGTH * stud_section_modulus_mm3 * 1e-6
   return total
 
 
@@ -725,7 +782,16 @@ def _live_moment_kNm(request: WallCheckRequest) -> float:
 def _required_moment_kNm(request: WallCheckRequest, live_moment: float, seismic_moment: float) -> float:
   if request.design_case == DESIGN_CASE_NON_SEISMIC:
     return live_moment
-  return max(live_moment, 0.7 * seismic_moment, 0.75 * live_moment + 0.7 * seismic_moment)
+  return max(
+    live_moment,
+    ASD_SEISMIC_FACTOR * seismic_moment,
+    _combined_live_seismic(live_moment, seismic_moment),
+  )
+
+
+def _combined_live_seismic(live: float, seismic: float) -> float:
+  """KDS 41 10 15 허용응력 조합 0.75L + 0.75(0.7E)."""
+  return ASD_COMBINED_LIVE_FACTOR * live + ASD_COMBINED_SEISMIC_FACTOR * ASD_SEISMIC_FACTOR * seismic
 
 
 def _seismic_moment_kNm(
@@ -748,12 +814,12 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
   live_kN_per_m = live_per_spacing / spacing_m
   seismic_kN_per_m = seismic_per_spacing / spacing_m
   load_combination_L = live_kN_per_m
-  load_combination_0_7E = 0.7 * seismic_kN_per_m
-  load_combination_0_75L_0_7E = 0.75 * live_kN_per_m + 0.7 * seismic_kN_per_m
+  load_combination_0_7E = ASD_SEISMIC_FACTOR * seismic_kN_per_m
+  load_combination_0_75L_0_525E = _combined_live_seismic(live_kN_per_m, seismic_kN_per_m)
   if request.design_case == DESIGN_CASE_NON_SEISMIC:
     required = load_combination_L
   else:
-    required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_7E)
+    required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_525E)
   anchor_allowable_spacing_mm = _anchor_spacing_floor_mm(
     request.anchor_capacity_kN / required * 1000.0 if required > 0.0 else 0.0,
   )
@@ -764,7 +830,7 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
     seismic_kN_per_m=seismic_kN_per_m,
     load_combination_L_kN_per_m=load_combination_L,
     load_combination_0_7E_kN_per_m=load_combination_0_7E,
-    load_combination_0_75L_0_7E_kN_per_m=load_combination_0_75L_0_7E,
+    load_combination_0_75L_0_525E_kN_per_m=load_combination_0_75L_0_525E,
     required_kN_per_m=required,
     anchor_capacity_kN=request.anchor_capacity_kN,
     anchor_spacing_mm=request.anchor_spacing_mm,
@@ -783,7 +849,7 @@ def _reaction_intermediate(request: WallCheckRequest, reaction: _ReactionResult)
     values.update(
       {
         "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
-        "reaction_0_75L_0_7E_kN_per_m": reaction.load_combination_0_75L_0_7E_kN_per_m,
+        "reaction_0_75L_0_525E_kN_per_m": reaction.load_combination_0_75L_0_525E_kN_per_m,
         "anchor_capacity_kN": reaction.anchor_capacity_kN,
         "anchor_spacing_mm": reaction.anchor_spacing_mm,
         "anchor_allowable_spacing_mm": reaction.anchor_allowable_spacing_mm,

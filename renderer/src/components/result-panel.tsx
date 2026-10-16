@@ -114,8 +114,8 @@ function LoadCombinationMetrics({ result, isSeismic }: { result: WallCheckResult
       {isSeismic ? <Metric label="M(0.7E)" value={intermediateValue(result, "moment_0_7E_kNm")} suffix="kN·m" /> : null}
       {isSeismic ? (
         <Metric
-          label="M(0.75L+0.7E)"
-          value={intermediateValue(result, "moment_0_75L_0_7E_kNm")}
+          label="M(0.75L+0.75(0.7E))"
+          value={intermediateValue(result, "moment_0_75L_0_525E_kNm")}
           suffix="kN·m"
         />
       ) : null}
@@ -135,8 +135,8 @@ function ReactionMetrics({ result }: { result: WallCheckResult }) {
       <Metric label="반력 L" value={intermediateValue(result, "reaction_L_kN_per_m")} suffix="kN/m" />
       <Metric label="반력 0.7E" value={intermediateValue(result, "reaction_0_7E_kN_per_m")} suffix="kN/m" />
       <Metric
-        label="반력 0.75L+0.7E"
-        value={intermediateValue(result, "reaction_0_75L_0_7E_kN_per_m")}
+        label="반력 0.75L+0.75(0.7E)"
+        value={intermediateValue(result, "reaction_0_75L_0_525E_kN_per_m")}
         suffix="kN/m"
       />
       <Metric label="필요 반력" value={intermediateValue(result, "reaction_required_kN_per_m")} suffix="kN/m" />

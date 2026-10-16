@@ -40,6 +40,7 @@ export interface StudSection {
   rx: number;
   ry: number;
   section_class: string;
+  Se: number | null;
 }
 
 export interface StudMethod {

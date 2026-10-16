@@ -63,6 +63,12 @@
         ]
       },
       "expected": {
+        "max_height_mm": 8200.0,
+        "Mu_at_max_height_kNm": 1.6344318004788247,
+        "I_eff_raw_at_2400_mm4": 1666400.813612483,
+        "I_eff_correction_factor": 0.35
+      },
+      "expected_legacy": {
         "max_height_mm": 7850.0,
         "Mu_at_max_height_kNm": 1.7769641824136984,
         "I_eff_raw_at_2400_mm4": 2306353.938612483,
@@ -90,6 +96,12 @@
         ]
       },
       "expected": {
+        "max_height_mm": 5050.0,
+        "Mu_at_max_height_kNm": 0.4444359959391637,
+        "I_eff_raw_at_2400_mm4": 201203.37151087826,
+        "I_eff_correction_factor": 1.0
+      },
+      "expected_legacy": {
         "max_height_mm": 5000.0,
         "Mu_at_max_height_kNm": 0.49228954259832003,
         "I_eff_raw_at_2400_mm4": 196937.67459179685,
@@ -126,6 +138,12 @@
         ]
       },
       "expected": {
+        "max_height_mm": 6650.0,
+        "Mu_at_max_height_kNm": 1.0749354594984362,
+        "I_eff_raw_at_2400_mm4": 471856.58080863603,
+        "I_eff_correction_factor": 0.7
+      },
+      "expected_legacy": {
         "max_height_mm": 6600.0,
         "Mu_at_max_height_kNm": 1.2561087230466257,
         "I_eff_raw_at_2400_mm4": 468756.58080863603,
@@ -163,6 +181,12 @@
       },
       "expected": {
         "max_height_mm": 6400.0,
+        "Mu_at_max_height_kNm": 0.9760834007791905,
+        "I_eff_raw_at_2400_mm4": 411816.58080863603,
+        "I_eff_correction_factor": 0.7
+      },
+      "expected_legacy": {
+        "max_height_mm": 6400.0,
         "Mu_at_max_height_kNm": 1.1562567482545278,
         "I_eff_raw_at_2400_mm4": 410266.58080863603,
         "I_eff_correction_factor": 0.7
@@ -198,6 +222,12 @@
         ]
       },
       "expected": {
+        "max_height_mm": 5850.0,
+        "Mu_at_max_height_kNm": 1.04864579482976,
+        "I_eff_raw_at_2400_mm4": 550708.9828193213,
+        "I_eff_correction_factor": 0.65
+      },
+      "expected_legacy": {
         "max_height_mm": 5850.0,
         "Mu_at_max_height_kNm": 1.237776424356347,
         "I_eff_raw_at_2400_mm4": 550708.9828193213,
@@ -235,6 +265,12 @@
       },
       "expected": {
         "max_height_mm": 10650.0,
+        "Mu_at_max_height_kNm": 2.7301249278421373,
+        "I_eff_raw_at_2400_mm4": 1601106.5154365862,
+        "I_eff_correction_factor": 0.71
+      },
+      "expected_legacy": {
+        "max_height_mm": 10650.0,
         "Mu_at_max_height_kNm": 3.2397788610340394,
         "I_eff_raw_at_2400_mm4": 1592514.5154365862,
         "I_eff_correction_factor": 0.71
@@ -270,6 +306,12 @@
         ]
       },
       "expected": {
+        "max_height_mm": 6350.0,
+        "Mu_at_max_height_kNm": 0.9649429899013782,
+        "I_eff_raw_at_2400_mm4": 672536.3692526447,
+        "I_eff_correction_factor": 0.42
+      },
+      "expected_legacy": {
         "max_height_mm": 6350.0,
         "Mu_at_max_height_kNm": 1.1448318641393378,
         "I_eff_raw_at_2400_mm4": 672536.3692526447,
@@ -307,6 +349,12 @@
       },
       "expected": {
         "max_height_mm": 6350.0,
+        "Mu_at_max_height_kNm": 0.9614267526297136,
+        "I_eff_raw_at_2400_mm4": 656541.566841817,
+        "I_eff_correction_factor": 0.43
+      },
+      "expected_legacy": {
+        "max_height_mm": 6350.0,
         "Mu_at_max_height_kNm": 1.1393986058096826,
         "I_eff_raw_at_2400_mm4": 654316.1176403153,
         "I_eff_correction_factor": 0.43
@@ -342,6 +390,12 @@
         ]
       },
       "expected": {
+        "max_height_mm": 6500.0,
+        "Mu_at_max_height_kNm": 1.0101431098753082,
+        "I_eff_raw_at_2400_mm4": 677842.3692526447,
+        "I_eff_correction_factor": 0.45
+      },
+      "expected_legacy": {
         "max_height_mm": 6400.0,
         "Mu_at_max_height_kNm": 1.1798712915934744,
         "I_eff_raw_at_2400_mm4": 762783.0161803198,
@@ -378,6 +432,12 @@
         ]
       },
       "expected": {
+        "max_height_mm": 6100.0,
+        "Mu_at_max_height_kNm": 0.8892853702731084,
+        "I_eff_raw_at_2400_mm4": 973434.7823909685,
+        "I_eff_correction_factor": 0.26
+      },
+      "expected_legacy": {
         "max_height_mm": 6050.0,
         "Mu_at_max_height_kNm": 1.0366134706817496,
         "I_eff_raw_at_2400_mm4": 969263.7823909685,
@@ -415,10 +475,17 @@
       },
       "expected": {
         "max_height_mm": 6400.0,
+        "Mu_at_max_height_kNm": 1.250985127018955,
+        "I_eff_raw_at_2400_mm4": 518526.507483473,
+        "I_eff_correction_factor": 0.87
+      },
+      "expected_legacy": {
+        "max_height_mm": 6400.0,
         "Mu_at_max_height_kNm": 1.4759801693586065,
         "I_eff_raw_at_2400_mm4": 518526.507483473,
         "I_eff_correction_factor": 0.87
       }
     }
-  ]
+  ],
+  "_recalc_note": "2026-10-16 1차 심사의견 반영 재산정(DXF 단면성능·Se·Fy 295·S=I/c_max·KDS 0.75L+0.75(0.7E)·중앙부이음 관성 수정·R 재보정). 이전 엑셀 기준값은 expected_legacy 참조."
 }

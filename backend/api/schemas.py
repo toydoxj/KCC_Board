@@ -299,6 +299,7 @@ class StudSectionData(ApiModel):
   rx: float
   ry: float
   section_class: str
+  Se: float | None = None
 
   @classmethod
   def from_repository(cls, stud: StudSection) -> "StudSectionData":
@@ -318,6 +319,7 @@ class StudSectionData(ApiModel):
       rx=stud.rx,
       ry=stud.ry,
       section_class=stud.section_class,
+      Se=stud.Se,
     )
 
 

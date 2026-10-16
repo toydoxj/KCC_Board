@@ -78,7 +78,7 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(stud_only.Mn_kNm, stud_only.intermediate["Mn_stud_only_kNm"])
     self.assertAlmostEqual(composite.Mn_kNm, composite.intermediate["Mn_composite_kNm"])
     self.assertLess(stud_only.Mn_kNm, composite.Mn_kNm)
-    self.assertEqual(stud_only.max_height_mm, 5450.0)
+    self.assertEqual(stud_only.max_height_mm, 6150.0)
     self.assertEqual(stud_only.stress_verdict, "N.G")
 
   def test_bolt_shear_uses_half_and_yield_conversion_factors(self) -> None:
@@ -156,7 +156,9 @@ class GoldenCaseTest(unittest.TestCase):
     section = _build_section(request, self.repository)
     stud = self.repository.get_stud("C-STUD", request.stud.spec)
     stud_layer = section.stud_layer
-    distance = stud.H + 25.0 / 2.0
+    # 조립 도심 ~ 각 스터드 도심 거리 = H + g/2 - cy (대칭 C형: H/2 + g/2)
+    distance = stud.H + 25.0 / 2.0 - stud.cy
+    self.assertAlmostEqual(distance, stud.H / 2.0 + 25.0 / 2.0)
     expected_i = 2.0 * (stud.A * distance**2 + stud.Ix)
 
     self.assertEqual(section.stud_multiplier, 2.0)
@@ -164,28 +166,37 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(stud_layer.transformed_area_mm2, 2.0 * stud.A)
     self.assertAlmostEqual(section.stud_unfactored_self_inertia_mm4, expected_i)
     self.assertAlmostEqual(stud_layer.self_inertia_mm4, expected_i)
-    self.assertAlmostEqual(section.stud_section_modulus_depth_mm, stud.H)
 
     result = _calculate_wall_check_once(request, self.repository)
     self.assertAlmostEqual(result.intermediate["stud_connection_inertia_factor"], 1.0)
     self.assertAlmostEqual(result.intermediate["stud_I_unfactored_mm4"], expected_i)
     stud_result = next(layer for layer in result.layers if layer.layer_type == "stud")
-    expected_stud_section_modulus = stud_result.inertia_about_neutral_axis_mm4 / stud.H * 2.0
-    expected_stud_moment = 275.0 * expected_stud_section_modulus * 1e-6
-    actual_stud_moment = _nominal_moment((stud_result,), {}, section.stud_section_modulus_depth_mm)
+    se_ratio = stud.Se / stud.Sx
+    # 부분합성: 합성 중립축 ~ 조립 스터드 최외단 거리 기준
+    neutral_axis = result.neutral_axis_mm
+    y_bottom = stud_layer.y_centroid_mm - stud_layer.thickness_mm / 2.0
+    c_composite = max(neutral_axis - y_bottom, y_bottom + stud_layer.thickness_mm - neutral_axis)
+    expected_s_composite = stud_result.inertia_about_neutral_axis_mm4 / c_composite * se_ratio
+    # 스터드 단독: 조립 자체 도심 기준
+    expected_s_stud_only = expected_i / (stud_layer.thickness_mm / 2.0) * se_ratio
+    self.assertAlmostEqual(result.intermediate["stud_Se_composite_mm3"], expected_s_composite)
+    self.assertAlmostEqual(result.intermediate["stud_Se_stud_only_mm3"], expected_s_stud_only)
+    expected_stud_moment = 295.0 * expected_s_stud_only * 1e-6
+    actual_stud_moment = _nominal_moment((stud_result,), {}, result.intermediate["stud_Se_stud_only_mm3"])
 
     self.assertAlmostEqual(actual_stud_moment, expected_stud_moment)
+    self.assertAlmostEqual(result.intermediate["Mn_stud_only_kNm"], expected_stud_moment)
 
   def test_effective_inertia_correction_factor_mapping(self) -> None:
     cases = [
       ("C-STUD", "기본", 0.7),
       ("C-STUD", "맞댐이음", 0.7),
-      ("C-STUD", "중앙부 이음", 0.25),
-      ("C-STUD", "중앙부연결", 0.25),
+      ("C-STUD", "중앙부 이음", 0.35),
+      ("C-STUD", "중앙부연결", 0.35),
       ("CH-STUD", "기본", 0.65),
       ("CH-STUD(개량형)", "기본", 0.65),
-      ("T-Silent", "기본", 0.4),
-      ("T.silent-STUD", "기본", 0.4),
+      ("T-Silent", "기본", 0.45),
+      ("T.silent-STUD", "기본", 0.45),
       ("R.STUD", "기본", 0.26),
       ("R-STUD", "기본", 0.26),
       ("I-STUD", "기본", 0.87),
@@ -231,11 +242,40 @@ class GoldenCaseTest(unittest.TestCase):
     )
     central_result = _calculate_wall_check_once(central_request, self.repository)
 
-    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.25)
+    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.35)
     self.assertAlmostEqual(
       central_result.I_eff_mm4,
-      central_result.intermediate["I_eff_raw_mm4"] * 0.25,
+      max(
+        central_result.intermediate["I_eff_raw_mm4"] * 0.35,
+        central_result.intermediate["I_eff_lower_bound_mm4"],
+      ),
     )
+
+  def test_effective_inertia_is_not_below_bare_stud_inertia(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    # 피스 간격을 극단적으로 넓혀 합성도를 0에 가깝게 → 하한(스터드 단독 강성) 지배
+    sparse = replace(request, bolt=replace(request.bolt, pitch=(1.0e9, 1.0e9, 1.0e9)))
+    result = _calculate_wall_check_once(sparse, self.repository)
+    stud = self.repository.get_stud("C-STUD", request.stud.spec)
+
+    self.assertAlmostEqual(result.intermediate["I_eff_lower_bound_mm4"], 2.0 * stud.Ix)
+    self.assertGreaterEqual(result.I_eff_mm4, result.intermediate["I_eff_lower_bound_mm4"])
+    self.assertEqual(result.intermediate["I_eff_lower_bound_governs"], 1.0)
+
+  def test_asymmetric_stud_only_section_modulus_uses_larger_extreme_fiber(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 25.0),),
+      front_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="CH-STUD", spec="102CHS-08", method="기본"),
+    )
+    result = _calculate_wall_check_once(request, self.repository)
+    stud = self.repository.get_stud("CH-STUD", "102CHS-08")
+    c_max = max(stud.cy, stud.H - stud.cy)
+
+    self.assertAlmostEqual(result.intermediate["stud_extreme_fiber_stud_only_mm"], c_max)
+    self.assertAlmostEqual(result.intermediate["stud_Se_stud_only_mm3"], stud.Ix / c_max * stud.Se / stud.Sx)
+    self.assertAlmostEqual(result.intermediate["Mn_stud_only_kNm"], 295.0 * stud.Se * stud.Ix / c_max / stud.Sx * 1e-6)
 
   def test_reaction_result_is_converted_to_required_kN_per_m(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
@@ -245,8 +285,8 @@ class GoldenCaseTest(unittest.TestCase):
     expected_live = request.live_load_kN_m2 * span_m * spacing_m / 2.0 / spacing_m
     expected_seismic = result.intermediate["Fp_kN"] / 2.0 * 2.0 / spacing_m
     expected_0_7E = 0.7 * expected_seismic
-    expected_0_75L_0_7E = 0.75 * expected_live + 0.7 * expected_seismic
-    expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_7E)
+    expected_0_75L_0_525E = 0.75 * expected_live + 0.75 * 0.7 * expected_seismic
+    expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_525E)
     expected_anchor_allowable_spacing = 200.0
     expected_anchor_capacity_per_m = request.anchor_capacity_kN / (request.anchor_spacing_mm / 1000.0)
     expected_anchor_utilization = expected_required / expected_anchor_capacity_per_m
@@ -254,8 +294,8 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(result.intermediate["reaction_L_kN_per_m"], expected_live)
     self.assertAlmostEqual(result.intermediate["reaction_0_7E_kN_per_m"], expected_0_7E)
     self.assertAlmostEqual(
-      result.intermediate["reaction_0_75L_0_7E_kN_per_m"],
-      expected_0_75L_0_7E,
+      result.intermediate["reaction_0_75L_0_525E_kN_per_m"],
+      expected_0_75L_0_525E,
     )
     self.assertAlmostEqual(result.intermediate["reaction_required_kN_per_m"], expected_required)
     self.assertAlmostEqual(result.intermediate["anchor_capacity_kN"], 0.4)
@@ -269,7 +309,9 @@ class GoldenCaseTest(unittest.TestCase):
       self.repository,
     )
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
-    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], 400.0)
+    expected_stronger_spacing = math.floor(0.8 / expected_required * 1000.0 / 50.0) * 50.0
+    self.assertAlmostEqual(expected_stronger_spacing, 450.0)
+    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], expected_stronger_spacing)
 
   def test_deflection_uses_live_load_kn_m2(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
@@ -295,7 +337,7 @@ class GoldenCaseTest(unittest.TestCase):
 
     self.assertEqual(result.design_case, "non_seismic")
     self.assertNotIn("reaction_0_7E_kN_per_m", result.intermediate)
-    self.assertNotIn("reaction_0_75L_0_7E_kN_per_m", result.intermediate)
+    self.assertNotIn("reaction_0_75L_0_525E_kN_per_m", result.intermediate)
     self.assertNotIn("anchor_capacity_kN", result.intermediate)
     self.assertNotIn("anchor_spacing_mm", result.intermediate)
     self.assertAlmostEqual(result.Mu_kNm, expected_live_moment)
