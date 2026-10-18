@@ -384,7 +384,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
             <div className="font-semibold">{isStudOnlyStrengthCheck ? "Mn = M스터드" : "Mn = ΣM보드 + M스터드"}</div>
             <div>강도 기준 = {strengthCheckModeLabel}</div>
-            <div>M보드,i = |min(Pn,i, Vc,i) × d_i| × 10^-3</div>
+            <div>M보드,i = |min(Pn,i, Vc,s,i) × d_i| × 10^-3</div>
+            <div>Vc,s = 강도용 전단누계: 피스 1개당 min(현행 피스강도, 석고보드 피스 설계강도 = AISI S240-20 해설 C-B3.2-1 극한/2.0)</div>
             <div>M스터드 = Fy,stud × Se스터드 × 10^-6, Se스터드 = (I_stud / c_max) × (Se/Sx)</div>
             <div>c_max = {isStudOnlyStrengthCheck ? "스터드 자체 도심" : "합성 중립축"} ~ 스터드 최외단 거리, Se/Sx = AISI S100-16 부록 1 유효단면계수비</div>
             {data.stud.gapMm === null ? null : (
@@ -404,7 +405,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <TableHead>요소</TableHead>
                 <TableHead>적용식</TableHead>
                 <TableHead>Pn</TableHead>
-                <TableHead>Vc</TableHead>
+                <TableHead>Vc,s</TableHead>
                 <TableHead>적용힘</TableHead>
                 <TableHead>d 또는 S</TableHead>
                 <TableHead>Mn 기여</TableHead>
@@ -452,7 +453,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <TableHead>d</TableHead>
                 <TableHead>I</TableHead>
                 <TableHead>축강도</TableHead>
-                <TableHead>전단누계</TableHead>
+                <TableHead>전단누계(강성)</TableHead>
+                <TableHead>전단누계(강도)</TableHead>
               </tr>
             </thead>
             <tbody>
@@ -520,6 +522,7 @@ function LayerRow({ layer }: { layer: LayerResult }) {
       <TableCell>{formatNumber(layer.inertia_about_neutral_axis_mm4)}</TableCell>
       <TableCell>{formatNumber(layer.axial_strength_kN)}</TableCell>
       <TableCell>{formatNumber(layer.cumulative_shear_kN)}</TableCell>
+      <TableCell>{formatNumber(layer.strength_shear_kN ?? layer.cumulative_shear_kN)}</TableCell>
     </tr>
   );
 }
@@ -556,14 +559,15 @@ function nominalMomentTerms(data: CalculationReportData) {
   const includeBoardMoment = data.result.strength_check_mode !== "stud_only";
   return data.result.layers.map<NominalMomentTerm>((layer) => {
     if (layer.layer_type === "board") {
-      const appliedForce = Math.min(layer.axial_strength_kN, layer.cumulative_shear_kN);
+      const strengthShear = layer.strength_shear_kN ?? layer.cumulative_shear_kN;
+      const appliedForce = Math.min(layer.axial_strength_kN, strengthShear);
       const boardMoment = Math.abs(appliedForce * layer.distance_to_neutral_axis_mm * 1e-3);
       return {
         name: layer.name,
         type: "board",
-        expression: includeBoardMoment ? "|min(Pn,Vc)×d|×10^-3" : "강도판정 미반영",
+        expression: includeBoardMoment ? "|min(Pn,Vc,s)×d|×10^-3" : "강도판정 미반영",
         axialStrength_kN: layer.axial_strength_kN,
-        cumulativeShear_kN: layer.cumulative_shear_kN,
+        cumulativeShear_kN: strengthShear,
         appliedForce_kN: appliedForce,
         distanceOrSection: Math.abs(layer.distance_to_neutral_axis_mm),
         distanceOrSectionUnit: "mm",

@@ -14,6 +14,7 @@ from backend.engine.calculator import (
   _calculate_wall_check_once,
   _connection_capacity_kN,
   _effective_inertia_correction_factor,
+  _gypsum_screw_design_shear_N,
   _nominal_moment,
   calculate_wall_check,
   request_from_golden_case,
@@ -405,7 +406,7 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(front_layer.y_centroid_mm, stud.H + 19.0 / 2.0)
     self.assertAlmostEqual(result.neutral_axis_mm, expected_neutral_axis)
 
-  def test_ch_stud_rear_board_is_fully_composite_with_stud(self) -> None:
+  def test_ch_stud_rear_board_is_screwed_at_fixed_pitch(self) -> None:
     cases = [
       ("CH-STUD", 25.0, "방화-25-0"),
       ("CH-STUD(개량형)", 12.5, "방화-12.5-0"),
@@ -426,7 +427,11 @@ class GoldenCaseTest(unittest.TestCase):
           if layer.layer_type == "board" and layer.name.startswith(rear_board_prefix)
         )
 
-        self.assertAlmostEqual(rear_board.cumulative_shear_kN, rear_board.axial_strength_kN)
+        # 고정 후면 보드: 피스 간격 300 mm, 피치당 2개(완전합성 가정 폐지)
+        per_screw = min(785.0840041320893, 2.0 * 0.85 * thickness * 3.5 * self.repository.get_board("방화", thickness).Fu)
+        expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
+        self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
+        self.assertLessEqual(rear_board.strength_shear_kN, rear_board.cumulative_shear_kN)
 
   def test_ch_stud_improved_keeps_group_and_uses_12mm_class_rear_board(self) -> None:
     request = replace(
@@ -471,7 +476,29 @@ class GoldenCaseTest(unittest.TestCase):
 
     self.assertAlmostEqual(stud_layer.y_centroid_mm, stud.cy)
     self.assertAlmostEqual(front_layer.y_centroid_mm, stud.H + 19.0 / 2.0)
-    self.assertAlmostEqual(rear_board.cumulative_shear_kN, rear_board.axial_strength_kN)
+    per_screw = min(785.0840041320893, 2.0 * 0.85 * 25.0 * 3.5 * self.repository.get_board("방화", 25.0).Fu)
+    expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
+    self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
+
+  def test_gypsum_screw_design_shear_from_aisi_s240(self) -> None:
+    # AISI S240-20 해설 Table C-B3.2-1 (No.6): 12.7 mm 516 N, 15.9 mm 605 N, 설계 = 극한 / 2.0
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(12.7), 258.0)
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(15.9), 302.5)
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(19.0), 302.5)
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(9.5), 516.0 * 9.5 / 12.7 / 2.0)
+
+  def test_screw_design_strength_applies_only_to_mn(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    result = _calculate_wall_check_once(request, self.repository)
+    boards = [layer for layer in result.layers if layer.layer_type == "board"]
+    # 강도용 누계는 강성용 이하, η(강성)는 강성용 누계 기준
+    for layer in boards:
+      self.assertLessEqual(layer.strength_shear_kN, layer.cumulative_shear_kN + 1e-12)
+    expected_mn = sum(
+      abs(min(layer.axial_strength_kN, layer.strength_shear_kN) * layer.distance_to_neutral_axis_mm * 1e-3)
+      for layer in boards
+    ) + 295.0 * result.intermediate["stud_Se_composite_mm3"] * 1e-6
+    self.assertAlmostEqual(result.intermediate["Mn_composite_kNm"], expected_mn)
 
   def test_i_stud_rejects_non_fire_rated_25mm_rear_board(self) -> None:
     request = replace(

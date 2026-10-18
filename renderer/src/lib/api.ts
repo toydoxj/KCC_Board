@@ -112,6 +112,7 @@ export interface LayerResult {
   inertia_about_neutral_axis_mm4: number;
   axial_strength_kN: number;
   cumulative_shear_kN: number;
+  strength_shear_kN: number;
 }
 
 export interface WallCheckResult {

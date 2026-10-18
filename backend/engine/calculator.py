@@ -18,7 +18,11 @@ from backend.engine.constants import (
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
+  FIXED_REAR_BOARD_SCREW_COUNT,
+  FIXED_REAR_BOARD_SCREW_PITCH_MM,
   GRAVITY,
+  GYPSUM_SCREW_STRENGTH_DIVISOR,
+  GYPSUM_SCREW_ULTIMATE_SHEAR_N,
   SCREW_PULLOUT_COEFFICIENT,
   SCREW_TENSION_OMEGA,
   SEISMIC_FP_COEFFICIENT,
@@ -67,7 +71,9 @@ class _Layer:
   axial_strength_kN: float
   mass_kN: float
   board_property: BoardProperty | None = None
-  fully_composite_with_stud: bool = False
+  # 피스 간격·개수 고정값(CH·I-STUD 고정 후면 보드). None이면 bolt 입력(층 순서별)을 따른다.
+  connection_pitch_mm: float | None = None
+  connection_count: float | None = None
 
 
 @dataclass(frozen=True)
@@ -158,7 +164,8 @@ def _calculate_wall_check_once(
   stud_assembly = section.stud_assembly
   S_stud_composite, c_stud_composite = _stud_section_modulus(stud_result, stud_assembly, composite=True)
   S_stud_only, c_stud_only = _stud_section_modulus(stud_result, stud_assembly, composite=False)
-  Mn_composite = _nominal_moment(layer_results, shear_by_name, S_stud_composite)
+  strength_shear_by_name = _shear_connection_by_layer(section.layers, request, for_strength=True)
+  Mn_composite = _nominal_moment(layer_results, strength_shear_by_name, S_stud_composite)
   Mn_stud_only = _nominal_moment(
     layer_results,
     shear_by_name,
@@ -185,6 +192,7 @@ def _calculate_wall_check_once(
       inertia_about_neutral_axis_mm4=layer.inertia_about_neutral_axis_mm4,
       axial_strength_kN=layer.axial_strength_kN,
       cumulative_shear_kN=shear_by_name.get(layer.name, 0.0),
+      strength_shear_kN=strength_shear_by_name.get(layer.name, 0.0),
     )
     for layer in layer_results
   )
@@ -331,7 +339,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
       y_cursor,
       request,
       repo,
-      fully_composite_with_stud=fixed_rear_board is not None,
+      fixed_rear_board=fixed_rear_board is not None,
     )
     layers.append(layer)
     if fixed_rear_board is None:
@@ -382,7 +390,7 @@ def _board_layer(
   y_bottom: float,
   request: WallCheckRequest,
   repo: MaterialRepository,
-  fully_composite_with_stud: bool = False,
+  fixed_rear_board: bool = False,
 ) -> tuple[_Layer, float]:
   prop = repo.get_board(board.kind, board.thickness)
   elastic_ratio = prop.E_GPa * 1000.0 / STUD_ELASTIC_MODULUS
@@ -405,7 +413,8 @@ def _board_layer(
       axial_strength_kN=axial,
       mass_kN=mass,
       board_property=prop,
-      fully_composite_with_stud=fully_composite_with_stud,
+      connection_pitch_mm=FIXED_REAR_BOARD_SCREW_PITCH_MM if fixed_rear_board else None,
+      connection_count=FIXED_REAR_BOARD_SCREW_COUNT if fixed_rear_board else None,
     ),
     y_bottom + board.thickness,
   )
@@ -599,38 +608,65 @@ def _layer_results(layers: tuple[_Layer, ...], neutral_axis: float) -> tuple[Lay
 def _shear_connection_by_layer(
   layers: tuple[_Layer, ...],
   request: WallCheckRequest,
+  for_strength: bool = False,
 ) -> dict[str, float]:
+  """외곽→내측 피스 전단 누계. for_strength=True이면 Mn용(석고보드 피스 설계강도 상한 적용)."""
   result: dict[str, float] = {}
   stud_index = next(index for index, layer in enumerate(layers) if layer.layer_type == "stud")
   rear_layers = tuple(layer for layer in layers[:stud_index] if layer.layer_type == "board")
   front_layers = tuple(layer for layer in layers[stud_index + 1 :] if layer.layer_type == "board")
 
-  for layer, value in _side_cumulative_shear(tuple(rear_layers), request).items():
+  for layer, value in _side_cumulative_shear(tuple(rear_layers), request, for_strength).items():
     result[layer] = value
-  for layer, value in _side_cumulative_shear(tuple(reversed(front_layers)), request).items():
+  for layer, value in _side_cumulative_shear(tuple(reversed(front_layers)), request, for_strength).items():
     result[layer] = value
   return result
 
 
-def _side_cumulative_shear(layers_outer_to_inner: tuple[_Layer, ...], request: WallCheckRequest) -> dict[str, float]:
+def _side_cumulative_shear(
+  layers_outer_to_inner: tuple[_Layer, ...],
+  request: WallCheckRequest,
+  for_strength: bool = False,
+) -> dict[str, float]:
   cumulative = 0.0
   result: dict[str, float] = {}
   for layer in layers_outer_to_inner:
-    capacity = (
-      layer.axial_strength_kN
-      if layer.fully_composite_with_stud
-      else _connection_capacity_kN(layer, request.bolt, request.span_mm)
-    )
+    capacity = _connection_capacity_kN(layer, request.bolt, request.span_mm, for_strength=for_strength)
     cumulative += min(layer.axial_strength_kN, capacity)
     result[layer.name] = cumulative
   return result
 
 
-def _connection_capacity_kN(layer: _Layer, bolt: BoltInput, span_mm: float) -> float:
+def _gypsum_screw_design_shear_N(board_thickness_mm: float) -> float:
+  """석고보드–스터드 피스 1개당 설계 전단강도(N) — AISI S240-20 해설 Table C-B3.2-1(No.6) 극한 / 2.0.
+
+  12.7 mm 미만은 두께 비례 외삽(확인 필요), 12.7~15.9 mm는 선형 보간, 15.9 mm 초과는 15.9 mm 값(문헌 없음, 보수측).
+  """
+  (t1, u1), (t2, u2) = GYPSUM_SCREW_ULTIMATE_SHEAR_N
+  if board_thickness_mm <= t1:
+    ultimate = u1 * board_thickness_mm / t1
+  elif board_thickness_mm < t2:
+    ultimate = u1 + (u2 - u1) * (board_thickness_mm - t1) / (t2 - t1)
+  else:
+    ultimate = u2
+  return ultimate / GYPSUM_SCREW_STRENGTH_DIVISOR
+
+
+def _layer_pitch_count(layer: _Layer, bolt: BoltInput) -> tuple[float, float]:
+  pitch = layer.connection_pitch_mm if layer.connection_pitch_mm is not None else _pitch_for_order(bolt.pitch, layer.order)
+  count = layer.connection_count if layer.connection_count is not None else _count_for_order(bolt.count, layer.order)
+  return pitch, count
+
+
+def _connection_capacity_kN(
+  layer: _Layer,
+  bolt: BoltInput,
+  span_mm: float,
+  for_strength: bool = False,
+) -> float:
   if layer.board_property is None:
     return 0.0
-  pitch = _pitch_for_order(bolt.pitch, layer.order)
-  count = _count_for_order(bolt.count, layer.order)
+  pitch, count = _layer_pitch_count(layer, bolt)
   board_bearing_strength = layer.board_property.Fu
   # 피스 1개당 전단강도 = 0.5 × Fv × Ab / 1.25 (EN 1993-1-8 인용), Fv = 0.6 × Fy
   shear_n = (
@@ -642,9 +678,12 @@ def _connection_capacity_kN(layer: _Layer, bolt: BoltInput, span_mm: float) -> f
     * bolt.diameter**2
     / 1.25
   )
-  shear_n *= count
-  bearing_n = 2.0 * 0.85 * layer.thickness_mm * count * bolt.diameter * board_bearing_strength
-  return min(shear_n, bearing_n) * (span_mm / 2.0) / pitch * 1e-3
+  bearing_n = 2.0 * 0.85 * layer.thickness_mm * bolt.diameter * board_bearing_strength
+  per_screw_n = min(shear_n, bearing_n)
+  if for_strength:
+    # 강도(Mn)용: 석고보드 피스 문헌 설계강도로 상한(강성 η·R 보정에는 미적용)
+    per_screw_n = min(per_screw_n, _gypsum_screw_design_shear_N(layer.thickness_mm))
+  return per_screw_n * count * (span_mm / 2.0) / pitch * 1e-3
 
 
 def _pitch_for_order(pitches: tuple[float, ...], order: int) -> float:
@@ -938,7 +977,7 @@ def _screw_tension_result(
     else:
       pressure = max(live, ASD_SEISMIC_FACTOR * seismic_kN_m2, _combined_live_seismic(live, seismic_kN_m2))
     # 보수측: 피치당 피스 1개로 봄(bolt.count는 보드 이음부 2열 체결 등을 포함할 수 있어 인장 분담에는 미적용 — 확인 필요)
-    spacing_per_screw = max(_pitch_for_order(request.bolt.pitch, layer.order) for layer in face)
+    spacing_per_screw = max(_layer_pitch_count(layer, request.bolt)[0] for layer in face)
     face_demand = pressure * 1e-3 * request.spacing_mm * spacing_per_screw
     if face_demand > demand_N:
       demand_N = face_demand

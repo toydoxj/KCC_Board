@@ -24,6 +24,12 @@
 - N.G이면 최대 산정높이·앵커 기준높이 0 (모든 검토 만족 조건에 포함)
 - 11개 시편: 풀아웃 사용률 0.11~0.39, 풀스루 0.30~0.81 → 전부 O.K, 허용높이 불변
 
+## 1-2. 피스 전단 강성·강도 분리 (2026-10-19, B안 확정)
+
+- Mn 보드항 피스 강도 상한: AISI S240-20 해설 Table C-B3.2-1 극한/2.0 (12.7 mm 258 N, 15.9 mm 이상 302.5 N). η·Ieff·R 불변
+- CH·I-STUD 후면 보드: 완전합성 → 피스 체결(300 mm, 2개)
+- 영향(11개 시편, 내진 부분합성): Mn 30~85% 감소, 허용높이는 **I-STUD 75-06만 6,400 → 5,600 mm(응력 지배)**, 나머지 불변. 비내진 불변
+
 ## 2. R 재보정
 
 R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
@@ -62,6 +68,6 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 
 ## 5. 검증
 
-- `python -m pytest` : 50 passed + 36 subtests (골든값 재산정, 종전 엑셀값은 `expected_legacy` 보존)
+- `python -m pytest` : 52 passed + 36 subtests (골든값 재산정, 종전 엑셀값은 `expected_legacy` 보존)
 - 신규 테스트: Ieff 하한, 비대칭 스터드 단독 c_max
 - `npm run build` 성공

@@ -474,8 +474,8 @@
         ]
       },
       "expected": {
-        "max_height_mm": 6400.0,
-        "Mu_at_max_height_kNm": 1.250985127018955,
+        "max_height_mm": 5600.0,
+        "Mu_at_max_height_kNm": 0.957785487873887,
         "I_eff_raw_at_2400_mm4": 518526.507483473,
         "I_eff_correction_factor": 0.87
       },
@@ -487,5 +487,5 @@
       }
     }
   ],
-  "_recalc_note": "2026-10-16 1차 심사의견 반영 재산정(DXF 단면성능·Se·Fy 295·S=I/c_max·KDS 0.75L+0.75(0.7E)·중앙부이음 관성 수정·R 재보정). 이전 엑셀 기준값은 expected_legacy 참조."
+  "_recalc_note": "2026-10-16 1차 심사의견 반영 재산정(DXF 단면성능·Se·Fy 295·S=I/c_max·KDS 0.75L+0.75(0.7E)·중앙부이음 관성 수정·R 재보정). 이전 엑셀 기준값은 expected_legacy 참조. / 2026-10-19 갱신: Mn 보드항 피스 강도 상한(AISI S240-20 해설 C-B3.2-1 극한/2.0), CH·I-STUD 후면 보드 피스 체결(300 mm, 2개)."
 }

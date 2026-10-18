@@ -193,6 +193,7 @@ class LayerResultData(ApiModel):
   inertia_about_neutral_axis_mm4: float
   axial_strength_kN: float
   cumulative_shear_kN: float
+  strength_shear_kN: float = 0.0
 
   @classmethod
   def from_engine(cls, result: LayerResult) -> "LayerResultData":
@@ -205,6 +206,7 @@ class LayerResultData(ApiModel):
       inertia_about_neutral_axis_mm4=result.inertia_about_neutral_axis_mm4,
       axial_strength_kN=result.axial_strength_kN,
       cumulative_shear_kN=result.cumulative_shear_kN,
+      strength_shear_kN=result.strength_shear_kN,
     )
 
 

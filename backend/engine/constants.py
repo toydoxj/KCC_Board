@@ -34,3 +34,12 @@ SCREW_TENSION_OMEGA = 3.0  # J4 Ω (ASD)
 # 석고보드 풀스루 공칭강도(N/개). 참고값: ASTM C1396 nail pull 최소값 12.7mm 77 lbf ≈ 343 N
 # (못 기준 — KCC 피스·보드 시험값 확보 전 잠정값, 확인 필요)
 DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N = 343.0
+
+# 석고보드–스터드 피스 1개당 극한 전단하중(No.6 피스 ≈ φ3.5) — AISI S240-20 해설 Table C-B3.2-1
+# (Miller 1989, Lee 1995 시험 평균). (보드 두께 mm, 극한하중 N)
+GYPSUM_SCREW_ULTIMATE_SHEAR_N = ((12.7, 516.0), (15.9, 605.0))
+# 동 표의 설계강도 = 극한 / 2.0. 휨 Ω 1.5와 합하여 피스에 실질 Ω ≈ 3.0(AISI S100-16 J4 수준) 확보
+GYPSUM_SCREW_STRENGTH_DIVISOR = 2.0
+# CH·I-STUD 고정 후면 보드 피스 체결(가정): 간격 300 mm, 피치당 2개
+FIXED_REAR_BOARD_SCREW_PITCH_MM = 300.0
+FIXED_REAR_BOARD_SCREW_COUNT = 2.0

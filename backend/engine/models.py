@@ -69,6 +69,8 @@ class LayerResult:
   inertia_about_neutral_axis_mm4: float
   axial_strength_kN: float
   cumulative_shear_kN: float = 0.0
+  # Mn(강도)용 전단 누계 — 석고보드 피스 설계강도 상한 적용
+  strength_shear_kN: float = 0.0
 
 
 @dataclass(frozen=True)
