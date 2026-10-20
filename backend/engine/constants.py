@@ -59,6 +59,10 @@ SEISMIC_FP_COEFFICIENT = 0.48
 STUD_TENSILE_STRENGTH = 400.0  # 스터드 Fu (MPa), 1차 심사의견 B-8
 SCREW_PULLOUT_COEFFICIENT = 0.85  # Eq. J4.4.1-1: Pnot = 0.85·tc·d·Fu2
 SCREW_TENSION_OMEGA = 3.0  # J4 Ω (ASD)
+# 피스 전단 — 스터드(강재)측 한계, AISI S100-16 J4.3.1 (t2/t1 ≤ 1.0, t2 = 스터드 두께, Fu2 = 스터드 Fu)
+SCREW_TILTING_COEFFICIENT = 4.2  # Eq. J4.3.1-1: Pns = 4.2·(t2³·d)^0.5·Fu2
+SCREW_STUD_BEARING_COEFFICIENT = 2.7  # Eq. J4.3.1-3: Pns = 2.7·t2·d·Fu2
+SCREW_SHEAR_OMEGA = 3.0  # J4 Ω (ASD). 강성(η)·강도(Mn) 경로 모두 적용(사용자 결정, 심사의견 A-4·D-7)
 # 석고보드 풀스루 공칭강도(N/개). 참고값: ASTM C1396 nail pull 최소값 12.7mm 77 lbf ≈ 343 N
 # (못 기준 — KCC 피스·보드 시험값 확보 전 잠정값, 확인 필요)
 DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N = 343.0

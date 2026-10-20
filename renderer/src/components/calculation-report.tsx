@@ -398,7 +398,11 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <div className="font-semibold">{isStudOnlyStrengthCheck ? "Mn = M스터드" : "Mn = ΣM보드 + M스터드"}</div>
             <div>강도 기준 = {strengthCheckModeLabel}</div>
             <div>M보드,i = |min(Pn,i, Vc,s,i) × d_i| × 10^-3</div>
-            <div>Vc,s = 강도용 전단누계: 피스 1개당 min(현행 피스강도, 석고보드 피스 설계강도 = AISI S240-20 해설 C-B3.2-1 극한/2.0)</div>
+            <div>Vc,s = 강도용 전단누계: 피스 1개당 min(현행 피스강도, 스터드측 한계, 석고보드 피스 설계강도 = AISI S240-20 해설 C-B3.2-1 극한/2.0)</div>
+            <div>
+              스터드측 한계 = min(4.2 × (t2³ × d)^0.5 × Fu2, 2.7 × t2 × d × Fu2) / Ω 3.0 (AISI S100-16 Eq. J4.3.1-1·-3, 강성 η에도 적용) ={" "}
+              {formatNumber(data.result.intermediate.screw_stud_side_shear_N ?? Number.NaN)} N/개
+            </div>
             <div>M스터드 = Fy,stud × Se스터드 × 10^-6, Se스터드 = (I_stud / c_max) × (Se/Sx)</div>
             <div>c_max = {isStudOnlyStrengthCheck ? "스터드 자체 도심" : "합성 중립축"} ~ 스터드 최외단 거리, Se/Sx = AISI S100-16 부록 1 유효단면계수비</div>
             {data.stud.gapMm === null ? null : (
