@@ -480,6 +480,36 @@ class GoldenCaseTest(unittest.TestCase):
     expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
     self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
 
+  def test_stiffness_load_factor_is_one_sided(self) -> None:
+    base = request_from_golden_case(dict(self.cases[0]))
+    result = _calculate_wall_check_once(base, self.repository)
+    # 표준 조건: 피스력이 시험 수준 이하 → 보정 없음
+    self.assertLess(result.intermediate["screw_utilization_ratio"], 1.0)
+    self.assertEqual(result.intermediate["stiffness_load_factor"], 1.0)
+
+    # 피스 간격 2배·고하중 → u/u_ref > 1 → 강성 저감
+    heavy = replace(
+      base,
+      live_load_kN_m2=1.0,
+      bolt=replace(base.bolt, pitch=tuple(2.0 * value for value in base.bolt.pitch)),
+    )
+    heavy_result = _calculate_wall_check_once(heavy, self.repository)
+    v_ref = 306.0 * 9.81 * 1500.0 / 2400.0
+    expected_ratio = 1.0e-3 * heavy.spacing_mm * heavy.span_mm / 2.0 / v_ref * 2.0
+    m = heavy_result.intermediate["stiffness_curve_exponent_m"]
+    self.assertAlmostEqual(heavy_result.intermediate["screw_utilization_ratio"], expected_ratio)
+    self.assertGreater(expected_ratio, 1.0)
+    self.assertAlmostEqual(heavy_result.intermediate["stiffness_load_factor"], expected_ratio ** (1.0 - m))
+    self.assertAlmostEqual(
+      heavy_result.I_eff_mm4,
+      max(
+        heavy_result.intermediate["I_eff_raw_mm4"]
+        * heavy_result.intermediate["I_eff_correction_factor"]
+        * heavy_result.intermediate["stiffness_load_factor"],
+        heavy_result.intermediate["I_eff_lower_bound_mm4"],
+      ),
+    )
+
   def test_gypsum_screw_design_shear_from_aisi_s240(self) -> None:
     # AISI S240-20 해설 Table C-B3.2-1 (No.6): 12.7 mm 516 N, 15.9 mm 605 N, 설계 = 극한 / 2.0
     self.assertAlmostEqual(_gypsum_screw_design_shear_N(12.7), 258.0)

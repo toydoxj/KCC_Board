@@ -27,6 +27,8 @@ from backend.engine.constants import (
   SCREW_TENSION_OMEGA,
   SEISMIC_FP_COEFFICIENT,
   STEEL_DENSITY_KG_M3,
+  STIFFNESS_REF_SCREW_PITCH_MM,
+  STIFFNESS_REF_SUPPORT_SHEAR_N,
   STUD_ELASTIC_MODULUS,
   STUD_TENSILE_STRENGTH,
   STUD_YIELD_STRENGTH,
@@ -160,7 +162,8 @@ def _calculate_wall_check_once(
   )
   # 하한: 부분합성 강성은 스터드 단독 강성(자체 도심 기준) 이상
   I_eff_lower_bound = section.stud_assembly.self_inertia_mm4
-  I_eff = max(I_eff_raw * I_eff_correction_factor, I_eff_lower_bound)
+  utilization_ratio, curve_exponent, stiffness_load_factor = _stiffness_load_factor(request, section, group, method)
+  I_eff = max(I_eff_raw * I_eff_correction_factor * stiffness_load_factor, I_eff_lower_bound)
   stud_assembly = section.stud_assembly
   S_stud_composite, c_stud_composite = _stud_section_modulus(stud_result, stud_assembly, composite=True)
   S_stud_only, c_stud_only = _stud_section_modulus(stud_result, stud_assembly, composite=False)
@@ -231,7 +234,12 @@ def _calculate_wall_check_once(
       "I_eff_raw_mm4": I_eff_raw,
       "I_eff_correction_factor": I_eff_correction_factor,
       "I_eff_lower_bound_mm4": I_eff_lower_bound,
-      "I_eff_lower_bound_governs": 1.0 if I_eff_raw * I_eff_correction_factor < I_eff_lower_bound else 0.0,
+      "screw_utilization_ratio": utilization_ratio,
+      "stiffness_curve_exponent_m": curve_exponent,
+      "stiffness_load_factor": stiffness_load_factor,
+      "I_eff_lower_bound_governs": 1.0
+      if I_eff_raw * I_eff_correction_factor * stiffness_load_factor < I_eff_lower_bound
+      else 0.0,
       "live_moment_kNm": live_moment,
       "moment_L_kNm": live_moment,
       "moment_0_7E_kNm": ASD_SEISMIC_FACTOR * seismic_moment,
@@ -521,6 +529,61 @@ def _effective_inertia_correction_factor(
   if normalized_group == "MP-STUD":
     return 0.42
   return 1.0
+
+
+def _stiffness_curve_exponent(group: str, method: str) -> float:
+  """실측 M–δ 곡선 δ = c·M^m 의 형식별 지수 m (실험 분석 시트 0724, 10~100% Mmax 구간, ch4 회귀)."""
+  normalized_group = group.replace(".", "-").replace(" ", "").upper()
+  if normalized_group == "C-STUD":
+    if _is_central_joint_method(method) or "맞댐" in method:
+      return 1.49
+    return 1.38
+  if normalized_group.startswith("CH-STUD"):
+    return 1.25
+  if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
+    return 1.29
+  if normalized_group == "R-STUD":
+    return 1.11
+  if normalized_group == "I-STUD":
+    return 1.26
+  if normalized_group == "HR-STUD":
+    return 1.33
+  if normalized_group == "RV-STUD":
+    return 1.25
+  if normalized_group == "MP-STUD":
+    return 1.24
+  # 미등록 형식: 시험 최대 m(보수측)
+  return 1.49
+
+
+def _stiffness_load_factor(
+  request: WallCheckRequest,
+  section: _Section,
+  group: str,
+  method: str,
+) -> tuple[float, float, float]:
+  """피스 활용도 기준 단방향 강성 보정계수 min[1, (u/u_ref)^(1−m)].
+
+  u/u_ref = (V_d / V_ref) × (p / p_ref)_max
+  - V_d: 처짐 검토 하중(활하중)에 의한 스터드 1개당 지점 전단력 = q·s·L/2
+  - V_ref: 시험 최대 가력 시 짧은 전단경간의 전단력(R 정의 하중 수준)
+  - p/p_ref: 층별 피스 간격 / 시험 피스 간격(피스 1개당 전단력 ∝ 간격)
+  피스력이 시험 수준 이하(u ≤ u_ref)이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
+  """
+  support_shear_N = request.live_load_kN_m2 * 1e-3 * request.spacing_mm * request.span_mm / 2.0
+  pitch_ratio = max(
+    (
+      _layer_pitch_count(layer, request.bolt)[0] / _pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, layer.order)
+      for layer in section.layers
+      if layer.layer_type == "board"
+    ),
+    default=1.0,
+  )
+  utilization_ratio = support_shear_N / STIFFNESS_REF_SUPPORT_SHEAR_N * pitch_ratio
+  exponent = _stiffness_curve_exponent(group, method)
+  if utilization_ratio <= 1.0:
+    return utilization_ratio, exponent, 1.0
+  return utilization_ratio, exponent, utilization_ratio ** (1.0 - exponent)
 
 
 def _parse_stud_type(stud: StudInput) -> tuple[str, str]:

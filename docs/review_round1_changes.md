@@ -30,6 +30,12 @@
 - CH·I-STUD 후면 보드: 완전합성 → 피스 체결(300 mm, 2개)
 - 영향(11개 시편, 내진 부분합성): Mn 30~85% 감소, 허용높이는 **I-STUD 75-06만 6,400 → 5,600 mm(응력 지배)**, 나머지 불변. 비내진 불변
 
+## 1-3. 피스 활용도 기준 단방향 강성 보정 (2026-10-20, E-8)
+
+- `I_eff = max(R·I_eff,raw·min[1, (u/u_ref)^(1−m)], I_s)`, u/u_ref = (q·s·L/2)/1,876 N × 피치비, m = 형식별 실측 회귀 지수
+- 11개 시편·골든 케이스: u/u_ref = 0.15~0.32 → 보정계수 1.0, 결과 불변
+- 고하중·넓은 피치(u/u_ref > 1)에서만 강성 저감. 중간값 `screw_utilization_ratio`, `stiffness_curve_exponent_m`, `stiffness_load_factor` 출력
+
 ## 2. R 재보정
 
 R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
@@ -68,6 +74,6 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 
 ## 5. 검증
 
-- `python -m pytest` : 52 passed + 36 subtests (골든값 재산정, 종전 엑셀값은 `expected_legacy` 보존)
+- `python -m pytest` : 53 passed + 36 subtests (골든값 재산정, 종전 엑셀값은 `expected_legacy` 보존)
 - 신규 테스트: Ieff 하한, 비대칭 스터드 단독 c_max
 - `npm run build` 성공

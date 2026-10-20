@@ -43,3 +43,9 @@ GYPSUM_SCREW_STRENGTH_DIVISOR = 2.0
 # CH·I-STUD 고정 후면 보드 피스 체결(가정): 간격 300 mm, 피치당 2개
 FIXED_REAR_BOARD_SCREW_PITCH_MM = 300.0
 FIXED_REAR_BOARD_SCREW_COUNT = 2.0
+
+# 피스 활용도 기준 단방향 강성 보정 (E-8): I = R·Ieff,raw·min[1, (u/u_ref)^(1−m)]
+# 시험 기준 피스 전단 대리값: 스터드 1개당 지점 전단력 V_ref = P·a/L (P = 306 kgf, a = 1,500, L = 2,400 mm)
+STIFFNESS_REF_SUPPORT_SHEAR_N = 306.0 * 9.81 * 1500.0 / 2400.0
+# 시험 피스 간격(외곽/중간/내측, mm) — u/u_ref에 피치비로 반영
+STIFFNESS_REF_SCREW_PITCH_MM = (600.0, 300.0, 300.0)

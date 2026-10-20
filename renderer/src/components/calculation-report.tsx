@@ -287,6 +287,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               label="I_eff 보정"
               value={formatNumber(data.result.intermediate.I_eff_correction_factor ?? 1)}
             />
+            <KeyValue label="피스 활용도 u/u_ref" value={formatNumber(data.result.intermediate.screw_utilization_ratio ?? Number.NaN)} />
+            <KeyValue label="강성 하중보정 min[1,(u/u_ref)^(1−m)]" value={formatNumber(data.result.intermediate.stiffness_load_factor ?? 1)} />
             <KeyValue label="I_eff" value={`${formatNumber(data.result.I_eff_mm4)} mm⁴`} />
             {data.calculationMode === "maxHeight" ? (
               <KeyValue label="최대 가능 높이" value={`${formatNumber(data.result.max_height_mm)} mm`} />
