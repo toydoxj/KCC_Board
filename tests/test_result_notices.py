@@ -70,6 +70,89 @@ class ScrewPitchNoticeTest(unittest.TestCase):
     self.assertEqual(len(result.notices), 1)
     self.assertIn("3번(외측)", result.notices[0])
 
+  def _c50_front_only(self, front: tuple[BoardLayer, ...]):
+    return replace(
+      self._with_pitch(STANDARD_SCREW_PITCH_MM),
+      stud=StudInput(stud_type="C-STUD", spec="50S-45-08", method="기본"),
+      rear_boards=(),
+      front_boards=front,
+    )
+
+  def test_neutral_axis_within_inner_board_adds_notice(self) -> None:
+    # 심사의견 E-9: 시험 시편 02 구성(전면 방화 19T 2겹) — 중립축 53.1 mm, 스터드 상단 50 mm, 1번 보드 50~69 mm
+    request = self._c50_front_only((BoardLayer(kind="방화", thickness=19.0), BoardLayer(kind="방화", thickness=19.0)))
+    result = _calculate_wall_check_once(request, self.repository)
+
+    self.assertEqual(len(result.notices), 1)
+    self.assertIn("중립축", result.notices[0])
+    self.assertIn("1번(내측) 보드 두께 안", result.notices[0])
+
+  def test_neutral_axis_in_board_stud_gap_uses_gap_wording(self) -> None:
+    # R-STUD는 보드–스터드 12 mm 이격 — 중립축이 간극에 있으면 '간극' 문구로 경고
+    request = replace(
+      self._with_pitch(STANDARD_SCREW_PITCH_MM),
+      stud=StudInput(stud_type="R-STUD", spec="100S-45-08", method="기본"),
+      spacing_mm=600.0,
+      rear_boards=(),
+      front_boards=(BoardLayer(kind="방화", thickness=19.0), BoardLayer(kind="방화", thickness=19.0)),
+    )
+    result = _calculate_wall_check_once(request, self.repository)
+    neutral = [notice for notice in result.notices if "중립축" in notice]
+
+    self.assertEqual(len(neutral), 1)
+    self.assertIn("간극", neutral[0])
+    self.assertNotIn("두께 안", neutral[0])
+
+  def test_rear_side_warning_and_rejection(self) -> None:
+    rear_warn = replace(
+      self._c50_front_only(()),
+      rear_boards=(BoardLayer(kind="방화", thickness=19.0), BoardLayer(kind="방화", thickness=19.0)),
+    )
+    result = _calculate_wall_check_once(rear_warn, self.repository)
+    self.assertTrue(any("후면" in notice and "중립축" in notice for notice in result.notices))
+
+    # 후면 튜플은 외측(3번)→내측(1번) 순서 — 1번(내측) 일반 9.5T 아래 방화 25T 2겹
+    rear_reject = replace(
+      self._c50_front_only(()),
+      rear_boards=(
+        BoardLayer(kind="방화", thickness=25.0),
+        BoardLayer(kind="방화", thickness=25.0),
+        BoardLayer(kind="일반", thickness=9.5),
+      ),
+    )
+    with self.assertRaisesRegex(ValueError, "후면"):
+      _calculate_wall_check_once(rear_reject, self.repository)
+
+  def test_neutral_axis_and_pitch_notices_are_both_returned(self) -> None:
+    outer, middle, _ = STANDARD_SCREW_PITCH_MM
+    request = replace(
+      self._c50_front_only((BoardLayer(kind="방화", thickness=19.0), BoardLayer(kind="방화", thickness=19.0))),
+      bolt=replace(self.request.bolt, pitch=(outer, middle, 450.0)),
+    )
+    result = _calculate_wall_check_once(request, self.repository)
+
+    self.assertEqual(len(result.notices), 2)
+    self.assertIn("중립축", result.notices[0])
+    self.assertIn("1번(내측) 피스 간격", result.notices[1])
+
+  def test_neutral_axis_inside_stud_has_no_notice(self) -> None:
+    result = _calculate_wall_check_once(self._with_pitch(STANDARD_SCREW_PITCH_MM), self.repository)
+
+    self.assertFalse(any("중립축" in notice for notice in result.notices))
+
+  def test_neutral_axis_beyond_inner_board_is_rejected(self) -> None:
+    # 1번 일반 9.5T(50~59.5 mm) 위에 방화 25T 2겹 — 중립축 62.9 mm로 1번 보드를 넘음
+    request = self._c50_front_only(
+      (BoardLayer(kind="일반", thickness=9.5), BoardLayer(kind="방화", thickness=25.0), BoardLayer(kind="방화", thickness=25.0))
+    )
+
+    with self.assertRaisesRegex(ValueError, "중립축"):
+      _calculate_wall_check_once(request, self.repository)
+
+    response = TestClient(create_app(self.repository)).post("/api/check", json=asdict(request))
+    self.assertEqual(response.status_code, 400)
+    self.assertIn("중립축", response.json()["error"]["message"])
+
   def test_api_returns_notices(self) -> None:
     outer, middle, _ = STANDARD_SCREW_PITCH_MM
     payload = asdict(self._with_pitch((outer, middle, 450.0)))

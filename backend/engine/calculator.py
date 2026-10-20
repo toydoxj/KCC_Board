@@ -150,6 +150,7 @@ def _calculate_wall_check_once(
   repo = repository
   section = _build_section(request, repo)
   neutral_axis = _neutral_axis(section.layers)
+  neutral_axis_notices = _neutral_axis_notices(section, neutral_axis)
   layer_results = _layer_results(section.layers, neutral_axis)
   I_full = sum(layer.inertia_about_neutral_axis_mm4 for layer in layer_results)
   stud_result = next(layer for layer in layer_results if layer.layer_type == "stud")
@@ -222,7 +223,7 @@ def _calculate_wall_check_once(
     stress_verdict="O.K" if stress_ratio <= 1.0 else "N.G",
     screw_tension_verdict="O.K" if screw_tension["screw_tension_utilization"] <= 1.0 else "N.G",
     layers=enriched_layers,
-    notices=_screw_pitch_notices(section, request.bolt),
+    notices=neutral_axis_notices + _screw_pitch_notices(section, request.bolt),
     intermediate={
       "stud_I_mm4": stud_result.inertia_about_neutral_axis_mm4,
       "stud_I_unfactored_mm4": section.stud_unfactored_self_inertia_mm4,
@@ -659,6 +660,42 @@ def _neutral_axis(layers: tuple[_Layer, ...]) -> float:
   if total_area <= 0:
     raise ValueError("환산단면적 합계가 0 이하입니다.")
   return sum(layer.transformed_area_mm2 * layer.y_centroid_mm for layer in layers) / total_area
+
+
+def _neutral_axis_notices(section: _Section, neutral_axis: float) -> tuple[str, ...]:
+  """중립축 위치 검사(심사의견 E-9). 전단 누계(외측→스터드)·Mn 보드항은 중립축이 스터드 안에 있다는 전제에 기반한다.
+
+  - 스터드 범위 안: 안내 없음
+  - 스터드와 1번 보드 사이 이격 간극(R-STUD 등) 안: 경고(보드는 모두 중립축 한쪽 — 판정 불변)
+  - 스터드에 가장 가까운 1번 보드 두께 안: 경고(판정 불변)
+  - 1번 보드를 넘음: 적용 범위 밖으로 보고 계산을 거부(ValueError)
+  """
+  stud = section.stud_layer
+  bottom = stud.y_centroid_mm - section.stud_assembly.centroid_mm
+  top = bottom + section.stud_assembly.height_mm
+  if bottom <= neutral_axis <= top:
+    return ()
+  boards = [layer for layer in section.layers if layer.layer_type == "board"]
+  if neutral_axis > top:
+    side, excess = "전면", neutral_axis - top
+    inner = min((layer for layer in boards if layer.y_centroid_mm > top), key=lambda layer: layer.y_centroid_mm, default=None)
+    # 스터드 쪽 경계(near)와 반대쪽 경계(far)까지의 거리(중립축 기준, 스터드에서 멀어지는 방향 +)
+    near = None if inner is None else inner.y_centroid_mm - inner.thickness_mm / 2.0 - neutral_axis
+    far = None if inner is None else inner.y_centroid_mm + inner.thickness_mm / 2.0 - neutral_axis
+  else:
+    side, excess = "후면", bottom - neutral_axis
+    inner = max((layer for layer in boards if layer.y_centroid_mm < bottom), key=lambda layer: layer.y_centroid_mm, default=None)
+    near = None if inner is None else neutral_axis - (inner.y_centroid_mm + inner.thickness_mm / 2.0)
+    far = None if inner is None else neutral_axis - (inner.y_centroid_mm - inner.thickness_mm / 2.0)
+  location = f"중립축({neutral_axis:.1f} mm)이 스터드 범위({bottom:.1f}~{top:.1f} mm)를 {side} 보드 쪽으로 {excess:.1f} mm 벗어남"
+  if near is not None and near > 0.0:
+    return (f"{location} — 스터드와 {side} 1번(내측) 보드 사이 이격 간극 안이므로 계산하나, 결과 적용에 유의할 것",)
+  if far is not None and far >= 0.0:
+    return (f"{location} — {side} 1번(내측) 보드 두께 안이므로 계산하나, 부분합성 전단 누계 전제와 차이가 있어 결과 적용에 유의할 것",)
+  raise ValueError(
+    f"{location}. {side} 1번(내측) 보드도 넘어 부분합성 전단 누계 전제가 성립하지 않는 적용 범위 밖 구성입니다. "
+    f"{side} 보드를 줄이거나 반대면 보드를 추가하십시오."
+  )
 
 
 def _layer_results(layers: tuple[_Layer, ...], neutral_axis: float) -> tuple[LayerResult, ...]:

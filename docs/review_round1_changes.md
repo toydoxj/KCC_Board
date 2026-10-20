@@ -95,6 +95,14 @@
 - R 재보정 없이 적용 시(참고): MP·RV·T.silent 내진·부분합성 −500 mm, C 계열 −50~−100 mm
 - 골든 재산정: case_01 η 0.3537 → 0.3377, 처짐 42.72 → 42.95 mm(판정 불변), 시편 I_eff,raw·R 갱신. `expected_legacy` 유지, `_recalc_note` 이력 추가
 
+## 1-8. 중립축 위치 검사 (2026-10-20, E-9, 사용자 결정)
+
+- 전제: 전단 누계(외측 → 스터드)와 Mn 보드항은 중립축이 스터드 안에 있어 각 면의 보드가 한쪽 응력 상태라는 가정에 기반
+- 2단계 기준(`_neutral_axis_notices`): ① 스터드 범위(하단~상단) 안 → 안내 없음 ② 스터드 밖이나 그 면의 1번(내측, 스터드 인접) 보드 두께 안, 또는 스터드–1번 보드 이격 간극(R-STUD 12 mm 등) 안 → 결과 `notices` 경고(간극·보드 두께 문구 구분, 판정 불변) ③ 1번 보드를 넘음 → 적용 범위 밖 구성으로 계산 거부(`ValueError`, API 400 `CALCULATION_ERROR`)
+- 누적 방향 재설정은 적용하지 않음(경고·입력 제한으로 대체)
+- 11개 시편: 02 C 기본 전면만(방화 19T 2겹)이 중립축 53.1 mm로 스터드 상단 50 mm를 3.1 mm 벗어나 경고 대상(1번 보드 50~69 mm 안). 허용높이 4조건 전부 불변
+- 탐색(전 스터드 117규격 × 비대칭 구성 5종 = 585조합): 정상 498, 경고 87(전면 25T 2~3겹 등, 최대 이탈 21.5 mm), 거부 0. 거부 예: C 50S 전면 일반 9.5T + 방화 25T 2겹(중립축 62.9 mm > 1번 보드 상단 59.5 mm)
+
 ## 2. R 재보정
 
 R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
@@ -138,7 +146,8 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 
 ## 5. 검증
 
-- `python -m pytest` : 65 passed + 57 subtests (2026-10-20, 피스 tilting·지압 Ω 3.0·R 재보정 후, Windows)
+- `python -m pytest` : 73 passed + 57 subtests (2026-10-20, E-9 중립축 검사 후, Windows)
+- `python -m pytest` : 67 passed + 57 subtests (2026-10-20, 피스 tilting·지압 Ω 3.0·R 재보정 후, Windows)
 - `python -m pytest` : 63 passed + 57 subtests (2026-10-20, 피치 순서·연결 피스 개수 정정, 골든 재산정 후, Windows)
 - `python -m pytest` : 58 passed + 57 subtests (2026-10-20, D-2·F-4 안내 반영 후, Windows)
 - `python -m pytest` : 54 passed + 57 subtests (2026-10-21, 항복비 반영 후)
