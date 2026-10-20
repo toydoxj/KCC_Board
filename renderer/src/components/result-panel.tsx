@@ -2,6 +2,7 @@ import { CheckCircle2, Ruler, XCircle } from "lucide-react";
 
 import type { WallCheckResult } from "@/lib/api";
 import { strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
+import { ResultNotices } from "@/components/result-notices";
 
 interface ResultPanelProps {
   result: WallCheckResult | null;
@@ -52,6 +53,7 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
           <VerdictBadge label="산정 처짐" ok={deflectionOk} value={result.deflection_verdict} />
           <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
         </div>
+        <ResultNotices notices={result.notices ?? []} />
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <CaseMetric label="검토 CASE" value={designCaseLabel} />
           <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
@@ -87,6 +89,7 @@ export function ResultPanel({ result, mode }: ResultPanelProps) {
         <VerdictBadge label="처짐" ok={deflectionOk} value={result.deflection_verdict} />
         <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
       </div>
+      <ResultNotices notices={result.notices ?? []} />
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
         <CaseMetric label="검토 CASE" value={designCaseLabel} />
         <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />

@@ -21,3 +21,4 @@ coverage/
 .turbo/
 .playwright-mcp/
 /kcc-board-*.png
+.codex-last.md

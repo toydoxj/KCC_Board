@@ -139,6 +139,7 @@ export interface WallCheckResult {
   anchor_spacing_increment_mm: number;
   layers: LayerResult[];
   intermediate: Record<string, number>;
+  notices: string[];
 }
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";

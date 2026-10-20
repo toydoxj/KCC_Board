@@ -232,6 +232,7 @@ class WallCheckResultData(ApiModel):
   anchor_spacing_increment_mm: float
   layers: list[LayerResultData]
   intermediate: dict[str, float]
+  notices: list[str]
 
   @classmethod
   def from_engine(cls, result: WallCheckResult) -> "WallCheckResultData":
@@ -257,6 +258,7 @@ class WallCheckResultData(ApiModel):
       anchor_spacing_increment_mm=result.anchor_spacing_increment_mm,
       layers=[LayerResultData.from_engine(layer) for layer in result.layers],
       intermediate=result.intermediate,
+      notices=list(result.notices),
     )
 
 

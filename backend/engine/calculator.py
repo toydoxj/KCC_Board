@@ -12,6 +12,7 @@ from backend.engine.constants import (
   ASD_COMBINED_LIVE_FACTOR,
   ASD_COMBINED_SEISMIC_FACTOR,
   ASD_SEISMIC_FACTOR,
+  BOARD_ORDER_LABELS,
   BOLT_SHEAR_TO_YIELD_RATIO,
   DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_ANCHOR_SPACING_MM,
@@ -26,6 +27,7 @@ from backend.engine.constants import (
   SCREW_PULLOUT_COEFFICIENT,
   SCREW_TENSION_OMEGA,
   SEISMIC_FP_COEFFICIENT,
+  STANDARD_SCREW_PITCH_MM,
   STEEL_DENSITY_KG_M3,
   STIFFNESS_REF_SCREW_PITCH_MM,
   STIFFNESS_REF_SUPPORT_SHEAR_N,
@@ -217,6 +219,7 @@ def _calculate_wall_check_once(
     stress_verdict="O.K" if stress_ratio <= 1.0 else "N.G",
     screw_tension_verdict="O.K" if screw_tension["screw_tension_utilization"] <= 1.0 else "N.G",
     layers=enriched_layers,
+    notices=_screw_pitch_notices(section, request.bolt),
     intermediate={
       "stud_I_mm4": stud_result.inertia_about_neutral_axis_mm4,
       "stud_I_unfactored_mm4": section.stud_unfactored_self_inertia_mm4,
@@ -761,6 +764,29 @@ def _pitch_for_order(pitches: tuple[float, ...], order: int) -> float:
   if order <= 1 and len(pitches) >= 3:
     return pitches[2]
   return pitches[-1]
+
+
+def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
+  """표준 외 피스 간격 경고(판정 불변). CH·I-STUD 고정 후면 보드(간격 고정)는 제외한다."""
+  # _pitch_for_order와 같은 기준으로 order를 1~3에 정규화한 뒤 중복 제거(order ≥ 3은 모두 외측 피치)
+  orders = sorted(
+    {
+      min(max(layer.order, 1), 3)
+      for layer in section.layers
+      if layer.layer_type == "board" and layer.connection_pitch_mm is None
+    }
+  )
+  notices: list[str] = []
+  for order in orders:
+    pitch = _pitch_for_order(bolt.pitch, order)
+    standard = _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
+    if math.isclose(pitch, standard):
+      continue
+    label = BOARD_ORDER_LABELS[order]
+    notices.append(
+      f"{label} 피스 간격 {pitch:g} mm는 표준 간격 {standard:g} mm와 다름 — 실험 검증 범위 밖의 입력이므로 결과 적용에 유의할 것"
+    )
+  return tuple(notices)
 
 
 def _count_for_order(counts: tuple[float, ...], order: int) -> float:

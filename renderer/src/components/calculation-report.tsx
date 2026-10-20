@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { LayerResult, WallCheckResult } from "@/lib/api";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
+import { ResultNotices } from "@/components/result-notices";
 
 export interface ReportBoardSlot {
   label: string;
@@ -128,6 +129,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
           </div>
         </div>
       </header>
+
+      <section className="mt-4">
+        <ResultNotices notices={data.result.notices ?? []} />
+      </section>
 
       <section className="mt-5 grid gap-3 md:grid-cols-2">
         <ReportBlock title="판정 요약">

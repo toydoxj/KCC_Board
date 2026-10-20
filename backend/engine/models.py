@@ -96,3 +96,5 @@ class WallCheckResult:
   anchor_spacing_increment_mm: float = 50.0
   layers: tuple[LayerResult, ...] = field(default_factory=tuple)
   intermediate: dict[str, float] = field(default_factory=dict)
+  # 판정에 영향하지 않는 입력 경고(표준 외 피스 간격 등)
+  notices: tuple[str, ...] = field(default_factory=tuple)

@@ -77,3 +77,8 @@ FIXED_REAR_BOARD_SCREW_COUNT = 2.0
 STIFFNESS_REF_SUPPORT_SHEAR_N = 306.0 * 9.81 * 1500.0 / 2400.0
 # 시험 피스 간격(외곽/중간/내측, mm) — u/u_ref에 피치비로 반영
 STIFFNESS_REF_SCREW_PITCH_MM = (600.0, 300.0, 300.0)
+
+# 표준 피스 간격(3번 외측 / 2번 중간 / 1번 내측, mm). 1P(내측)는 스터드에 가장 가까운 층.
+# 이와 다른 입력은 결과 안내(notices)로 경고만 하고 판정에는 반영하지 않음 (심사의견 F-4)
+STANDARD_SCREW_PITCH_MM = (300.0, 300.0, 600.0)
+BOARD_ORDER_LABELS = {1: "1번(내측)", 2: "2번(중간)", 3: "3번(외측)"}
