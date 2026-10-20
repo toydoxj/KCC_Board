@@ -397,7 +397,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
             <div className="font-semibold">{isStudOnlyStrengthCheck ? "Mn = M스터드" : "Mn = ΣM보드 + M스터드"}</div>
             <div>강도 기준 = {strengthCheckModeLabel}</div>
-            <div>M보드,i = |min(Pn,i, Vc,s,i) × d_i| × 10^-3</div>
+            <div>M보드,i = |min(Py,i, Vc,s,i) × d_i| × 10^-3</div>
+            <div>Py,i = 층 항복축력(보드 Fy × t × s, 스터드 Fy × A) — 부재 공칭 압축강도 Pn(좌굴 포함)과 다름</div>
             <div>Vc,s = 강도용 전단누계: 피스 1개당 min(현행 피스강도, 스터드측 한계, 석고보드 피스 설계강도 = AISI S240-20 해설 C-B3.2-1 극한/2.0)</div>
             <div>
               스터드측 한계 = min(4.2 × (t2³ × d)^0.5 × Fu2, 2.7 × t2 × d × Fu2) / Ω 3.0 (AISI S100-16 Eq. J4.3.1-1·-3, 강성 η에도 적용) ={" "}
@@ -421,7 +422,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <tr>
                 <TableHead>요소</TableHead>
                 <TableHead>적용식</TableHead>
-                <TableHead>Pn</TableHead>
+                <TableHead>Py,i</TableHead>
                 <TableHead>Vc,s</TableHead>
                 <TableHead>적용힘</TableHead>
                 <TableHead>d 또는 S</TableHead>
@@ -469,7 +470,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <TableHead>A'</TableHead>
                 <TableHead>d</TableHead>
                 <TableHead>I</TableHead>
-                <TableHead>축강도</TableHead>
+                <TableHead>Py,i(항복축력)</TableHead>
                 <TableHead>전단누계(강성)</TableHead>
                 <TableHead>전단누계(강도)</TableHead>
               </tr>
@@ -582,7 +583,7 @@ function nominalMomentTerms(data: CalculationReportData) {
       return {
         name: layer.name,
         type: "board",
-        expression: includeBoardMoment ? "|min(Pn,Vc,s)×d|×10^-3" : "강도판정 미반영",
+        expression: includeBoardMoment ? "|min(Py,i,Vc,s)×d|×10^-3" : "강도판정 미반영",
         axialStrength_kN: layer.axial_strength_kN,
         cumulativeShear_kN: strengthShear,
         appliedForce_kN: appliedForce,
