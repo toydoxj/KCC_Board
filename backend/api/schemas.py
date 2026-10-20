@@ -316,9 +316,16 @@ class StudSectionData(ApiModel):
   ry: float
   section_class: str
   Se: float | None = None
+  Se_basis_Fy_MPa: float | None = None
+  # 연결 강재(심사의견 B-8). steel_status가 '미확정'이면 강종·밀시트 확인 전 이관값
+  steel_grade: str | None = None
+  Fy: float | None = None
+  Fu: float | None = None
+  steel_status: str | None = None
 
   @classmethod
   def from_repository(cls, stud: StudSection) -> "StudSectionData":
+    steel = stud.steel
     return cls(
       group=stud.group,
       name=stud.name,
@@ -336,6 +343,11 @@ class StudSectionData(ApiModel):
       ry=stud.ry,
       section_class=stud.section_class,
       Se=stud.Se,
+      Se_basis_Fy_MPa=stud.Se_basis_Fy_MPa,
+      steel_grade=None if steel is None else steel.steel_grade,
+      Fy=None if steel is None else steel.Fy,
+      Fu=None if steel is None else steel.Fu,
+      steel_status=None if steel is None else steel.status,
     )
 
 

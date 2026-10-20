@@ -1,7 +1,7 @@
 {
   "_source": "stud.dxf (KCC 단면도, 정본) — 2026-10-16 재산정. 이전: 스터드_단면성능_2.xlsx",
   "_unit": "mm, mm^2, mm^3, mm^4",
-  "_method": "DXF 폴리라인 Shoelace(A)·Green(I, 도심축), Sx=Ix/c_max(최외단), Sy=Iy/x_max, r=sqrt(I/A). Se=유효단면계수(AISI S100-16 App.1, f=Fy=295MPa, 압축 양방향 중 최소, I-STUD는 2겹 독립 하한)",
+  "_method": "DXF 폴리라인 Shoelace(A)·Green(I, 도심축), Sx=Ix/c_max(최외단), Sy=Iy/x_max, r=sqrt(I/A). Se=유효단면계수(AISI S100-16 App.1, f=Fy=295MPa, 압축 양방향 중 최소, I-STUD는 2겹 독립 하한). Se_basis_Fy_MPa=Se 산정에 쓴 Fy(MPa) — 연결 강재 Fy와 다르면 계산 차단(B-8)",
   "count": 69,
   "items": [
     {
@@ -20,6 +20,7 @@
       "rx": 46.91,
       "ry": 14.79,
       "Se": 6482,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -38,6 +39,7 @@
       "rx": 55.63,
       "ry": 14.83,
       "Se": 8322,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -56,6 +58,7 @@
       "rx": 63.54,
       "ry": 14.75,
       "Se": 10190,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -74,6 +77,7 @@
       "rx": 71.99,
       "ry": 14.6,
       "Se": 12394,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -92,6 +96,7 @@
       "rx": 27.37,
       "ry": 12.73,
       "Se": 2353,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "thin_plate"
     },
     {
@@ -110,6 +115,7 @@
       "rx": 32.18,
       "ry": 12.85,
       "Se": 2842,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "thin_plate"
     },
     {
@@ -128,6 +134,7 @@
       "rx": 35.22,
       "ry": 12.88,
       "Se": 3174,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "thin_plate"
     },
     {
@@ -146,6 +153,7 @@
       "rx": 42.58,
       "ry": 12.86,
       "Se": 3832,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "thin_plate"
     },
     {
@@ -164,6 +172,7 @@
       "rx": 47.5,
       "ry": 12.84,
       "Se": 4273,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "thin_plate"
     },
     {
@@ -182,6 +191,7 @@
       "rx": 50.58,
       "ry": 12.82,
       "Se": 4552,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "thin_plate"
     },
     {
@@ -200,6 +210,7 @@
       "rx": 23.96,
       "ry": 11.28,
       "Se": 2026,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -218,6 +229,7 @@
       "rx": 28.02,
       "ry": 11.44,
       "Se": 2486,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -236,6 +248,7 @@
       "rx": 34.28,
       "ry": 11.55,
       "Se": 3027,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -254,6 +267,7 @@
       "rx": 37.92,
       "ry": 11.57,
       "Se": 3401,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -272,6 +286,7 @@
       "rx": 46.87,
       "ry": 11.51,
       "Se": 4339,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -290,6 +305,7 @@
       "rx": 55.6,
       "ry": 11.37,
       "Se": 5282,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -308,6 +324,7 @@
       "rx": 25.09,
       "ry": 11.82,
       "Se": 2052,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -326,6 +343,7 @@
       "rx": 29.32,
       "ry": 11.86,
       "Se": 2538,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -344,6 +362,7 @@
       "rx": 35.71,
       "ry": 11.84,
       "Se": 3197,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -362,6 +381,7 @@
       "rx": 39.4,
       "ry": 11.79,
       "Se": 3580,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -380,6 +400,7 @@
       "rx": 48.38,
       "ry": 11.62,
       "Se": 4533,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -398,6 +419,7 @@
       "rx": 57.1,
       "ry": 11.4,
       "Se": 5483,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -416,6 +438,7 @@
       "rx": 32.08,
       "ry": 9.42,
       "Se": 1947,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -434,6 +457,7 @@
       "rx": 42.31,
       "ry": 8.85,
       "Se": 2651,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -452,6 +476,7 @@
       "rx": 31.94,
       "ry": 9.43,
       "Se": 3081,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -470,6 +495,7 @@
       "rx": 38.44,
       "ry": 9.03,
       "Se": 4032,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -488,6 +514,7 @@
       "rx": 42.17,
       "ry": 8.85,
       "Se": 4590,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -506,6 +533,7 @@
       "rx": 51.25,
       "ry": 8.41,
       "Se": 5672,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -524,6 +552,7 @@
       "rx": 60.04,
       "ry": 8.03,
       "Se": 6752,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -542,6 +571,7 @@
       "rx": 26.25,
       "ry": 15.77,
       "Se": 2675,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -560,6 +590,7 @@
       "rx": 33.66,
       "ry": 15.76,
       "Se": 3655,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -578,6 +609,7 @@
       "rx": 38.41,
       "ry": 15.78,
       "Se": 4306,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -596,6 +628,7 @@
       "rx": 50.5,
       "ry": 15.77,
       "Se": 6006,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -614,6 +647,7 @@
       "rx": 58.34,
       "ry": 15.8,
       "Se": 7130,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -632,6 +666,7 @@
       "rx": 63.25,
       "ry": 15.78,
       "Se": 7841,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -650,6 +685,7 @@
       "rx": 26.36,
       "ry": 12.5,
       "Se": 1898,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -668,6 +704,7 @@
       "rx": 32.25,
       "ry": 12.5,
       "Se": 2467,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -686,6 +723,7 @@
       "rx": 35.91,
       "ry": 12.51,
       "Se": 2863,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -704,6 +742,7 @@
       "rx": 44.61,
       "ry": 12.42,
       "Se": 3924,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -722,6 +761,7 @@
       "rx": 50.32,
       "ry": 12.25,
       "Se": 4713,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -740,6 +780,7 @@
       "rx": 53.86,
       "ry": 12.2,
       "Se": 5239,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "composite_channel"
     },
     {
@@ -758,6 +799,7 @@
       "rx": 20.82,
       "ry": 16.86,
       "Se": 2365,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -776,6 +818,7 @@
       "rx": 20.75,
       "ry": 16.77,
       "Se": 2705,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -794,6 +837,7 @@
       "rx": 26.86,
       "ry": 16.98,
       "Se": 3294,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -812,6 +856,7 @@
       "rx": 26.79,
       "ry": 16.89,
       "Se": 3795,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -830,6 +875,7 @@
       "rx": 30.78,
       "ry": 16.98,
       "Se": 3952,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -848,6 +894,7 @@
       "rx": 30.71,
       "ry": 16.89,
       "Se": 4566,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -866,6 +913,7 @@
       "rx": 32.71,
       "ry": 16.98,
       "Se": 4289,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -884,6 +932,7 @@
       "rx": 32.63,
       "ry": 16.88,
       "Se": 4968,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -902,6 +951,7 @@
       "rx": 36.51,
       "ry": 16.93,
       "Se": 4990,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -920,6 +970,7 @@
       "rx": 36.43,
       "ry": 16.82,
       "Se": 5789,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -938,6 +989,7 @@
       "rx": 40.25,
       "ry": 16.85,
       "Se": 5713,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -956,6 +1008,7 @@
       "rx": 40.16,
       "ry": 16.74,
       "Se": 6652,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -974,6 +1027,7 @@
       "rx": 43.93,
       "ry": 16.76,
       "Se": 6463,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -992,6 +1046,7 @@
       "rx": 43.83,
       "ry": 16.65,
       "Se": 7545,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1010,6 +1065,7 @@
       "rx": 47.55,
       "ry": 16.65,
       "Se": 7247,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1028,6 +1084,7 @@
       "rx": 47.45,
       "ry": 16.54,
       "Se": 8473,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1046,6 +1103,7 @@
       "rx": 49.34,
       "ry": 16.59,
       "Se": 7622,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1064,6 +1122,7 @@
       "rx": 49.24,
       "ry": 16.49,
       "Se": 8950,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1082,6 +1141,7 @@
       "rx": 54.65,
       "ry": 16.41,
       "Se": 8585,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1100,6 +1160,7 @@
       "rx": 54.55,
       "ry": 16.29,
       "Se": 10435,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1118,6 +1179,7 @@
       "rx": 58.14,
       "ry": 16.27,
       "Se": 9227,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1136,6 +1198,7 @@
       "rx": 58.03,
       "ry": 16.17,
       "Se": 11433,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1154,6 +1217,7 @@
       "rx": 61.6,
       "ry": 16.14,
       "Se": 9871,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1172,6 +1236,7 @@
       "rx": 61.48,
       "ry": 16.03,
       "Se": 12248,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1190,6 +1255,7 @@
       "rx": 30.78,
       "ry": 16.98,
       "Se": 3952,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1208,6 +1274,7 @@
       "rx": 40.25,
       "ry": 16.85,
       "Se": 5713,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1226,6 +1293,7 @@
       "rx": 49.34,
       "ry": 16.6,
       "Se": 7622,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
     {
@@ -1244,6 +1312,7 @@
       "rx": 58.14,
       "ry": 16.28,
       "Se": 9227,
+      "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     }
   ]

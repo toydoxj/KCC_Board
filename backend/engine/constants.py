@@ -1,8 +1,7 @@
 """계산엔진 기본 상수."""
 
 STUD_ELASTIC_MODULUS = 210000.0
-# 스터드 강재 항복강도 Fy (1차 심사의견 반영: 275 → 295 MPa)
-STUD_YIELD_STRENGTH = 295.0
+# 스터드 강재 Fy·Fu는 자재 DB(data/seed/stud_steel.json)로 이관(심사의견 B-8, 2026-10-20)
 STEEL_DENSITY_KG_M3 = 7800.0
 GRAVITY = 9.81
 DEFAULT_OMEGA = 1.5
@@ -56,7 +55,6 @@ ASD_COMBINED_SEISMIC_FACTOR = 0.75
 SEISMIC_FP_COEFFICIENT = 0.48
 
 # 피스 인장(면외 이탈) 검토 — AISI S100-16 J4.4
-STUD_TENSILE_STRENGTH = 400.0  # 스터드 Fu (MPa), 1차 심사의견 B-8
 SCREW_PULLOUT_COEFFICIENT = 0.85  # Eq. J4.4.1-1: Pnot = 0.85·tc·d·Fu2
 SCREW_TENSION_OMEGA = 3.0  # J4 Ω (ASD)
 # 피스 전단 — 스터드(강재)측 한계, AISI S100-16 J4.3.1 (t2/t1 ≤ 1.0, t2 = 스터드 두께, Fu2 = 스터드 Fu)

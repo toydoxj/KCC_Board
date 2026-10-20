@@ -35,8 +35,6 @@ from backend.engine.constants import (
   STIFFNESS_REF_SCREW_PITCH_MM,
   STIFFNESS_REF_SUPPORT_SHEAR_N,
   STUD_ELASTIC_MODULUS,
-  STUD_TENSILE_STRENGTH,
-  STUD_YIELD_STRENGTH,
 )
 from backend.engine.models import (
   BoardLayer,
@@ -47,7 +45,7 @@ from backend.engine.models import (
   WallCheckRequest,
   WallCheckResult,
 )
-from backend.engine.repository import BoardProperty, JsonSeedRepository, MaterialRepository, StudSection
+from backend.engine.repository import BoardProperty, JsonSeedRepository, MaterialRepository, StudSection, StudSteel
 from backend.engine.seismic import calculate_fa
 
 MAX_HEIGHT_INCREMENT_MM = 50
@@ -174,11 +172,13 @@ def _calculate_wall_check_once(
   S_stud_composite, c_stud_composite = _stud_section_modulus(stud_result, stud_assembly, composite=True)
   S_stud_only, c_stud_only = _stud_section_modulus(stud_result, stud_assembly, composite=False)
   strength_shear_by_name = _shear_connection_by_layer(section, request, for_strength=True)
-  Mn_composite = _nominal_moment(layer_results, strength_shear_by_name, S_stud_composite)
+  stud_steel = _stud_steel(section.stud_section)
+  Mn_composite = _nominal_moment(layer_results, strength_shear_by_name, S_stud_composite, stud_steel.Fy)
   Mn_stud_only = _nominal_moment(
     layer_results,
     shear_by_name,
     S_stud_only,
+    stud_steel.Fy,
     include_board_layers=False,
   )
   Mn = _strength_check_nominal_moment(request.strength_check_mode, Mn_composite, Mn_stud_only)
@@ -229,7 +229,8 @@ def _calculate_wall_check_once(
       "stud_I_unfactored_mm4": section.stud_unfactored_self_inertia_mm4,
       "stud_section_height_mm": section.stud_layer.thickness_mm,
       "stud_self_inertia_mm4": stud_assembly.self_inertia_mm4,
-      "stud_yield_strength_MPa": STUD_YIELD_STRENGTH,
+      "stud_yield_strength_MPa": stud_steel.Fy,
+      "stud_tensile_strength_MPa": stud_steel.Fu,
       "stud_effective_section_ratio": stud_assembly.effective_section_ratio,
       "stud_extreme_fiber_composite_mm": c_stud_composite,
       "stud_extreme_fiber_stud_only_mm": c_stud_only,
@@ -242,7 +243,7 @@ def _calculate_wall_check_once(
       "I_eff_correction_factor": I_eff_correction_factor,
       "I_eff_lower_bound_mm4": I_eff_lower_bound,
       "screw_utilization_ratio": utilization_ratio,
-      "screw_stud_side_shear_N": _screw_stud_side_shear_N(_stud_thickness_mm(section), request.bolt.diameter),
+      "screw_stud_side_shear_N": _screw_stud_side_shear_N(_stud_thickness_mm(section), request.bolt.diameter, stud_steel.Fu),
       "stiffness_curve_exponent_m": curve_exponent,
       "stiffness_load_factor": stiffness_load_factor,
       "I_eff_lower_bound_governs": 1.0
@@ -339,6 +340,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
 def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Section:
   group, method = _parse_stud_type(request.stud)
   stud = repo.get_stud(group, request.stud.spec)
+  _stud_steel(stud)
   stud_assembly = _stud_assembly(stud, method)
   fixed_rear_board = _fixed_rear_board_for_group(group)
   if fixed_rear_board is not None:
@@ -451,9 +453,25 @@ def _stud_layer(
     y_centroid_mm=y_bottom + assembly.centroid_mm,
     transformed_area_mm2=assembly.area_mm2,
     self_inertia_mm4=assembly.self_inertia_mm4,
-    axial_strength_kN=assembly.area_mm2 * STUD_YIELD_STRENGTH * 1e-3,
+    axial_strength_kN=assembly.area_mm2 * _stud_steel(stud).Fy * 1e-3,
     mass_kN=mass,
   )
+
+
+def _stud_steel(stud: StudSection) -> StudSteel:
+  """스터드 강재(Fy·Fu)를 반환한다(심사의견 B-8). Se가 다른 Fy 기준으로 산정되었으면 계산을 차단한다."""
+  label = f"{stud.group} {stud.name}"
+  if stud.steel is None:
+    raise ValueError(f"스터드 {label}에 강재(Fy·Fu)가 연결되지 않았습니다. init_db를 다시 실행하십시오.")
+  if stud.Se is not None:
+    if stud.Se_basis_Fy_MPa is None:
+      raise ValueError(f"스터드 {label}의 Se 산정 기준 Fy(Se_basis_Fy_MPa)가 없습니다. init_db를 다시 실행하십시오.")
+    if not math.isclose(stud.Se_basis_Fy_MPa, stud.steel.Fy):
+      raise ValueError(
+        f"스터드 {label}의 Se는 Fy {stud.Se_basis_Fy_MPa:g} MPa 기준 값이나 연결 강재 {stud.steel.steel_grade}의 Fy는 "
+        f"{stud.steel.Fy:g} MPa입니다. Se를 재산정하십시오."
+      )
+  return stud.steel
 
 
 def _stud_effective_section_ratio(stud: StudSection) -> float:
@@ -724,15 +742,16 @@ def _shear_connection_by_layer(
   """외곽→내측 피스 전단 누계. for_strength=True이면 Mn용(석고보드 피스 설계강도 상한 적용)."""
   layers = section.layers
   stud_thickness_mm = _stud_thickness_mm(section)
+  stud_fu = _stud_steel(section.stud_section).Fu
   result: dict[str, float] = {}
   stud_index = next(index for index, layer in enumerate(layers) if layer.layer_type == "stud")
   rear_layers = tuple(layer for layer in layers[:stud_index] if layer.layer_type == "board")
   front_layers = tuple(layer for layer in layers[stud_index + 1 :] if layer.layer_type == "board")
 
-  for layer, value in _side_cumulative_shear(rear_layers, request, stud_thickness_mm, for_strength).items():
+  for layer, value in _side_cumulative_shear(rear_layers, request, stud_thickness_mm, stud_fu, for_strength).items():
     result[layer] = value
   for layer, value in _side_cumulative_shear(
-    tuple(reversed(front_layers)), request, stud_thickness_mm, for_strength
+    tuple(reversed(front_layers)), request, stud_thickness_mm, stud_fu, for_strength
   ).items():
     result[layer] = value
   return result
@@ -742,13 +761,16 @@ def _side_cumulative_shear(
   layers_outer_to_inner: tuple[_Layer, ...],
   request: WallCheckRequest,
   stud_thickness_mm: float,
+  stud_tensile_strength: float,
   for_strength: bool = False,
 ) -> dict[str, float]:
   cumulative = 0.0
   result: dict[str, float] = {}
   for layer in layers_outer_to_inner:
     capacity = _connection_capacity_kN(
-      layer, request.bolt, request.span_mm, stud_thickness_mm=stud_thickness_mm, for_strength=for_strength
+      layer, request.bolt, request.span_mm, stud_thickness_mm=stud_thickness_mm,
+      stud_tensile_strength=stud_tensile_strength,
+      for_strength=for_strength,
     )
     cumulative += min(layer.axial_strength_kN, capacity)
     result[layer.name] = cumulative
@@ -783,10 +805,10 @@ def _stud_thickness_mm(section: _Section) -> float:
   return thickness
 
 
-def _screw_stud_side_shear_N(stud_thickness_mm: float, diameter_mm: float) -> float:
+def _screw_stud_side_shear_N(stud_thickness_mm: float, diameter_mm: float, stud_tensile_strength: float) -> float:
   """피스 1개당 스터드(강재)측 허용 전단강도(N) — AISI S100-16 J4.3.1 (t2/t1 ≤ 1.0) min(tilting, 스터드 지압) / Ω."""
-  tilting = SCREW_TILTING_COEFFICIENT * math.sqrt(stud_thickness_mm**3 * diameter_mm) * STUD_TENSILE_STRENGTH
-  bearing = SCREW_STUD_BEARING_COEFFICIENT * stud_thickness_mm * diameter_mm * STUD_TENSILE_STRENGTH
+  tilting = SCREW_TILTING_COEFFICIENT * math.sqrt(stud_thickness_mm**3 * diameter_mm) * stud_tensile_strength
+  bearing = SCREW_STUD_BEARING_COEFFICIENT * stud_thickness_mm * diameter_mm * stud_tensile_strength
   return min(tilting, bearing) / SCREW_SHEAR_OMEGA
 
 
@@ -795,6 +817,7 @@ def _connection_capacity_kN(
   bolt: BoltInput,
   span_mm: float,
   stud_thickness_mm: float,
+  stud_tensile_strength: float,
   for_strength: bool = False,
 ) -> float:
   if layer.board_property is None:
@@ -813,7 +836,7 @@ def _connection_capacity_kN(
   )
   bearing_n = 2.0 * 0.85 * layer.thickness_mm * bolt.diameter * board_bearing_strength
   # 스터드측 tilting·지압 한계(Ω 3.0)는 강성·강도 경로 모두 적용
-  per_screw_n = min(shear_n, bearing_n, _screw_stud_side_shear_N(stud_thickness_mm, bolt.diameter))
+  per_screw_n = min(shear_n, bearing_n, _screw_stud_side_shear_N(stud_thickness_mm, bolt.diameter, stud_tensile_strength))
   if for_strength:
     # 강도(Mn)용: 석고보드 피스 문헌 설계강도로 상한(강성 η·R 보정에는 미적용)
     per_screw_n = min(per_screw_n, _gypsum_screw_design_shear_N(layer.thickness_mm))
@@ -915,6 +938,7 @@ def _nominal_moment(
   layers: tuple[LayerResult, ...],
   shear_by_name: dict[str, float],
   stud_section_modulus_mm3: float,
+  stud_yield_strength: float,
   include_board_layers: bool = True,
 ) -> float:
   total = 0.0
@@ -925,7 +949,7 @@ def _nominal_moment(
       force = min(layer.axial_strength_kN, shear_by_name.get(layer.name, 0.0))
       total += abs(force * layer.distance_to_neutral_axis_mm * 1e-3)
     else:
-      total += STUD_YIELD_STRENGTH * stud_section_modulus_mm3 * 1e-6
+      total += stud_yield_strength * stud_section_modulus_mm3 * 1e-6
   return total
 
 
@@ -1148,7 +1172,7 @@ def _screw_tension_result(
       demand_N = face_demand
       governing_pressure = pressure
       governing_spacing = spacing_per_screw
-  pullout_nominal = SCREW_PULLOUT_COEFFICIENT * stud.t * request.bolt.diameter * STUD_TENSILE_STRENGTH
+  pullout_nominal = SCREW_PULLOUT_COEFFICIENT * stud.t * request.bolt.diameter * _stud_steel(stud).Fu
   pullout_allowable = pullout_nominal / SCREW_TENSION_OMEGA
   pull_through_allowable = request.screw_pull_through_nominal_N / SCREW_TENSION_OMEGA
   pullout_utilization = demand_N / pullout_allowable

@@ -43,6 +43,11 @@ export interface StudSection {
   ry: number;
   section_class: string;
   Se: number | null;
+  Se_basis_Fy_MPa: number | null;
+  steel_grade: string | null;
+  Fy: number | null;
+  Fu: number | null;
+  steel_status: string | null;
 }
 
 export interface StudMethod {

@@ -76,7 +76,7 @@
 
 ## 1-7. 피스 전단 스터드측 tilting·지압 추가 (2026-10-20, A-4·D-7, 사용자 결정)
 
-- 피스 1개당 전단 = min(피스 전단, 보드 지압, **스터드측 한계**). 스터드측 한계 = min(4.2·(t2³·d)^0.5·Fu2, 2.7·t2·d·Fu2) / Ω 3.0 (AISI S100-16 Eq. J4.3.1-1·-3, t2/t1 ≤ 1.0). Fu2 = 400 MPa(`STUD_TENSILE_STRENGTH`)
+- 피스 1개당 전단 = min(피스 전단, 보드 지압, **스터드측 한계**). 스터드측 한계 = min(4.2·(t2³·d)^0.5·Fu2, 2.7·t2·d·Fu2) / Ω 3.0 (AISI S100-16 Eq. J4.3.1-1·-3, t2/t1 ≤ 1.0). Fu2 = 400 MPa(자재 DB `stud_steel.json`, §1-10)
 - 피스 1개당 스터드측 한계(d = 3.5): t0.6 487 N, t0.8 750 N, t1.0 1,048 N — t0.6·t0.8에서 피스 전단(785 N)보다 작아 지배
 - 적용 경로: Ω 3.0을 **강성(η)·강도(Mn) 경로 모두** 적용(사용자 결정). 강도 경로는 석고보드 피스 설계강도 상한(극한/2.0 ≈ 260~302 N)이 지배하여 Mn 불변
 - R 재보정(시험 강성 유지, R_new = R_old × Ieff,raw,old / Ieff,raw,new, L = 2,400): C 중앙부 0.36 → 0.37, C 0.72 → 0.73, CH 0.67 → 0.68, HR 0.73 → 0.74, MP 0.43 → 0.52, RV 0.44 → 0.54, T.silent 0.46 → 0.56, R 0.27 → 0.28, **I 0.90 → 1.00**(계산 1.005, R ≤ 1.0 상한 — 사용자 결정), C 기본 일면 1.0 유지(변동 0.4%)
@@ -108,6 +108,16 @@
 - 계산서 기호 `Pn` → **`Py,i`(층 항복축력)**: 보드 Fy × t × s, 스터드 Fy × A. AISI 부재 공칭 압축강도 Pn(좌굴 포함)과 혼동 방지
 - 변경 위치: 계산서 Mn 상세 식·표 머리글·적용식 문구, 층별 표 '축강도' → 'Py,i(항복축력)', `docs/var_formula_spec.md` 행20
 - API·엔진 필드명 `axial_strength_kN`은 유지(호환성, 사용자 결정). 판정 불변
+
+## 1-10. 스터드 강재 Fy·Fu 자재 DB 분리 (2026-10-20, B-8, 사용자 결정 — 구조만 선반영)
+
+- 상수 `STUD_YIELD_STRENGTH`(295)·`STUD_TENSILE_STRENGTH`(400) 제거 → `data/seed/stud_steel.json` 1종 `legacy_stud_295_400`(status '미확정', 후보 KS D 3030 SGMH295Y — 확인 필요). 값 불변, 골든 재산정 없음
+- 규격 → 강재: `stud_section.json` 선택 필드 `steel_grade`(생략 시 기본 강재, 미등록 식별자는 오류). 기본 강재 정확히 1개 검증
+- Se–Fy 정합성: 69규격에 `Se_basis_Fy_MPa: 295` 추가. 연결 강재 Fy와 다르면 계산 차단(Se 재산정 요구)
+- 계산엔진: Mn 스터드항·스터드 항복축력(Fy), 피스 tilting·지압·풀아웃(Fu)이 `StudSection.steel`에서 값을 받음. 중간값 `stud_tensile_strength_MPa` 추가
+- SQLite schema 7: `stud_steel` 테이블, `stud_section.steel_grade`·`Se_basis_Fy_MPa`. 구 DB 이관은 트랜잭션(실패 시 되돌림), Se 기준 근거가 없어 계산은 `init_db` 재실행 후 가능
+- API `/api/db/studs`: `steel_grade`·`Fy`·`Fu`·`steel_status`·`Se_basis_Fy_MPa` 추가(기존 필드 유지)
+- 설계 결정 기록: DevVault `decisions/ADR-001_stud_steel_material_db.md`
 
 ## 2. R 재보정
 
@@ -152,6 +162,7 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 
 ## 5. 검증
 
+- `python -m pytest` : 86 passed + 195 subtests (2026-10-20, B-8 강재 DB 분리 후, Windows)
 - `python -m pytest` : 73 passed + 57 subtests (2026-10-20, E-9 중립축 검사 후, Windows)
 - `python -m pytest` : 67 passed + 57 subtests (2026-10-20, 피스 tilting·지압 Ω 3.0·R 재보정 후, Windows)
 - `python -m pytest` : 63 passed + 57 subtests (2026-10-20, 피치 순서·연결 피스 개수 정정, 골든 재산정 후, Windows)

@@ -30,7 +30,6 @@ from backend.engine.constants import (
   STANDARD_SCREW_COUNT,
   STANDARD_SCREW_PITCH_MM,
   STIFFNESS_REF_SCREW_PITCH_MM,
-  STUD_TENSILE_STRENGTH,
 )
 from backend.engine.models import BoardLayer, StudInput
 from backend.engine.repository import JsonSeedRepository
@@ -44,6 +43,10 @@ def _stud_t(section) -> float:
   if thickness is None:
     raise AssertionError("스터드 두께 t가 없습니다.")
   return thickness
+
+
+def _stud_fu(section) -> float:
+  return section.stud_section.steel.Fu
 
 
 class GoldenCaseTest(unittest.TestCase):
@@ -156,7 +159,7 @@ class GoldenCaseTest(unittest.TestCase):
       layer for layer in section.layers if layer.layer_type == "board" and layer.order == 2
     )
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section))
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section), stud_tensile_strength=_stud_fu(section))
     bolt_area = math.pi / 4.0 * request.bolt.diameter**2
     expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * bolt_area / 1.25
     expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
@@ -177,7 +180,7 @@ class GoldenCaseTest(unittest.TestCase):
       layer for layer in section.layers if layer.layer_type == "board" and layer.order == 1
     )
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section))
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section), stud_tensile_strength=_stud_fu(section))
     bolt_area = math.pi / 4.0 * request.bolt.diameter**2
     expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * bolt_area / 1.25
     expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
@@ -194,9 +197,9 @@ class GoldenCaseTest(unittest.TestCase):
     t2 = _stud_t(section)
     d = request.bolt.diameter
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=t2)
-    tilting = 4.2 * math.sqrt(t2**3 * d) * STUD_TENSILE_STRENGTH
-    bearing = 2.7 * t2 * d * STUD_TENSILE_STRENGTH
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=t2, stud_tensile_strength=_stud_fu(section))
+    tilting = 4.2 * math.sqrt(t2**3 * d) * 400.0
+    bearing = 2.7 * t2 * d * 400.0
     expected = min(tilting, bearing) / SCREW_SHEAR_OMEGA * (request.span_mm / 2.0) / 1000.0 * 1e-3
 
     self.assertAlmostEqual(actual, expected)
@@ -209,10 +212,10 @@ class GoldenCaseTest(unittest.TestCase):
     section = _build_section(request, self.repository)
     layer = next(layer for layer in section.layers if layer.layer_type == "board" and layer.order == 1)
     thin_t = 0.1
-    stud_side = _screw_stud_side_shear_N(thin_t, request.bolt.diameter)
+    stud_side = _screw_stud_side_shear_N(thin_t, request.bolt.diameter, _stud_fu(section))
     self.assertLess(stud_side, _gypsum_screw_design_shear_N(layer.thickness_mm))
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=thin_t, for_strength=True)
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=thin_t, stud_tensile_strength=_stud_fu(section), for_strength=True)
 
     self.assertAlmostEqual(actual, stud_side * (request.span_mm / 2.0) / 1000.0 * 1e-3)
 
@@ -241,7 +244,7 @@ class GoldenCaseTest(unittest.TestCase):
       self.fail("보드 물성이 누락되었습니다.")
     layer = replace(layer, board_property=replace(layer.board_property, Fy=1000.0, Fu=2.0))
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section))
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section), stud_tensile_strength=_stud_fu(section))
     expected_bearing_n = 2.0 * 0.85 * layer.thickness_mm * request.bolt.diameter * 2.0
     expected = expected_bearing_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
 
@@ -283,7 +286,7 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(result.intermediate["stud_Se_composite_mm3"], expected_s_composite)
     self.assertAlmostEqual(result.intermediate["stud_Se_stud_only_mm3"], expected_s_stud_only)
     expected_stud_moment = 295.0 * expected_s_stud_only * 1e-6
-    actual_stud_moment = _nominal_moment((stud_result,), {}, result.intermediate["stud_Se_stud_only_mm3"])
+    actual_stud_moment = _nominal_moment((stud_result,), {}, result.intermediate["stud_Se_stud_only_mm3"], result.intermediate["stud_yield_strength_MPa"])
 
     self.assertAlmostEqual(actual_stud_moment, expected_stud_moment)
     self.assertAlmostEqual(result.intermediate["Mn_stud_only_kNm"], expected_stud_moment)
@@ -531,7 +534,7 @@ class GoldenCaseTest(unittest.TestCase):
         per_screw = min(
           785.0840041320893,
           2.0 * 0.85 * thickness * 3.5 * self.repository.get_board("방화", thickness).Fu,
-          _screw_stud_side_shear_N(_stud_t(_build_section(request, self.repository)), 3.5),
+          _screw_stud_side_shear_N(_stud_t(_build_section(request, self.repository)), 3.5, 400.0),
         )
         expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
         self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
@@ -583,7 +586,7 @@ class GoldenCaseTest(unittest.TestCase):
     per_screw = min(
       785.0840041320893,
       2.0 * 0.85 * 25.0 * 3.5 * self.repository.get_board("방화", 25.0).Fu,
-      _screw_stud_side_shear_N(_stud_t(section), 3.5),
+      _screw_stud_side_shear_N(_stud_t(section), 3.5, _stud_fu(section)),
     )
     expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
     self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
