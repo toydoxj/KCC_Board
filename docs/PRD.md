@@ -117,7 +117,7 @@
 | ID | 요구사항 | 엑셀 원천 |
 |----|----------|-----------|
 | FR-DB-01 | 스터드 단면 DB: 그룹(9종)·단면명별 H,B,t,A,cx,cy,Ix,Iy,Sx,Sy,rx,ry | **정본: `stud.dxf`(KCC 단면도, 69개, 2026-10 교체) + 유효단면계수 `Se`(AISI S100-16 부록 1, Fy 295)** |
-| FR-DB-02 | 석고보드 물성 DB: 종류×두께 → 질량(kg/m²),Fy,Fu,E. Fu는 Property_Gymsumboard의 파괴응력 검토 표를 사용하고, Fy는 Fu의 0.6배로 산정. 레거시 DB에서 Fu가 비어 있으면 저장된 Fy를 레거시 항복강도로 보고 Fu=Fy/0.6으로 역산 | Property_Gymsumboard |
+| FR-DB-02 | 석고보드 물성 DB: 종류×두께 → 질량(kg/m²),Fy,Fu,E. Fu는 Property_Gymsumboard의 파괴응력 검토 표를 사용하고, Fy는 Fu × 항복비(종류·두께별 실측 Py/Pu, 미시험 종류는 유사 보드 준용, 미등재 0.6)로 산정(2026-10 B-3). 레거시 DB에서 Fu가 비어 있으면 저장된 Fy를 레거시 항복강도로 보고 Fu=Fy/0.6으로 역산 | Property_Gymsumboard |
 | FR-DB-03 | 볼트 재질 DB: 재질별 항복강도(Fy) 필요. 기존 SCREWBOLT(T1:U9)의 Fu 자료는 계산 입력으로 직접 적용하지 않음 | SCREWBOLT(T1:U9) |
 | FR-DB-04 | 스터드 시공방식 분류 DB | Type 시트 |
 | FR-DB-05 | DB는 관리자 화면 CRUD, 초기데이터는 엑셀 마이그레이션 |

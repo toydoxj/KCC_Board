@@ -504,30 +504,32 @@ def _effective_inertia_correction_factor(
   method: str,
   has_rear_board: bool = True,
 ) -> float:
-  # 시험 보정계수 R. 2026-10 재산정(DXF 단면성능·중앙부이음 관성 수정): 시험체 조건(L=2400)의
-  # 보정 강성 R·Ieff_raw를 유지하도록 R_new = R_old × Ieff_raw,old / Ieff_raw,new (소수 2자리).
-  # 변동 0.7% 미만 유형(C 기본·맞댐, HR, RV, R)은 기존값 유지.
+  # 시험 보정계수 R. 시험체 조건(L=2400)의 보정 강성 R·Ieff_raw를 유지하도록
+  # R_new = R_old × Ieff_raw,old / Ieff_raw,new (소수 2자리, 동률은 보수측 하향).
+  # 2026-10 1차: DXF 단면성능·중앙부이음 관성 수정. 2026-10 2차(B-3): 보드 항복비 0.6 → 실측 Py/Pu
+  # (시험 보드 방화 19 0.65, 방화 25 0.80, 방화 15 0.70)에 따른 η 감소분 재보정.
+  # 변동 1% 미만(C 기본 일면 1.006)은 기존값 유지.
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
     if _is_central_joint_method(method):
-      return 0.35
+      return 0.36
     if _is_basic_method(method) and not has_rear_board:
       return 1.0
-    return 0.7
+    return 0.72
   if normalized_group.startswith("CH-STUD"):
-    return 0.65
+    return 0.67
   if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
-    return 0.45
+    return 0.46
   if normalized_group == "R-STUD":
-    return 0.26
+    return 0.27
   if normalized_group == "I-STUD":
-    return 0.87
+    return 0.90
   if normalized_group == "HR-STUD":
-    return 0.71
+    return 0.73
   if normalized_group == "RV-STUD":
-    return 0.43
+    return 0.44
   if normalized_group == "MP-STUD":
-    return 0.42
+    return 0.43
   return 1.0
 
 

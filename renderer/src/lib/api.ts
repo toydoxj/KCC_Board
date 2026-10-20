@@ -22,6 +22,8 @@ export interface BoardProperty {
   E_GPa: number | null;
   is_complete: boolean;
   missing_fields: string[];
+  yield_ratio: number;
+  yield_ratio_source: string;
 }
 
 export interface StudSection {

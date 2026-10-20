@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Protocol, Sequence, cast
 
-from backend.engine.constants import BOARD_YIELD_RATIO_FROM_FRACTURE
+from backend.engine.constants import BOARD_YIELD_RATIO_BY_BOARD, BOARD_YIELD_RATIO_FROM_FRACTURE
 
 
 DEFAULT_BOARD_E_GPA = 1.9
@@ -46,6 +46,9 @@ class BoardProperty:
   Fy: float
   Fu: float
   E_GPa: float
+  # 항복비 Fy/Fu와 근거(시험/준용/기본값)
+  yield_ratio: float = BOARD_YIELD_RATIO_FROM_FRACTURE
+  yield_ratio_source: str = "기본값"
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,8 @@ class BoardCatalogItem:
   E_GPa: float | None
   is_complete: bool
   missing_fields: tuple[str, ...]
+  yield_ratio: float = BOARD_YIELD_RATIO_FROM_FRACTURE
+  yield_ratio_source: str = "기본값"
 
 
 @dataclass(frozen=True)
@@ -182,6 +187,8 @@ class JsonSeedRepository:
         Fy=float(item.Fy),
         Fu=float(item.Fu),
         E_GPa=float(item.E_GPa),
+        yield_ratio=item.yield_ratio,
+        yield_ratio_source=item.yield_ratio_source,
       )
       boards[(board.kind, board.thickness)] = board
     return boards
@@ -253,16 +260,20 @@ class SqliteRepository:
     row = self._fetch_one(query, key)
     if row is None or row["mass_kg_m2"] is None:
       raise RepositoryLookupError(f"등록되지 않은 석고보드입니다: {kind} {thickness}")
-    fracture_strength = _board_fracture_strength(row["Fu"], row["Fy"])
+    board_key = (str(row["kind"]), float(row["thickness"]))
+    fracture_strength = _board_fracture_strength(row["Fu"], row["Fy"], board_key)
     if fracture_strength is None:
       raise RepositoryLookupError(f"등록되지 않은 석고보드입니다: {kind} {thickness}")
+    ratio, source = _board_yield_ratio(board_key)
     board = BoardProperty(
-      kind=str(row["kind"]),
-      thickness=float(row["thickness"]),
+      kind=board_key[0],
+      thickness=board_key[1],
       mass_kg_m2=float(row["mass_kg_m2"]),
-      Fy=_board_yield_strength(fracture_strength),
+      Fy=_board_yield_strength(fracture_strength, board_key),
       Fu=fracture_strength,
       E_GPa=_elastic_modulus_or_default(row["E_GPa"]),
+      yield_ratio=ratio,
+      yield_ratio_source=source,
     )
     self._board_cache[key] = board
     return board
@@ -322,15 +333,19 @@ class SqliteRepository:
       rows = connection.execute(query).fetchall()
     boards: list[BoardProperty] = []
     for row in rows:
-      fracture_strength = _board_fracture_strength_required(row["Fu"], row["Fy"])
+      board_key = (str(row["kind"]), float(row["thickness"]))
+      fracture_strength = _board_fracture_strength_required(row["Fu"], row["Fy"], board_key)
+      ratio, source = _board_yield_ratio(board_key)
       boards.append(
         BoardProperty(
-          kind=str(row["kind"]),
-          thickness=float(row["thickness"]),
+          kind=board_key[0],
+          thickness=board_key[1],
           mass_kg_m2=float(row["mass_kg_m2"]),
-          Fy=_board_yield_strength(fracture_strength),
+          Fy=_board_yield_strength(fracture_strength, board_key),
           Fu=fracture_strength,
           E_GPa=_elastic_modulus_or_default(row["E_GPa"]),
+          yield_ratio=ratio,
+          yield_ratio_source=source,
         )
       )
     return tuple(boards)
@@ -429,6 +444,11 @@ class SqliteRepository:
         "UPDATE board_property SET Fy = Fu * ? WHERE Fu IS NOT NULL",
         (BOARD_YIELD_RATIO_FROM_FRACTURE,),
       )
+      # 종류·두께별 항복비(B-3) 적용
+      connection.executemany(
+        "UPDATE board_property SET Fy = Fu * ? WHERE Fu IS NOT NULL AND kind = ? AND thickness = ?",
+        [(ratio, kind, thickness) for (kind, thickness), (ratio, _) in BOARD_YIELD_RATIO_BY_BOARD.items()],
+      )
       connection.executemany(
         "UPDATE board_property SET E_GPa = ? WHERE kind = ? AND thickness = ?",
         [
@@ -438,7 +458,7 @@ class SqliteRepository:
       )
       connection.execute(
         "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
-        ("schema_version", "5"),
+        ("schema_version", "6"),
       )
       connection.commit()
 
@@ -583,7 +603,7 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
     [(str(item["stud_type"]), None if item.get("method") is None else str(item["method"])) for item in method_items],
   )
 
-  connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", "5"))
+  connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", "6"))
   connection.commit()
 
 
@@ -599,30 +619,48 @@ def _elastic_modulus_or_default(value: object) -> float:
   return float(value)
 
 
-def _board_fracture_strength(fu_value: object, fy_value: object) -> float | None:
+def _board_yield_ratio(board_key: tuple[str, float] | None) -> tuple[float, str]:
+  # 종류·두께별 항복비(B-3). 표에 없으면 기본값 0.6을 적용하고 근거를 '기본값'으로 표시한다.
+  if board_key is not None and board_key in BOARD_YIELD_RATIO_BY_BOARD:
+    return BOARD_YIELD_RATIO_BY_BOARD[board_key]
+  return BOARD_YIELD_RATIO_FROM_FRACTURE, "기본값"
+
+
+def _board_fracture_strength(
+  fu_value: object,
+  fy_value: object,
+  board_key: tuple[str, float] | None = None,
+) -> float | None:
   fu = _nullable_float(fu_value)
   if fu is not None:
     return fu
+  # 구 DB(Fu 없음)의 Fy는 기본 항복비 0.6으로 등재된 레거시 값이다.
   legacy_yield_strength = _nullable_float(fy_value)
   if legacy_yield_strength is None:
     return None
   return legacy_yield_strength / BOARD_YIELD_RATIO_FROM_FRACTURE
 
 
-def _board_fracture_strength_required(fu_value: object, fy_value: object) -> float:
-  fracture_strength = _board_fracture_strength(fu_value, fy_value)
+def _board_fracture_strength_required(
+  fu_value: object,
+  fy_value: object,
+  board_key: tuple[str, float] | None = None,
+) -> float:
+  fracture_strength = _board_fracture_strength(fu_value, fy_value, board_key)
   if fracture_strength is None:
     raise RepositoryLookupError("석고보드 Fu와 Fy가 모두 누락되었습니다.")
   return fracture_strength
 
 
-def _board_yield_strength(fracture_strength: float) -> float:
-  return fracture_strength * BOARD_YIELD_RATIO_FROM_FRACTURE
+def _board_yield_strength(fracture_strength: float, board_key: tuple[str, float] | None = None) -> float:
+  ratio, _ = _board_yield_ratio(board_key)
+  return fracture_strength * ratio
 
 
 def _board_seed_row(item: Mapping[str, object]) -> tuple[object, ...]:
-  fu = _board_fracture_strength(item.get("Fu"), item.get("Fy"))
-  fy = _board_yield_strength(fu) if fu is not None else None
+  board_key = (str(item["kind"]), float(cast(float, item["thickness"])))
+  fu = _board_fracture_strength(item.get("Fu"), item.get("Fy"), board_key)
+  fy = _board_yield_strength(fu, board_key) if fu is not None else None
   return (
     str(item["kind"]),
     float(item["thickness"]),
@@ -635,8 +673,10 @@ def _board_seed_row(item: Mapping[str, object]) -> tuple[object, ...]:
 
 def _board_catalog_item_from_mapping(item: Mapping[str, object]) -> BoardCatalogItem:
   mass = _nullable_float(item.get("mass_kg_m2"))
-  fu = _board_fracture_strength(item.get("Fu"), item.get("Fy"))
-  fy = _board_yield_strength(fu) if fu is not None else None
+  board_key = (str(item["kind"]), float(cast(float, item["thickness"])))
+  fu = _board_fracture_strength(item.get("Fu"), item.get("Fy"), board_key)
+  fy = _board_yield_strength(fu, board_key) if fu is not None else None
+  ratio, source = _board_yield_ratio(board_key)
   elastic_modulus = _elastic_modulus_or_default(item.get("E_GPa"))
   missing_fields = tuple(
     field
@@ -655,4 +695,6 @@ def _board_catalog_item_from_mapping(item: Mapping[str, object]) -> BoardCatalog
     E_GPa=elastic_modulus,
     is_complete=len(missing_fields) == 0,
     missing_fields=missing_fields,
+    yield_ratio=ratio,
+    yield_ratio_source=source,
   )

@@ -11,6 +11,8 @@ export interface ReportBoardSlot {
   Fy: number | null;
   Fu: number | null;
   E_GPa: number | null;
+  yieldRatio: number | null;
+  yieldRatioSource: string | null;
 }
 
 export interface ReportStud {
@@ -252,6 +254,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <TableHead>두께</TableHead>
                 <TableHead>질량</TableHead>
                 <TableHead>Fy</TableHead>
+                <TableHead>Fy/Fu (근거)</TableHead>
                 <TableHead>Fu</TableHead>
                 <TableHead>E</TableHead>
               </tr>
@@ -264,6 +267,9 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                   <TableCell>{board.thickness === null ? "-" : `${formatNumber(board.thickness)}T`}</TableCell>
                   <TableCell>{unitValue(board.mass_kg_m2, "kg/m²")}</TableCell>
                   <TableCell>{unitValue(board.Fy, "N/mm²")}</TableCell>
+                  <TableCell>
+                    {board.yieldRatio === null ? "-" : `${board.yieldRatio.toFixed(2)} (${board.yieldRatioSource ?? "-"})`}
+                  </TableCell>
                   <TableCell>{unitValue(board.Fu, "N/mm²")}</TableCell>
                   <TableCell>{unitValue(board.E_GPa, "GPa")}</TableCell>
                 </tr>

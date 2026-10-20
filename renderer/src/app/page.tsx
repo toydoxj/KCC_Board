@@ -1060,7 +1060,7 @@ function boardKindOptions(boards: BoardProperty[] | undefined, requiredThickness
   const source =
     boards && boards.length > 0
       ? boards
-      : [{ kind: "방화", thickness: 19, mass_kg_m2: 16.1, Fy: 0, Fu: 0, E_GPa: 0, is_complete: true, missing_fields: [] }];
+      : [{ kind: "방화", thickness: 19, mass_kg_m2: 16.1, Fy: 0, Fu: 0, E_GPa: 0, is_complete: true, missing_fields: [], yield_ratio: 0.65, yield_ratio_source: "시험" }];
   const kindMap = new Map<string, BoardProperty[]>();
   for (const board of source) {
     if (requiredThickness !== undefined && !isSameThickness(board.thickness, requiredThickness)) {
@@ -1476,6 +1476,8 @@ function reportBoardSlot(
       Fy: null,
       Fu: null,
       E_GPa: null,
+      yieldRatio: null,
+      yieldRatioSource: null,
     };
   }
   const board = boards.find((item) => item.kind === selection.kind && item.thickness === selection.thickness);
@@ -1487,5 +1489,7 @@ function reportBoardSlot(
     Fy: board?.Fy ?? null,
     Fu: board?.Fu ?? null,
     E_GPa: board?.E_GPa ?? null,
+    yieldRatio: board?.yield_ratio ?? null,
+    yieldRatioSource: board?.yield_ratio_source ?? null,
   };
 }

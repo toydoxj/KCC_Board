@@ -275,6 +275,9 @@ class BoardPropertyData(ApiModel):
   E_GPa: float | None
   is_complete: bool
   missing_fields: list[str]
+  # 항복비 Fy/Fu와 근거(시험 / 준용: 유사 보드 / 기본값)
+  yield_ratio: float
+  yield_ratio_source: str
 
   @classmethod
   def from_repository(cls, board: BoardCatalogItem) -> "BoardPropertyData":
@@ -287,6 +290,8 @@ class BoardPropertyData(ApiModel):
       E_GPa=board.E_GPa,
       is_complete=board.is_complete,
       missing_fields=list(board.missing_fields),
+      yield_ratio=board.yield_ratio,
+      yield_ratio_source=board.yield_ratio_source,
     )
 
 

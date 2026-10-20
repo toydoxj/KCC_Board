@@ -190,20 +190,20 @@ class GoldenCaseTest(unittest.TestCase):
 
   def test_effective_inertia_correction_factor_mapping(self) -> None:
     cases = [
-      ("C-STUD", "기본", 0.7),
-      ("C-STUD", "맞댐이음", 0.7),
-      ("C-STUD", "중앙부 이음", 0.35),
-      ("C-STUD", "중앙부연결", 0.35),
-      ("CH-STUD", "기본", 0.65),
-      ("CH-STUD(개량형)", "기본", 0.65),
-      ("T-Silent", "기본", 0.45),
-      ("T.silent-STUD", "기본", 0.45),
-      ("R.STUD", "기본", 0.26),
-      ("R-STUD", "기본", 0.26),
-      ("I-STUD", "기본", 0.87),
-      ("HR-STUD", "기본", 0.71),
-      ("RV-STUD", "기본", 0.43),
-      ("MP-STUD", "기본", 0.42),
+      ("C-STUD", "기본", 0.72),
+      ("C-STUD", "맞댐이음", 0.72),
+      ("C-STUD", "중앙부 이음", 0.36),
+      ("C-STUD", "중앙부연결", 0.36),
+      ("CH-STUD", "기본", 0.67),
+      ("CH-STUD(개량형)", "기본", 0.67),
+      ("T-Silent", "기본", 0.46),
+      ("T.silent-STUD", "기본", 0.46),
+      ("R.STUD", "기본", 0.27),
+      ("R-STUD", "기본", 0.27),
+      ("I-STUD", "기본", 0.90),
+      ("HR-STUD", "기본", 0.73),
+      ("RV-STUD", "기본", 0.44),
+      ("MP-STUD", "기본", 0.43),
     ]
 
     for group, method, expected in cases:
@@ -230,7 +230,7 @@ class GoldenCaseTest(unittest.TestCase):
     result = _calculate_wall_check_once(request, self.repository)
     layer_inertia_sum = sum(layer.inertia_about_neutral_axis_mm4 for layer in result.layers)
 
-    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.65)
+    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.67)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
     self.assertAlmostEqual(
       result.I_eff_mm4,
@@ -243,11 +243,11 @@ class GoldenCaseTest(unittest.TestCase):
     )
     central_result = _calculate_wall_check_once(central_request, self.repository)
 
-    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.35)
+    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.36)
     self.assertAlmostEqual(
       central_result.I_eff_mm4,
       max(
-        central_result.intermediate["I_eff_raw_mm4"] * 0.35,
+        central_result.intermediate["I_eff_raw_mm4"] * 0.36,
         central_result.intermediate["I_eff_lower_bound_mm4"],
       ),
     )
