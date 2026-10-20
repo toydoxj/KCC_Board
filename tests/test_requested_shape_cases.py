@@ -8,7 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Mapping, Sequence, cast
 
-from backend.engine.calculator import _calculate_wall_check_once, calculate_wall_check
+from backend.engine.calculator import _calculate_wall_check_once, bolt_values_from_ply_order, calculate_wall_check
 from backend.engine.models import BoardLayer, BoltInput, SeismicInput, StudInput, WallCheckRequest
 from backend.engine.repository import JsonSeedRepository
 
@@ -74,8 +74,9 @@ class RequestedShapeCaseTest(unittest.TestCase):
       bolt=BoltInput(
         diameter=float(bolt["diameter"]),
         yield_strength=float(bolt["yield_strength"]),
-        pitch=tuple(float(value) for value in cast(Sequence[object], bolt["pitch"])),
-        count=tuple(float(value) for value in cast(Sequence[object], bolt["count"])),
+        # 골든 pitch·count는 [1P(내측), 2P, 3P(외측)] 순서 — 엔진 순서로 변환
+        pitch=bolt_values_from_ply_order(tuple(float(value) for value in cast(Sequence[object], bolt["pitch"]))),
+        count=bolt_values_from_ply_order(tuple(float(value) for value in cast(Sequence[object], bolt["count"]))),
       ),
       seismic=SeismicInput(
         S=float(seismic["S"]),

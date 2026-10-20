@@ -18,6 +18,8 @@
         300.0
       ],
       "count": [
+        1.0,
+        2.0,
         2.0
       ]
     },
@@ -224,7 +226,7 @@
       "expected": {
         "max_height_mm": 5850.0,
         "Mu_at_max_height_kNm": 1.04864579482976,
-        "I_eff_raw_at_2400_mm4": 530604.0722991476,
+        "I_eff_raw_at_2400_mm4": 535552.0756060615,
         "I_eff_correction_factor": 0.67
       },
       "expected_legacy": {
@@ -474,9 +476,9 @@
         ]
       },
       "expected": {
-        "max_height_mm": 5600.0,
-        "Mu_at_max_height_kNm": 0.957785487873887,
-        "I_eff_raw_at_2400_mm4": 499038.4206271253,
+        "max_height_mm": 6100.0,
+        "Mu_at_max_height_kNm": 1.1364540179779126,
+        "I_eff_raw_at_2400_mm4": 503834.61795980553,
         "I_eff_correction_factor": 0.9
       },
       "expected_legacy": {
@@ -487,5 +489,5 @@
       }
     }
   ],
-  "_recalc_note": "2026-10-16 1차 심사의견 반영 재산정(DXF 단면성능·Se·Fy 295·S=I/c_max·KDS 0.75L+0.75(0.7E)·중앙부이음 관성 수정·R 재보정). 이전 엑셀 기준값은 expected_legacy 참조. / 2026-10-19 갱신: Mn 보드항 피스 강도 상한(AISI S240-20 해설 C-B3.2-1 극한/2.0), CH·I-STUD 후면 보드 피스 체결(300 mm, 2개). / 2026-10-21 갱신(B-3): 석고보드 항복비 Fy/Fu = 종류·두께별 실측 Py/Pu(미시험 종류는 유사 보드 준용), 시험체 강성 유지를 위한 R 재보정(C 0.72, 중앙부 0.36, CH 0.67, T 0.46, R 0.27, I 0.90, HR 0.73, RV 0.44, MP 0.43)."
+  "_recalc_note": "2026-10-16 1차 심사의견 반영 재산정(DXF 단면성능·Se·Fy 295·S=I/c_max·KDS 0.75L+0.75(0.7E)·중앙부이음 관성 수정·R 재보정). 이전 엑셀 기준값은 expected_legacy 참조. / 2026-10-19 갱신: Mn 보드항 피스 강도 상한(AISI S240-20 해설 C-B3.2-1 극한/2.0), CH·I-STUD 후면 보드 피스 체결(300 mm, 2개). / 2026-10-21 갱신(B-3): 석고보드 항복비 Fy/Fu = 종류·두께별 실측 Py/Pu(미시험 종류는 유사 보드 준용), 시험체 강성 유지를 위한 R 재보정(C 0.72, 중앙부 0.36, CH 0.67, T 0.46, R 0.27, I 0.90, HR 0.73, RV 0.44, MP 0.43). / 2026-10-20 갱신(피스 피치 순서·개수): 골든 bolt_pitch·count는 [1P(내측, 스터드 인접), 2P, 3P(외측)] 순서(엑셀 VAR. C32:C34)이며 로더에서 엔진 순서 [외측, 중간, 내측]로 변환(bolt_values_from_ply_order). E-8 시험 피치 STIFFNESS_REF_SCREW_PITCH_MM 내측 600 정정. 피치당 연결 피스 개수 표준 = 누계 1-3-5(층별 1·2·2, STANDARD_SCREW_COUNT) — cases.json은 엔진 기본값, 시편 common.bolt.count = [1, 2, 2]."
 }

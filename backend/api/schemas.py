@@ -15,6 +15,7 @@ from backend.engine.constants import (
   DEFAULT_OMEGA,
   DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N,
   GRAVITY,
+  STANDARD_SCREW_COUNT,
 )
 from backend.engine.models import (
   BoardLayer,
@@ -77,7 +78,8 @@ class BoltPayload(ApiModel):
   # 피스 항복강도 Fy(전단강도 Fv = 0.6 × Fy). 과거 Fu 값을 받던 fracture_strength 별칭은 제거됨
   yield_strength: float = Field(gt=0)
   pitch: list[float] = Field(min_length=1)
-  count: float | list[float] = 2.0
+  # 단일값이면 전 층 동일, 목록이면 [외측, 중간, 내측]. 생략 시 표준(누계 1-3-5 = 층별 2·2·1)
+  count: float | list[float] = Field(default_factory=lambda: list(STANDARD_SCREW_COUNT))
 
   @field_validator("pitch")
   @classmethod

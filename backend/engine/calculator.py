@@ -316,7 +316,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
     bolt=BoltInput(
       diameter=float(inputs["bolt_diameter"]),
       yield_strength=float(yield_strength_raw),
-      pitch=tuple(float(value) for value in pitch_raw),
+      pitch=bolt_values_from_ply_order(tuple(float(value) for value in pitch_raw)),
     ),
     seismic=SeismicInput(
       S=float(seismic_raw["S"]),
@@ -764,6 +764,14 @@ def _pitch_for_order(pitches: tuple[float, ...], order: int) -> float:
   if order <= 1 and len(pitches) >= 3:
     return pitches[2]
   return pitches[-1]
+
+
+def bolt_values_from_ply_order(ply_values: tuple[float, ...]) -> tuple[float, ...]:
+  """층별 값(피스 간격·개수)을 [1P(내측, 스터드 인접), 2P, 3P(외측)] 순서(엑셀 VAR. C32:C34 등)에서
+  엔진 bolt.pitch·bolt.count 순서 [외측, 중간, 내측]로 변환한다."""
+  if len(ply_values) != 3:
+    raise ValueError(f"층별 피스 값은 1P·2P·3P 3개가 필요합니다: {ply_values}")
+  return tuple(reversed(ply_values))
 
 
 def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:

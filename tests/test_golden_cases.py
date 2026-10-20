@@ -13,12 +13,17 @@ from backend.engine.calculator import (
   _build_section,
   _calculate_wall_check_once,
   _connection_capacity_kN,
+  _count_for_order,
   _effective_inertia_correction_factor,
   _gypsum_screw_design_shear_N,
   _nominal_moment,
+  _pitch_for_order,
+  bolt_values_from_ply_order,
   calculate_wall_check,
   request_from_golden_case,
 )
+from backend.api.schemas import BoltPayload
+from backend.engine.constants import STANDARD_SCREW_COUNT, STANDARD_SCREW_PITCH_MM, STIFFNESS_REF_SCREW_PITCH_MM
 from backend.engine.models import BoardLayer, StudInput
 from backend.engine.repository import JsonSeedRepository
 
@@ -54,6 +59,46 @@ class GoldenCaseTest(unittest.TestCase):
         self._assert_close("seismic_moment_kNm", result.seismic_moment_kNm, expected)
         self.assertEqual(result.deflection_verdict, expected["deflection_verdict"])
         self.assertEqual(result.stress_verdict, expected["stress_verdict"])
+
+  def test_golden_bolt_pitch_is_excel_ply_order(self) -> None:
+    # 골든 bolt_pitch = 엑셀 VAR. C32:C34 = [1P(내측, 스터드 인접), 2P, 3P(외측)]
+    request = request_from_golden_case(dict(self.cases[0]))
+
+    self.assertEqual(request.bolt.pitch, STANDARD_SCREW_PITCH_MM)
+    self.assertEqual(_pitch_for_order(request.bolt.pitch, 1), 600.0)
+    self.assertEqual(_pitch_for_order(request.bolt.pitch, 3), 300.0)
+
+  def test_stiffness_reference_pitch_has_inner_600(self) -> None:
+    # E-8 시험 피스 간격: 1P(내측) 600, 2P·3P 300
+    self.assertEqual(_pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, 1), 600.0)
+    self.assertEqual(_pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, 2), 300.0)
+    self.assertEqual(_pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, 3), 300.0)
+
+  def test_ply_order_pitch_requires_three_values(self) -> None:
+    with self.assertRaises(ValueError):
+      bolt_values_from_ply_order((600.0, 300.0))
+
+  def test_default_screw_count_is_cumulative_1_3_5(self) -> None:
+    # 연결 피스 개수 누계 1-3-5 = 층별 1번(내측) 1, 2번 2, 3번(외측) 2
+    request = request_from_golden_case(dict(self.cases[0]))
+
+    self.assertEqual(request.bolt.count, STANDARD_SCREW_COUNT)
+    self.assertEqual(_count_for_order(request.bolt.count, 1), 1.0)
+    self.assertEqual(_count_for_order(request.bolt.count, 2), 2.0)
+    self.assertEqual(_count_for_order(request.bolt.count, 3), 2.0)
+    self.assertEqual(BoltPayload(diameter=3.5, yield_strength=340.0, pitch=[300.0]).to_engine().count, STANDARD_SCREW_COUNT)
+
+  def test_bolt_payload_backward_compatible_inputs(self) -> None:
+    # 단일 count는 전 층 동일, pitch 1개는 전 층 동일, 2개는 [외측, 중간·내측]
+    single = BoltPayload(diameter=3.5, yield_strength=340.0, pitch=[450.0], count=2.0).to_engine()
+    pair = BoltPayload(diameter=3.5, yield_strength=340.0, pitch=[300.0, 600.0]).to_engine()
+
+    for order in (1, 2, 3):
+      self.assertEqual(_count_for_order(single.count, order), 2.0)
+      self.assertEqual(_pitch_for_order(single.pitch, order), 450.0)
+    self.assertEqual(_pitch_for_order(pair.pitch, 3), 300.0)
+    self.assertEqual(_pitch_for_order(pair.pitch, 2), 600.0)
+    self.assertEqual(_pitch_for_order(pair.pitch, 1), 600.0)
 
   def test_bolt_count_can_vary_by_board_order(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))

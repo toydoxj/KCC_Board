@@ -75,10 +75,13 @@ FIXED_REAR_BOARD_SCREW_COUNT = 2.0
 # 피스 활용도 기준 단방향 강성 보정 (E-8): I = R·Ieff,raw·min[1, (u/u_ref)^(1−m)]
 # 시험 기준 피스 전단 대리값: 스터드 1개당 지점 전단력 V_ref = P·a/L (P = 306 kgf, a = 1,500, L = 2,400 mm)
 STIFFNESS_REF_SUPPORT_SHEAR_N = 306.0 * 9.81 * 1500.0 / 2400.0
-# 시험 피스 간격(외곽/중간/내측, mm) — u/u_ref에 피치비로 반영
-STIFFNESS_REF_SCREW_PITCH_MM = (600.0, 300.0, 300.0)
+# 시험 피스 간격(엔진 bolt.pitch 순서: 3번 외측 / 2번 중간 / 1번 내측, mm) — u/u_ref에 피치비로 반영
+# 엑셀 VAR. C32:C34 = [1P 600, 2P 300, 3P 300], 1P = 내측(스터드 인접)
+STIFFNESS_REF_SCREW_PITCH_MM = (300.0, 300.0, 600.0)
 
 # 표준 피스 간격(3번 외측 / 2번 중간 / 1번 내측, mm). 1P(내측)는 스터드에 가장 가까운 층.
 # 이와 다른 입력은 결과 안내(notices)로 경고만 하고 판정에는 반영하지 않음 (심사의견 F-4)
 STANDARD_SCREW_PITCH_MM = (300.0, 300.0, 600.0)
+# 표준 피치당 연결 피스 개수(같은 순서: 3번 외측 / 2번 중간 / 1번 내측). 누계 1-3-5개 = 층별 1·2·2개
+STANDARD_SCREW_COUNT = (2.0, 2.0, 1.0)
 BOARD_ORDER_LABELS = {1: "1번(내측)", 2: "2번(중간)", 3: "3번(외측)"}
