@@ -112,7 +112,7 @@ def _default_repository() -> MaterialRepository:
 
   sqlite_path = Path(os.environ.get("KCC_BOARD_SQLITE_PATH", str(ROOT_DIR / "data/local/materials.sqlite3")))
   if sqlite_path.exists():
-    return SqliteRepository(sqlite_path)
+    return SqliteRepository(sqlite_path, seed_dir)
   return JsonSeedRepository(seed_dir)
 
 

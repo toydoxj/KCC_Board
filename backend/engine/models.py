@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from backend.engine.constants import DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, STANDARD_SCREW_COUNT
+
 
 @dataclass(frozen=True)
 class BoardLayer:
@@ -23,7 +25,8 @@ class BoltInput:
   # 피스 항복강도 Fy. 전단강도 Fv = 0.6 × Fy 로 유도해 전단식에 사용
   yield_strength: float
   pitch: tuple[float, ...]
-  count: tuple[float, ...] = (2.0,)
+  # [외측, 중간, 내측] 층별 피치당 개수
+  count: tuple[float, ...] = STANDARD_SCREW_COUNT
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,8 @@ class WallCheckRequest:
   omega: float = 1.5
   anchor_capacity_kN: float = 0.4
   anchor_spacing_mm: float = 450.0
+  # 석고보드 풀스루 공칭강도(N/개) — 시험값 확보 전 입력값
+  screw_pull_through_nominal_N: float = DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,8 @@ class LayerResult:
   inertia_about_neutral_axis_mm4: float
   axial_strength_kN: float
   cumulative_shear_kN: float = 0.0
+  # Mn(강도)용 전단 누계 — 석고보드 피스 설계강도 상한 적용
+  strength_shear_kN: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -83,9 +90,12 @@ class WallCheckResult:
   seismic_moment_kNm: float
   deflection_verdict: str
   stress_verdict: str
+  screw_tension_verdict: str = "O.K"
   max_height_mm: float = 0.0
   anchor_max_height_mm: float = 0.0
   max_height_increment_mm: float = 50.0
   anchor_spacing_increment_mm: float = 50.0
   layers: tuple[LayerResult, ...] = field(default_factory=tuple)
   intermediate: dict[str, float] = field(default_factory=dict)
+  # 판정에 영향하지 않는 입력 경고(표준 외 피스 간격 등)
+  notices: tuple[str, ...] = field(default_factory=tuple)

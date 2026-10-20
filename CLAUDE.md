@@ -10,30 +10,10 @@
 
 > 규칙이 충돌하면 `CODEX.md`가 우선한다. 본 문서는 Claude Code 작업 편의(환경·명령·주의사항)만 보완한다.
 
-## 1. 환경 (검증 완료: 2026-07-24)
-| 항목 | 상태 |
-|------|------|
-| Python 가상환경 | `.venv-win\` (Python 3.14.2) — **`.venv`가 아니라 `.venv-win` 사용**. `renderer/package.json`의 `build:backend`가 이 경로를 참조함 |
-| Python 패키지 | `requirements-dev.txt` 설치 완료(fastapi 0.139, uvicorn 0.51, pytest 9.1, httpx2 2.5, pyinstaller 6.21, pydantic 2.13) |
-| Node / npm | v24.13.1 / 11.8.0, `renderer/node_modules` 설치 완료 |
-| 자재 DB | `data/local/materials.sqlite3` 초기화 완료(`data/seed`에서 재생성) |
-| 테스트 | 전체 통과 (45 passed + 36 subtests) — 골든 회귀 포함 |
-| 렌더러 빌드 | `npm run build` 성공(Next.js 15.5, static export) |
+## 1. 환경
+- Python 가상환경은 `.venv-win\` (Python 3.14)이다 — **`.venv`가 아니라 `.venv-win` 사용**. `renderer/package.json`의 `build:backend`가 이 경로를 참조함
 
 > CLAUDE.md 전역 규칙: **파이썬은 반드시 가상환경(`.venv-win`)에서 실행한다.**
-
-## 2. 코드 구조
-```
-backend/
-├─ api/         FastAPI 앱(main.py, schemas.py) — /api/health, /api/check, /api/db/*
-├─ engine/      순수함수 계산엔진(calculator, models, seismic, constants) + repository(JSON/SQLite)
-├─ tools/       init_db(SQLite 초기화), dev_servers(⚠ POSIX 전용 — §3 참조)
-└─ electron_api.py   PyInstaller 번들 엔트리포인트
-renderer/       Next.js 15(App Router) + Electron(main.cjs). src/{app,components,lib,store}
-data/seed/      자재 DB 시드(JSON) — SQLite의 정본
-tests/golden/   엑셀 회귀 골든값(cases.json 등)
-refs/           원본 엑셀·단면 시각화(정본 데이터 소스)
-```
 
 ## 3. 실행 명령 (Windows / PowerShell 기준)
 가상환경 인터프리터는 `.\.venv-win\Scripts\python.exe`이다. (`development_plan.md`의 `.venv/bin/...`은 리눅스용이므로 아래로 치환한다.)

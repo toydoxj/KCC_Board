@@ -13,16 +13,40 @@ from backend.engine.calculator import (
   _build_section,
   _calculate_wall_check_once,
   _connection_capacity_kN,
+  _count_for_order,
   _effective_inertia_correction_factor,
+  _gypsum_screw_design_shear_N,
   _nominal_moment,
+  _pitch_for_order,
+  _screw_stud_side_shear_N,
+  _shear_connection_by_layer,
+  bolt_values_from_ply_order,
   calculate_wall_check,
   request_from_golden_case,
+)
+from backend.api.schemas import BoltPayload
+from backend.engine.constants import (
+  SCREW_SHEAR_OMEGA,
+  STANDARD_SCREW_COUNT,
+  STANDARD_SCREW_PITCH_MM,
+  STIFFNESS_REF_SCREW_PITCH_MM,
 )
 from backend.engine.models import BoardLayer, StudInput
 from backend.engine.repository import JsonSeedRepository
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _stud_t(section) -> float:
+  thickness = section.stud_section.t
+  if thickness is None:
+    raise AssertionError("스터드 두께 t가 없습니다.")
+  return thickness
+
+
+def _stud_fu(section) -> float:
+  return section.stud_section.steel.Fu
 
 
 class GoldenCaseTest(unittest.TestCase):
@@ -54,6 +78,46 @@ class GoldenCaseTest(unittest.TestCase):
         self.assertEqual(result.deflection_verdict, expected["deflection_verdict"])
         self.assertEqual(result.stress_verdict, expected["stress_verdict"])
 
+  def test_golden_bolt_pitch_is_excel_ply_order(self) -> None:
+    # 골든 bolt_pitch = 엑셀 VAR. C32:C34 = [1P(내측, 스터드 인접), 2P, 3P(외측)]
+    request = request_from_golden_case(dict(self.cases[0]))
+
+    self.assertEqual(request.bolt.pitch, STANDARD_SCREW_PITCH_MM)
+    self.assertEqual(_pitch_for_order(request.bolt.pitch, 1), 600.0)
+    self.assertEqual(_pitch_for_order(request.bolt.pitch, 3), 300.0)
+
+  def test_stiffness_reference_pitch_has_inner_600(self) -> None:
+    # E-8 시험 피스 간격: 1P(내측) 600, 2P·3P 300
+    self.assertEqual(_pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, 1), 600.0)
+    self.assertEqual(_pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, 2), 300.0)
+    self.assertEqual(_pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, 3), 300.0)
+
+  def test_ply_order_pitch_requires_three_values(self) -> None:
+    with self.assertRaises(ValueError):
+      bolt_values_from_ply_order((600.0, 300.0))
+
+  def test_default_screw_count_is_cumulative_1_3_5(self) -> None:
+    # 연결 피스 개수 누계 1-3-5 = 층별 1번(내측) 1, 2번 2, 3번(외측) 2
+    request = request_from_golden_case(dict(self.cases[0]))
+
+    self.assertEqual(request.bolt.count, STANDARD_SCREW_COUNT)
+    self.assertEqual(_count_for_order(request.bolt.count, 1), 1.0)
+    self.assertEqual(_count_for_order(request.bolt.count, 2), 2.0)
+    self.assertEqual(_count_for_order(request.bolt.count, 3), 2.0)
+    self.assertEqual(BoltPayload(diameter=3.5, yield_strength=340.0, pitch=[300.0]).to_engine().count, STANDARD_SCREW_COUNT)
+
+  def test_bolt_payload_backward_compatible_inputs(self) -> None:
+    # 단일 count는 전 층 동일, pitch 1개는 전 층 동일, 2개는 [외측, 중간·내측]
+    single = BoltPayload(diameter=3.5, yield_strength=340.0, pitch=[450.0], count=2.0).to_engine()
+    pair = BoltPayload(diameter=3.5, yield_strength=340.0, pitch=[300.0, 600.0]).to_engine()
+
+    for order in (1, 2, 3):
+      self.assertEqual(_count_for_order(single.count, order), 2.0)
+      self.assertEqual(_pitch_for_order(single.pitch, order), 450.0)
+    self.assertEqual(_pitch_for_order(pair.pitch, 3), 300.0)
+    self.assertEqual(_pitch_for_order(pair.pitch, 2), 600.0)
+    self.assertEqual(_pitch_for_order(pair.pitch, 1), 600.0)
+
   def test_bolt_count_can_vary_by_board_order(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
     base = calculate_wall_check(request, self.repository)
@@ -78,7 +142,7 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(stud_only.Mn_kNm, stud_only.intermediate["Mn_stud_only_kNm"])
     self.assertAlmostEqual(composite.Mn_kNm, composite.intermediate["Mn_composite_kNm"])
     self.assertLess(stud_only.Mn_kNm, composite.Mn_kNm)
-    self.assertEqual(stud_only.max_height_mm, 5450.0)
+    self.assertEqual(stud_only.max_height_mm, 6150.0)
     self.assertEqual(stud_only.stress_verdict, "N.G")
 
   def test_bolt_shear_uses_half_and_yield_conversion_factors(self) -> None:
@@ -95,7 +159,7 @@ class GoldenCaseTest(unittest.TestCase):
       layer for layer in section.layers if layer.layer_type == "board" and layer.order == 2
     )
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section), stud_tensile_strength=_stud_fu(section))
     bolt_area = math.pi / 4.0 * request.bolt.diameter**2
     expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * bolt_area / 1.25
     expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
@@ -116,12 +180,52 @@ class GoldenCaseTest(unittest.TestCase):
       layer for layer in section.layers if layer.layer_type == "board" and layer.order == 1
     )
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section), stud_tensile_strength=_stud_fu(section))
     bolt_area = math.pi / 4.0 * request.bolt.diameter**2
     expected_shear_n = 0.5 * 0.6 * request.bolt.yield_strength * bolt_area / 1.25
     expected = expected_shear_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
 
     self.assertAlmostEqual(actual, expected)
+
+  def test_screw_shear_limited_by_stud_tilting_and_bearing(self) -> None:
+    # AISI S100-16 J4.3.1 (t2/t1 ≤ 1.0): Pns = min(4.2(t2³d)^0.5·Fu2, 2.7·t2·d·Fu2), Ω = 3.0 — 강성 경로에도 적용
+    request = request_from_golden_case(dict(self.cases[0]))
+    bolt = replace(request.bolt, yield_strength=1_000_000.0, pitch=(1000.0, 1000.0, 1000.0), count=(1.0, 1.0, 1.0))
+    request = replace(request, bolt=bolt)
+    section = _build_section(request, self.repository)
+    layer = next(layer for layer in section.layers if layer.layer_type == "board" and layer.order == 1)
+    t2 = _stud_t(section)
+    d = request.bolt.diameter
+
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=t2, stud_tensile_strength=_stud_fu(section))
+    tilting = 4.2 * math.sqrt(t2**3 * d) * 400.0
+    bearing = 2.7 * t2 * d * 400.0
+    expected = min(tilting, bearing) / SCREW_SHEAR_OMEGA * (request.span_mm / 2.0) / 1000.0 * 1e-3
+
+    self.assertAlmostEqual(actual, expected)
+
+  def test_strength_path_also_applies_stud_side_limit(self) -> None:
+    # 스터드측 한계가 석고보드 피스 설계강도보다 작아지도록 얇은 가상 두께(0.1 mm)를 써서 강도 경로 적용을 확인
+    request = request_from_golden_case(dict(self.cases[0]))
+    bolt = replace(request.bolt, yield_strength=1_000_000.0, pitch=(1000.0, 1000.0, 1000.0), count=(1.0, 1.0, 1.0))
+    request = replace(request, bolt=bolt)
+    section = _build_section(request, self.repository)
+    layer = next(layer for layer in section.layers if layer.layer_type == "board" and layer.order == 1)
+    thin_t = 0.1
+    stud_side = _screw_stud_side_shear_N(thin_t, request.bolt.diameter, _stud_fu(section))
+    self.assertLess(stud_side, _gypsum_screw_design_shear_N(layer.thickness_mm))
+
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=thin_t, stud_tensile_strength=_stud_fu(section), for_strength=True)
+
+    self.assertAlmostEqual(actual, stud_side * (request.span_mm / 2.0) / 1000.0 * 1e-3)
+
+  def test_missing_stud_thickness_raises(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    section = _build_section(request, self.repository)
+    no_t = replace(section, stud_section=replace(section.stud_section, t=None))
+
+    with self.assertRaisesRegex(ValueError, "두께 t"):
+      _shear_connection_by_layer(no_t, request)
 
   def test_board_bearing_uses_fracture_strength(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
@@ -140,7 +244,7 @@ class GoldenCaseTest(unittest.TestCase):
       self.fail("보드 물성이 누락되었습니다.")
     layer = replace(layer, board_property=replace(layer.board_property, Fy=1000.0, Fu=2.0))
 
-    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    actual = _connection_capacity_kN(layer, request.bolt, request.span_mm, stud_thickness_mm=_stud_t(section), stud_tensile_strength=_stud_fu(section))
     expected_bearing_n = 2.0 * 0.85 * layer.thickness_mm * request.bolt.diameter * 2.0
     expected = expected_bearing_n * (request.span_mm / 2.0) / 1000.0 * 1e-3
 
@@ -156,7 +260,9 @@ class GoldenCaseTest(unittest.TestCase):
     section = _build_section(request, self.repository)
     stud = self.repository.get_stud("C-STUD", request.stud.spec)
     stud_layer = section.stud_layer
-    distance = stud.H + 25.0 / 2.0
+    # 조립 도심 ~ 각 스터드 도심 거리 = H + g/2 - cy (대칭 C형: H/2 + g/2)
+    distance = stud.H + 25.0 / 2.0 - stud.cy
+    self.assertAlmostEqual(distance, stud.H / 2.0 + 25.0 / 2.0)
     expected_i = 2.0 * (stud.A * distance**2 + stud.Ix)
 
     self.assertEqual(section.stud_multiplier, 2.0)
@@ -164,34 +270,43 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(stud_layer.transformed_area_mm2, 2.0 * stud.A)
     self.assertAlmostEqual(section.stud_unfactored_self_inertia_mm4, expected_i)
     self.assertAlmostEqual(stud_layer.self_inertia_mm4, expected_i)
-    self.assertAlmostEqual(section.stud_section_modulus_depth_mm, stud.H)
 
     result = _calculate_wall_check_once(request, self.repository)
     self.assertAlmostEqual(result.intermediate["stud_connection_inertia_factor"], 1.0)
     self.assertAlmostEqual(result.intermediate["stud_I_unfactored_mm4"], expected_i)
     stud_result = next(layer for layer in result.layers if layer.layer_type == "stud")
-    expected_stud_section_modulus = stud_result.inertia_about_neutral_axis_mm4 / stud.H * 2.0
-    expected_stud_moment = 275.0 * expected_stud_section_modulus * 1e-6
-    actual_stud_moment = _nominal_moment((stud_result,), {}, section.stud_section_modulus_depth_mm)
+    se_ratio = stud.Se / stud.Sx
+    # 부분합성: 합성 중립축 ~ 조립 스터드 최외단 거리 기준
+    neutral_axis = result.neutral_axis_mm
+    y_bottom = stud_layer.y_centroid_mm - stud_layer.thickness_mm / 2.0
+    c_composite = max(neutral_axis - y_bottom, y_bottom + stud_layer.thickness_mm - neutral_axis)
+    expected_s_composite = stud_result.inertia_about_neutral_axis_mm4 / c_composite * se_ratio
+    # 스터드 단독: 조립 자체 도심 기준
+    expected_s_stud_only = expected_i / (stud_layer.thickness_mm / 2.0) * se_ratio
+    self.assertAlmostEqual(result.intermediate["stud_Se_composite_mm3"], expected_s_composite)
+    self.assertAlmostEqual(result.intermediate["stud_Se_stud_only_mm3"], expected_s_stud_only)
+    expected_stud_moment = 295.0 * expected_s_stud_only * 1e-6
+    actual_stud_moment = _nominal_moment((stud_result,), {}, result.intermediate["stud_Se_stud_only_mm3"], result.intermediate["stud_yield_strength_MPa"])
 
     self.assertAlmostEqual(actual_stud_moment, expected_stud_moment)
+    self.assertAlmostEqual(result.intermediate["Mn_stud_only_kNm"], expected_stud_moment)
 
   def test_effective_inertia_correction_factor_mapping(self) -> None:
     cases = [
-      ("C-STUD", "기본", 0.7),
-      ("C-STUD", "맞댐이음", 0.7),
-      ("C-STUD", "중앙부 이음", 0.25),
-      ("C-STUD", "중앙부연결", 0.25),
-      ("CH-STUD", "기본", 0.65),
-      ("CH-STUD(개량형)", "기본", 0.65),
-      ("T-Silent", "기본", 0.4),
-      ("T.silent-STUD", "기본", 0.4),
-      ("R.STUD", "기본", 0.26),
-      ("R-STUD", "기본", 0.26),
-      ("I-STUD", "기본", 0.87),
-      ("HR-STUD", "기본", 0.71),
-      ("RV-STUD", "기본", 0.43),
-      ("MP-STUD", "기본", 0.42),
+      ("C-STUD", "기본", 0.73),
+      ("C-STUD", "맞댐이음", 0.73),
+      ("C-STUD", "중앙부 이음", 0.37),
+      ("C-STUD", "중앙부연결", 0.37),
+      ("CH-STUD", "기본", 0.68),
+      ("CH-STUD(개량형)", "기본", 0.68),
+      ("T-Silent", "기본", 0.56),
+      ("T.silent-STUD", "기본", 0.56),
+      ("R.STUD", "기본", 0.28),
+      ("R-STUD", "기본", 0.28),
+      ("I-STUD", "기본", 1.00),
+      ("HR-STUD", "기본", 0.74),
+      ("RV-STUD", "기본", 0.54),
+      ("MP-STUD", "기본", 0.52),
     ]
 
     for group, method, expected in cases:
@@ -218,7 +333,7 @@ class GoldenCaseTest(unittest.TestCase):
     result = _calculate_wall_check_once(request, self.repository)
     layer_inertia_sum = sum(layer.inertia_about_neutral_axis_mm4 for layer in result.layers)
 
-    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.65)
+    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.68)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
     self.assertAlmostEqual(
       result.I_eff_mm4,
@@ -231,11 +346,40 @@ class GoldenCaseTest(unittest.TestCase):
     )
     central_result = _calculate_wall_check_once(central_request, self.repository)
 
-    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.25)
+    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.37)
     self.assertAlmostEqual(
       central_result.I_eff_mm4,
-      central_result.intermediate["I_eff_raw_mm4"] * 0.25,
+      max(
+        central_result.intermediate["I_eff_raw_mm4"] * 0.37,
+        central_result.intermediate["I_eff_lower_bound_mm4"],
+      ),
     )
+
+  def test_effective_inertia_is_not_below_bare_stud_inertia(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    # 피스 간격을 극단적으로 넓혀 합성도를 0에 가깝게 → 하한(스터드 단독 강성) 지배
+    sparse = replace(request, bolt=replace(request.bolt, pitch=(1.0e9, 1.0e9, 1.0e9)))
+    result = _calculate_wall_check_once(sparse, self.repository)
+    stud = self.repository.get_stud("C-STUD", request.stud.spec)
+
+    self.assertAlmostEqual(result.intermediate["I_eff_lower_bound_mm4"], 2.0 * stud.Ix)
+    self.assertGreaterEqual(result.I_eff_mm4, result.intermediate["I_eff_lower_bound_mm4"])
+    self.assertEqual(result.intermediate["I_eff_lower_bound_governs"], 1.0)
+
+  def test_asymmetric_stud_only_section_modulus_uses_larger_extreme_fiber(self) -> None:
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 25.0),),
+      front_boards=(BoardLayer("방화", 19.0),),
+      stud=StudInput(stud_type="CH-STUD", spec="102CHS-08", method="기본"),
+    )
+    result = _calculate_wall_check_once(request, self.repository)
+    stud = self.repository.get_stud("CH-STUD", "102CHS-08")
+    c_max = max(stud.cy, stud.H - stud.cy)
+
+    self.assertAlmostEqual(result.intermediate["stud_extreme_fiber_stud_only_mm"], c_max)
+    self.assertAlmostEqual(result.intermediate["stud_Se_stud_only_mm3"], stud.Ix / c_max * stud.Se / stud.Sx)
+    self.assertAlmostEqual(result.intermediate["Mn_stud_only_kNm"], 295.0 * stud.Se * stud.Ix / c_max / stud.Sx * 1e-6)
 
   def test_reaction_result_is_converted_to_required_kN_per_m(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
@@ -245,8 +389,8 @@ class GoldenCaseTest(unittest.TestCase):
     expected_live = request.live_load_kN_m2 * span_m * spacing_m / 2.0 / spacing_m
     expected_seismic = result.intermediate["Fp_kN"] / 2.0 * 2.0 / spacing_m
     expected_0_7E = 0.7 * expected_seismic
-    expected_0_75L_0_7E = 0.75 * expected_live + 0.7 * expected_seismic
-    expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_7E)
+    expected_0_75L_0_525E = 0.75 * expected_live + 0.75 * 0.7 * expected_seismic
+    expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_525E)
     expected_anchor_allowable_spacing = 200.0
     expected_anchor_capacity_per_m = request.anchor_capacity_kN / (request.anchor_spacing_mm / 1000.0)
     expected_anchor_utilization = expected_required / expected_anchor_capacity_per_m
@@ -254,8 +398,8 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(result.intermediate["reaction_L_kN_per_m"], expected_live)
     self.assertAlmostEqual(result.intermediate["reaction_0_7E_kN_per_m"], expected_0_7E)
     self.assertAlmostEqual(
-      result.intermediate["reaction_0_75L_0_7E_kN_per_m"],
-      expected_0_75L_0_7E,
+      result.intermediate["reaction_0_75L_0_525E_kN_per_m"],
+      expected_0_75L_0_525E,
     )
     self.assertAlmostEqual(result.intermediate["reaction_required_kN_per_m"], expected_required)
     self.assertAlmostEqual(result.intermediate["anchor_capacity_kN"], 0.4)
@@ -269,7 +413,49 @@ class GoldenCaseTest(unittest.TestCase):
       self.repository,
     )
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
-    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], 400.0)
+    expected_stronger_spacing = math.floor(0.8 / expected_required * 1000.0 / 50.0) * 50.0
+    self.assertAlmostEqual(expected_stronger_spacing, 450.0)
+    self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], expected_stronger_spacing)
+
+  def test_screw_tension_pullout_and_pull_through(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    result = _calculate_wall_check_once(request, self.repository)
+    stud = self.repository.get_stud("C-STUD", request.stud.spec)
+    intermediate = result.intermediate
+    max_pitch = max(request.bolt.pitch)
+    # 양면 2P → 피치는 order 1·2 기준. 요구 인장력 = q × s × p
+    expected_demand = (
+      intermediate["screw_tension_pressure_kN_m2"] * 1e-3 * request.spacing_mm * intermediate["screw_tension_spacing_mm"]
+    )
+    expected_pullout = 0.85 * stud.t * request.bolt.diameter * 400.0
+
+    self.assertLessEqual(intermediate["screw_tension_spacing_mm"], max_pitch)
+    self.assertGreaterEqual(intermediate["screw_tension_pressure_kN_m2"], request.live_load_kN_m2)
+    self.assertAlmostEqual(intermediate["screw_tension_demand_N"], expected_demand)
+    self.assertAlmostEqual(intermediate["screw_pullout_nominal_N"], expected_pullout)
+    self.assertAlmostEqual(intermediate["screw_pullout_allowable_N"], expected_pullout / 3.0)
+    self.assertAlmostEqual(intermediate["screw_pull_through_allowable_N"], 343.0 / 3.0)
+    self.assertAlmostEqual(
+      intermediate["screw_tension_utilization"],
+      max(intermediate["screw_pullout_utilization"], intermediate["screw_pull_through_utilization"]),
+    )
+    self.assertEqual(result.screw_tension_verdict, "O.K")
+
+    non_seismic = _calculate_wall_check_once(replace(request, design_case="non_seismic"), self.repository)
+    self.assertAlmostEqual(non_seismic.intermediate["screw_tension_pressure_kN_m2"], request.live_load_kN_m2)
+
+  def test_screw_tension_ng_blocks_allowable_height(self) -> None:
+    request = replace(request_from_golden_case(dict(self.cases[0])), screw_pull_through_nominal_N=10.0)
+    result = calculate_wall_check(request, self.repository)
+
+    self.assertEqual(result.screw_tension_verdict, "N.G")
+    self.assertEqual(result.max_height_mm, 0.0)
+    self.assertEqual(result.anchor_max_height_mm, 0.0)
+
+  def test_screw_pull_through_must_be_positive(self) -> None:
+    request = replace(request_from_golden_case(dict(self.cases[0])), screw_pull_through_nominal_N=0.0)
+    with self.assertRaisesRegex(ValueError, "풀스루"):
+      _calculate_wall_check_once(request, self.repository)
 
   def test_deflection_uses_live_load_kn_m2(self) -> None:
     request = request_from_golden_case(dict(self.cases[0]))
@@ -295,7 +481,7 @@ class GoldenCaseTest(unittest.TestCase):
 
     self.assertEqual(result.design_case, "non_seismic")
     self.assertNotIn("reaction_0_7E_kN_per_m", result.intermediate)
-    self.assertNotIn("reaction_0_75L_0_7E_kN_per_m", result.intermediate)
+    self.assertNotIn("reaction_0_75L_0_525E_kN_per_m", result.intermediate)
     self.assertNotIn("anchor_capacity_kN", result.intermediate)
     self.assertNotIn("anchor_spacing_mm", result.intermediate)
     self.assertAlmostEqual(result.Mu_kNm, expected_live_moment)
@@ -323,7 +509,7 @@ class GoldenCaseTest(unittest.TestCase):
     self.assertAlmostEqual(front_layer.y_centroid_mm, stud.H + 19.0 / 2.0)
     self.assertAlmostEqual(result.neutral_axis_mm, expected_neutral_axis)
 
-  def test_ch_stud_rear_board_is_fully_composite_with_stud(self) -> None:
+  def test_ch_stud_rear_board_is_screwed_at_fixed_pitch(self) -> None:
     cases = [
       ("CH-STUD", 25.0, "방화-25-0"),
       ("CH-STUD(개량형)", 12.5, "방화-12.5-0"),
@@ -344,7 +530,15 @@ class GoldenCaseTest(unittest.TestCase):
           if layer.layer_type == "board" and layer.name.startswith(rear_board_prefix)
         )
 
-        self.assertAlmostEqual(rear_board.cumulative_shear_kN, rear_board.axial_strength_kN)
+        # 고정 후면 보드: 피스 간격 300 mm, 피치당 2개(완전합성 가정 폐지)
+        per_screw = min(
+          785.0840041320893,
+          2.0 * 0.85 * thickness * 3.5 * self.repository.get_board("방화", thickness).Fu,
+          _screw_stud_side_shear_N(_stud_t(_build_section(request, self.repository)), 3.5, 400.0),
+        )
+        expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
+        self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
+        self.assertLessEqual(rear_board.strength_shear_kN, rear_board.cumulative_shear_kN)
 
   def test_ch_stud_improved_keeps_group_and_uses_12mm_class_rear_board(self) -> None:
     request = replace(
@@ -389,7 +583,63 @@ class GoldenCaseTest(unittest.TestCase):
 
     self.assertAlmostEqual(stud_layer.y_centroid_mm, stud.cy)
     self.assertAlmostEqual(front_layer.y_centroid_mm, stud.H + 19.0 / 2.0)
-    self.assertAlmostEqual(rear_board.cumulative_shear_kN, rear_board.axial_strength_kN)
+    per_screw = min(
+      785.0840041320893,
+      2.0 * 0.85 * 25.0 * 3.5 * self.repository.get_board("방화", 25.0).Fu,
+      _screw_stud_side_shear_N(_stud_t(section), 3.5, _stud_fu(section)),
+    )
+    expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
+    self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
+
+  def test_stiffness_load_factor_is_one_sided(self) -> None:
+    base = request_from_golden_case(dict(self.cases[0]))
+    result = _calculate_wall_check_once(base, self.repository)
+    # 표준 조건: 피스력이 시험 수준 이하 → 보정 없음
+    self.assertLess(result.intermediate["screw_utilization_ratio"], 1.0)
+    self.assertEqual(result.intermediate["stiffness_load_factor"], 1.0)
+
+    # 피스 간격 2배·고하중 → u/u_ref > 1 → 강성 저감
+    heavy = replace(
+      base,
+      live_load_kN_m2=1.0,
+      bolt=replace(base.bolt, pitch=tuple(2.0 * value for value in base.bolt.pitch)),
+    )
+    heavy_result = _calculate_wall_check_once(heavy, self.repository)
+    v_ref = 306.0 * 9.81 * 1500.0 / 2400.0
+    expected_ratio = 1.0e-3 * heavy.spacing_mm * heavy.span_mm / 2.0 / v_ref * 2.0
+    m = heavy_result.intermediate["stiffness_curve_exponent_m"]
+    self.assertAlmostEqual(heavy_result.intermediate["screw_utilization_ratio"], expected_ratio)
+    self.assertGreater(expected_ratio, 1.0)
+    self.assertAlmostEqual(heavy_result.intermediate["stiffness_load_factor"], expected_ratio ** (1.0 - m))
+    self.assertAlmostEqual(
+      heavy_result.I_eff_mm4,
+      max(
+        heavy_result.intermediate["I_eff_raw_mm4"]
+        * heavy_result.intermediate["I_eff_correction_factor"]
+        * heavy_result.intermediate["stiffness_load_factor"],
+        heavy_result.intermediate["I_eff_lower_bound_mm4"],
+      ),
+    )
+
+  def test_gypsum_screw_design_shear_from_aisi_s240(self) -> None:
+    # AISI S240-20 해설 Table C-B3.2-1 (No.6): 12.7 mm 516 N, 15.9 mm 605 N, 설계 = 극한 / 2.0
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(12.7), 258.0)
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(15.9), 302.5)
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(19.0), 302.5)
+    self.assertAlmostEqual(_gypsum_screw_design_shear_N(9.5), 516.0 * 9.5 / 12.7 / 2.0)
+
+  def test_screw_design_strength_applies_only_to_mn(self) -> None:
+    request = request_from_golden_case(dict(self.cases[0]))
+    result = _calculate_wall_check_once(request, self.repository)
+    boards = [layer for layer in result.layers if layer.layer_type == "board"]
+    # 강도용 누계는 강성용 이하, η(강성)는 강성용 누계 기준
+    for layer in boards:
+      self.assertLessEqual(layer.strength_shear_kN, layer.cumulative_shear_kN + 1e-12)
+    expected_mn = sum(
+      abs(min(layer.axial_strength_kN, layer.strength_shear_kN) * layer.distance_to_neutral_axis_mm * 1e-3)
+      for layer in boards
+    ) + 295.0 * result.intermediate["stud_Se_composite_mm3"] * 1e-6
+    self.assertAlmostEqual(result.intermediate["Mn_composite_kNm"], expected_mn)
 
   def test_i_stud_rejects_non_fire_rated_25mm_rear_board(self) -> None:
     request = replace(

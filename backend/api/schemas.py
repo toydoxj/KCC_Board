@@ -13,7 +13,9 @@ from backend.engine.constants import (
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
+  DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N,
   GRAVITY,
+  STANDARD_SCREW_COUNT,
 )
 from backend.engine.models import (
   BoardLayer,
@@ -76,7 +78,8 @@ class BoltPayload(ApiModel):
   # 피스 항복강도 Fy(전단강도 Fv = 0.6 × Fy). 과거 Fu 값을 받던 fracture_strength 별칭은 제거됨
   yield_strength: float = Field(gt=0)
   pitch: list[float] = Field(min_length=1)
-  count: float | list[float] = 2.0
+  # 단일값이면 전 층 동일, 목록이면 [외측, 중간, 내측]. 생략 시 표준(누계 1-3-5 = 층별 2·2·1)
+  count: float | list[float] = Field(default_factory=lambda: list(STANDARD_SCREW_COUNT))
 
   @field_validator("pitch")
   @classmethod
@@ -148,6 +151,7 @@ class WallCheckRequestPayload(ApiModel):
     ge=ANCHOR_SPACING_MIN_MM,
     le=ANCHOR_SPACING_MAX_MM,
   )
+  screw_pull_through_nominal_N: float = Field(default=DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, gt=0)
 
   @field_validator("anchor_spacing_mm")
   @classmethod
@@ -178,6 +182,7 @@ class WallCheckRequestPayload(ApiModel):
       omega=self.omega,
       anchor_capacity_kN=self.anchor_capacity_kN,
       anchor_spacing_mm=self.anchor_spacing_mm,
+      screw_pull_through_nominal_N=self.screw_pull_through_nominal_N,
     )
 
 
@@ -190,6 +195,7 @@ class LayerResultData(ApiModel):
   inertia_about_neutral_axis_mm4: float
   axial_strength_kN: float
   cumulative_shear_kN: float
+  strength_shear_kN: float = 0.0
 
   @classmethod
   def from_engine(cls, result: LayerResult) -> "LayerResultData":
@@ -202,6 +208,7 @@ class LayerResultData(ApiModel):
       inertia_about_neutral_axis_mm4=result.inertia_about_neutral_axis_mm4,
       axial_strength_kN=result.axial_strength_kN,
       cumulative_shear_kN=result.cumulative_shear_kN,
+      strength_shear_kN=result.strength_shear_kN,
     )
 
 
@@ -220,12 +227,14 @@ class WallCheckResultData(ApiModel):
   seismic_moment_kNm: float
   deflection_verdict: str
   stress_verdict: str
+  screw_tension_verdict: str
   max_height_mm: float
   anchor_max_height_mm: float
   max_height_increment_mm: float
   anchor_spacing_increment_mm: float
   layers: list[LayerResultData]
   intermediate: dict[str, float]
+  notices: list[str]
 
   @classmethod
   def from_engine(cls, result: WallCheckResult) -> "WallCheckResultData":
@@ -244,12 +253,14 @@ class WallCheckResultData(ApiModel):
       seismic_moment_kNm=result.seismic_moment_kNm,
       deflection_verdict=result.deflection_verdict,
       stress_verdict=result.stress_verdict,
+      screw_tension_verdict=result.screw_tension_verdict,
       max_height_mm=result.max_height_mm,
       anchor_max_height_mm=result.anchor_max_height_mm,
       max_height_increment_mm=result.max_height_increment_mm,
       anchor_spacing_increment_mm=result.anchor_spacing_increment_mm,
       layers=[LayerResultData.from_engine(layer) for layer in result.layers],
       intermediate=result.intermediate,
+      notices=list(result.notices),
     )
 
 
@@ -268,6 +279,9 @@ class BoardPropertyData(ApiModel):
   E_GPa: float | None
   is_complete: bool
   missing_fields: list[str]
+  # 항복비 Fy/Fu와 근거(시험 / 준용: 유사 보드 / 기본값)
+  yield_ratio: float
+  yield_ratio_source: str
 
   @classmethod
   def from_repository(cls, board: BoardCatalogItem) -> "BoardPropertyData":
@@ -280,6 +294,8 @@ class BoardPropertyData(ApiModel):
       E_GPa=board.E_GPa,
       is_complete=board.is_complete,
       missing_fields=list(board.missing_fields),
+      yield_ratio=board.yield_ratio,
+      yield_ratio_source=board.yield_ratio_source,
     )
 
 
@@ -299,9 +315,17 @@ class StudSectionData(ApiModel):
   rx: float
   ry: float
   section_class: str
+  Se: float | None = None
+  Se_basis_Fy_MPa: float | None = None
+  # 연결 강재(심사의견 B-8). steel_status가 '미확정'이면 강종·밀시트 확인 전 이관값
+  steel_grade: str | None = None
+  Fy: float | None = None
+  Fu: float | None = None
+  steel_status: str | None = None
 
   @classmethod
   def from_repository(cls, stud: StudSection) -> "StudSectionData":
+    steel = stud.steel
     return cls(
       group=stud.group,
       name=stud.name,
@@ -318,6 +342,12 @@ class StudSectionData(ApiModel):
       rx=stud.rx,
       ry=stud.ry,
       section_class=stud.section_class,
+      Se=stud.Se,
+      Se_basis_Fy_MPa=stud.Se_basis_Fy_MPa,
+      steel_grade=None if steel is None else steel.steel_grade,
+      Fy=None if steel is None else steel.Fy,
+      Fu=None if steel is None else steel.Fu,
+      steel_status=None if steel is None else steel.status,
     )
 
 

@@ -22,6 +22,8 @@ export interface BoardProperty {
   E_GPa: number | null;
   is_complete: boolean;
   missing_fields: string[];
+  yield_ratio: number;
+  yield_ratio_source: string;
 }
 
 export interface StudSection {
@@ -40,6 +42,12 @@ export interface StudSection {
   rx: number;
   ry: number;
   section_class: string;
+  Se: number | null;
+  Se_basis_Fy_MPa: number | null;
+  steel_grade: string | null;
+  Fy: number | null;
+  Fu: number | null;
+  steel_status: string | null;
 }
 
 export interface StudMethod {
@@ -111,6 +119,7 @@ export interface LayerResult {
   inertia_about_neutral_axis_mm4: number;
   axial_strength_kN: number;
   cumulative_shear_kN: number;
+  strength_shear_kN: number;
 }
 
 export interface WallCheckResult {
@@ -128,12 +137,14 @@ export interface WallCheckResult {
   seismic_moment_kNm: number;
   deflection_verdict: string;
   stress_verdict: string;
+  screw_tension_verdict: string;
   max_height_mm: number;
   anchor_max_height_mm: number;
   max_height_increment_mm: number;
   anchor_spacing_increment_mm: number;
   layers: LayerResult[];
   intermediate: Record<string, number>;
+  notices: string[];
 }
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";

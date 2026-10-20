@@ -46,15 +46,17 @@ repo/
 - ASD 안전계수 Ω=1.5, 처짐한계 기본 L/240. (둘 다 설정값으로 분리, 하드코딩 금지)
 
 ## 6. 자재 DB (data/seed)
-- `stud_section.json`: 정본 = `스터드_단면성능_2.xlsx` (9그룹·69규격). 컬럼 H,B,t,A,cx,cy,Ix,Iy,Sx,Sy,rx,ry + section_class.
+- `stud_section.json`: 정본 = `stud.dxf`(KCC 단면도, 9그룹·69규격, 2026-10 교체; 이전 `스터드_단면성능_2.xlsx`). 컬럼 H,B,t,A,cx,cy,Ix,Iy,Sx,Sy,rx,ry + section_class + Se(유효단면계수, AISI S100-16 부록 1, f=Fy=295MPa). Sx = Ix/c_max.
 - section_class: closed(직접적분) / thin_plate(T.silent, 박판) / composite_channel(MP·RV, 2채널 합).
 - `board_property.json`: 종류×두께 → mass, Fy, E_GPa (E는 *10³ 후 N/mm²).
+- `stud_steel.json`(심사의견 B-8): 스터드 강재 Fy·Fu. 기본 강재는 정확히 1개(`is_default`). 현재 1종 `legacy_stud_295_400`(Fy 295·Fu 400, status '미확정' — 강종·밀시트 확인 전 상수 이관값). `stud_section.json` 항목의 선택 필드 `steel_grade`가 없으면 기본 강재, 미등록 식별자는 오류. 각 규격의 `Se_basis_Fy_MPa`(Se 산정 Fy)가 연결 강재 Fy와 다르면 계산 차단 — Fy 변경 시 Se 재산정 필수.
+- SQLite schema 7: `stud_steel` 테이블, `stud_section.steel_grade`·`Se_basis_Fy_MPa` 열. 구 DB(schema 6 이하)는 `SqliteRepository(db, seed_dir)`가 트랜잭션으로 이관하나 Se 기준이 없어 계산은 `init_db` 재실행 후 가능.
 - `bolt_material.json`, `stud_method.json`.
 - DB 조회는 **그룹+단면명 키** 사용(엑셀 VLOOKUP 인덱스 의존 제거). 미스 시 **명시적 예외**(silent #N/A 금지).
 
 ## 7. 검증 규칙 (필수)
 - `tests/golden/cases.json` 의 expected 와 엔진 출력을 **상대오차 ≤ 0.1%** 로 대조하는 회귀테스트를 포함한다.
-- 골든값은 현재 엑셀(FIX-01 반영: `N13=SUM(G13:M13)`) 기준이다.
+- 골든값은 2026-10 1차 심사의견 반영 엔진 기준으로 재산정되었다(종전 엑셀 기준값은 `expected_legacy`에 보존).
 - 단면값 변동(신규 단면성능의 T.silent 등) 케이스를 추가할 때는 골든값을 재산정한다.
 - 모든 계산 단계의 중간값을 반환하여(계산서·디버깅) 셀 단위 대조가 가능해야 한다.
 

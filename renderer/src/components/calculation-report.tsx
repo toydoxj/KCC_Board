@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { LayerResult, WallCheckResult } from "@/lib/api";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
+import { ResultNotices } from "@/components/result-notices";
 
 export interface ReportBoardSlot {
   label: string;
@@ -11,6 +12,8 @@ export interface ReportBoardSlot {
   Fy: number | null;
   Fu: number | null;
   E_GPa: number | null;
+  yieldRatio: number | null;
+  yieldRatioSource: string | null;
 }
 
 export interface ReportStud {
@@ -83,11 +86,12 @@ const dateFormat = new Intl.DateTimeFormat("ko-KR", {
   timeStyle: "short",
 });
 
-const studYieldStrength = 275;
+const defaultStudYieldStrength = 295;
 
 export function CalculationReport({ data, className = "" }: CalculationReportProps) {
   const stressOk = data.result.stress_verdict === "O.K";
   const deflectionOk = data.result.deflection_verdict === "O.K";
+  const screwTensionOk = data.result.screw_tension_verdict === "O.K";
   const isSeismic = data.result.design_case !== "non_seismic";
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
   const strengthCheckModeLabel = strengthCheckModeLabels[data.result.strength_check_mode] ?? data.result.strength_check_mode;
@@ -102,7 +106,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   const heightSearchLabel = data.calculationMode === "anchorHeight" ? "앵커 기준 최대높이" : "최대 가능 높이";
   const heightSearchValue = data.calculationMode === "anchorHeight" ? data.result.anchor_max_height_mm : data.result.max_height_mm;
   const reactionFormula =
-    data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7E, 0.75L + 0.7E)";
+    data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7E, 0.75L + 0.75(0.7E))";
   const mnTerms = nominalMomentTerms(data);
   const boardMoment = mnTerms
     .filter((term) => term.type === "board")
@@ -126,6 +130,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         </div>
       </header>
 
+      <section className="mt-4">
+        <ResultNotices notices={data.result.notices ?? []} />
+      </section>
+
       <section className="mt-5 grid gap-3 md:grid-cols-2">
         <ReportBlock title="판정 요약">
           {isHeightSearchMode ? (
@@ -136,9 +144,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                   {formatNumber(heightSearchValue)} mm
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 <Verdict label="산정 응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="산정 처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
+                <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
@@ -150,9 +159,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             </>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Verdict label="응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
+                <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
@@ -201,7 +211,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                   label="보정계수"
                   value={data.stud.connectionInertiaFactor === 1 ? "미적용" : formatNullableNumber(data.stud.connectionInertiaFactor)}
                 />
-                <KeyValue label="S 산정 h" value={unitValue(data.stud.sectionModulusDepth, "mm")} />
+                <KeyValue label="S 산정 c_max" value={unitValue(data.stud.sectionModulusDepth, "mm")} />
               </>
             )}
             <KeyValue label="B" value={unitValue(data.stud.B, "mm")} />
@@ -249,6 +259,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <TableHead>두께</TableHead>
                 <TableHead>질량</TableHead>
                 <TableHead>Fy</TableHead>
+                <TableHead>Fy/Fu (근거)</TableHead>
                 <TableHead>Fu</TableHead>
                 <TableHead>E</TableHead>
               </tr>
@@ -261,6 +272,9 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                   <TableCell>{board.thickness === null ? "-" : `${formatNumber(board.thickness)}T`}</TableCell>
                   <TableCell>{unitValue(board.mass_kg_m2, "kg/m²")}</TableCell>
                   <TableCell>{unitValue(board.Fy, "N/mm²")}</TableCell>
+                  <TableCell>
+                    {board.yieldRatio === null ? "-" : `${board.yieldRatio.toFixed(2)} (${board.yieldRatioSource ?? "-"})`}
+                  </TableCell>
                   <TableCell>{unitValue(board.Fu, "N/mm²")}</TableCell>
                   <TableCell>{unitValue(board.E_GPa, "GPa")}</TableCell>
                 </tr>
@@ -284,6 +298,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               label="I_eff 보정"
               value={formatNumber(data.result.intermediate.I_eff_correction_factor ?? 1)}
             />
+            <KeyValue label="피스 활용도 u/u_ref" value={formatNumber(data.result.intermediate.screw_utilization_ratio ?? Number.NaN)} />
+            <KeyValue label="강성 하중보정 min[1,(u/u_ref)^(1−m)]" value={formatNumber(data.result.intermediate.stiffness_load_factor ?? 1)} />
             <KeyValue label="I_eff" value={`${formatNumber(data.result.I_eff_mm4)} mm⁴`} />
             {data.calculationMode === "maxHeight" ? (
               <KeyValue label="최대 가능 높이" value={`${formatNumber(data.result.max_height_mm)} mm`} />
@@ -303,10 +319,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
       <section className="mt-5">
         <ReportBlock title="설계하중 조합">
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
-            <div>Mu = {isSeismic ? "max(M(L), M(0.7E), M(0.75L+0.7E))" : "M(L)"}</div>
+            <div>Mu = {isSeismic ? "max(M(L), M(0.7E), M(0.75L+0.75(0.7E)))" : "M(L)"}</div>
             <div>M(L) = L × B × H² / 8</div>
             {isSeismic ? <div>M(0.7E) = 0.7 × M(E)</div> : null}
-            {isSeismic ? <div>M(0.75L+0.7E) = 0.75 × M(L) + 0.7 × M(E)</div> : null}
+            {isSeismic ? <div>M(0.75L+0.75(0.7E)) = 0.75 × M(L) + 0.75 × 0.7 × M(E)</div> : null}
           </div>
           <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
             <KeyValue label="M(L)" value={`${formatNumber(data.result.intermediate.moment_L_kNm ?? 0)} kN·m`} />
@@ -315,8 +331,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             ) : null}
             {isSeismic ? (
               <KeyValue
-                label="M(0.75L+0.7E)"
-                value={`${formatNumber(data.result.intermediate.moment_0_75L_0_7E_kNm ?? 0)} kN·m`}
+                label="M(0.75L+0.75(0.7E))"
+                value={`${formatNumber(data.result.intermediate.moment_0_75L_0_525E_kNm ?? 0)} kN·m`}
               />
             ) : null}
             <KeyValue label="Mu" value={`${formatNumber(data.result.Mu_kNm)} kN·m`} />
@@ -344,8 +360,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 value={`${formatNumber(data.result.intermediate.reaction_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
               />
               <KeyValue
-                label="반력 0.75L+0.7E"
-                value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
+                label="반력 0.75L+0.75(0.7E)"
+                value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_525E_kN_per_m ?? Number.NaN)} kN/m`}
               />
               <KeyValue
                 label="필요 반력"
@@ -381,12 +397,19 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
             <div className="font-semibold">{isStudOnlyStrengthCheck ? "Mn = M스터드" : "Mn = ΣM보드 + M스터드"}</div>
             <div>강도 기준 = {strengthCheckModeLabel}</div>
-            <div>M보드,i = |min(Pn,i, Vc,i) × d_i| × 10^-3</div>
-            <div>M스터드 = Fy,stud × S스터드 × 10^-6, S스터드 = I_stud / h_ref × 2</div>
+            <div>M보드,i = |min(Py,i, Vc,s,i) × d_i| × 10^-3</div>
+            <div>Py,i = 층 항복축력(보드 Fy × t × s, 스터드 Fy × A) — 부재 공칭 압축강도 Pn(좌굴 포함)과 다름</div>
+            <div>Vc,s = 강도용 전단누계: 피스 1개당 min(현행 피스강도, 스터드측 한계, 석고보드 피스 설계강도 = AISI S240-20 해설 C-B3.2-1 극한/2.0)</div>
+            <div>
+              스터드측 한계 = min(4.2 × (t2³ × d)^0.5 × Fu2, 2.7 × t2 × d × Fu2) / Ω 3.0 (AISI S100-16 Eq. J4.3.1-1·-3, 강성 η에도 적용) ={" "}
+              {formatNumber(data.result.intermediate.screw_stud_side_shear_N ?? Number.NaN)} N/개
+            </div>
+            <div>M스터드 = Fy,stud × Se스터드 × 10^-6, Se스터드 = (I_stud / c_max) × (Se/Sx)</div>
+            <div>c_max = {isStudOnlyStrengthCheck ? "스터드 자체 도심" : "합성 중립축"} ~ 스터드 최외단 거리, Se/Sx = AISI S100-16 부록 1 유효단면계수비</div>
             {data.stud.gapMm === null ? null : (
               <>
                 <div>
-                  I스터드 = 2 × [A0 × (h + {formatNumber(data.stud.gapMm)} / 2)^2 + Ix0]
+                  I스터드 = 2 × [A0 × (h + {formatNumber(data.stud.gapMm)} / 2 − cy)^2 + Ix0]
                 </div>
               </>
             )}
@@ -399,8 +422,8 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <tr>
                 <TableHead>요소</TableHead>
                 <TableHead>적용식</TableHead>
-                <TableHead>Pn</TableHead>
-                <TableHead>Vc</TableHead>
+                <TableHead>Py,i</TableHead>
+                <TableHead>Vc,s</TableHead>
                 <TableHead>적용힘</TableHead>
                 <TableHead>d 또는 S</TableHead>
                 <TableHead>Mn 기여</TableHead>
@@ -416,6 +439,27 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
       </section>
 
       <section className="mt-5">
+        <ReportBlock title="피스 인장 검토 (AISI S100-16 J4.4)">
+          <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
+            <div>T = q × s × p_max (피치당 피스 1개, 면 하중 전체를 가장 성긴 층 피스가 부담 — 보수측)</div>
+            <div>q = {isSeismic ? "max(L, 0.7E, 0.75L+0.75(0.7E)), E = 0.48·SDS·Ip·W보드(면)" : "L"}</div>
+            <div>풀아웃 Pnot = 0.85 × tc × d × Fu2 (Eq. J4.4.1-1), Ω = 3.0</div>
+            <div>풀스루(석고보드) = 입력 공칭값 / Ω (시험값 확보 전 잠정값)</div>
+          </div>
+          <div className="grid gap-1 text-sm md:grid-cols-2">
+            <KeyValue label="횡압력 q" value={`${formatNumber(data.result.intermediate.screw_tension_pressure_kN_m2 ?? Number.NaN)} kN/m²`} />
+            <KeyValue label="피스 부담 피치" value={`${formatNumber(data.result.intermediate.screw_tension_spacing_mm ?? Number.NaN)} mm`} />
+            <KeyValue label="피스 인장 T" value={`${formatNumber(data.result.intermediate.screw_tension_demand_N ?? Number.NaN)} N/개`} />
+            <KeyValue label="tc (스터드 두께)" value={`${formatNumber(data.result.intermediate.screw_pullout_tc_mm ?? Number.NaN)} mm`} />
+            <KeyValue label="Pnot / Ω" value={`${formatNumber(data.result.intermediate.screw_pullout_allowable_N ?? Number.NaN)} N/개`} />
+            <KeyValue label="풀아웃 사용률" value={formatNumber(data.result.intermediate.screw_pullout_utilization ?? Number.NaN)} />
+            <KeyValue label="풀스루 허용" value={`${formatNumber(data.result.intermediate.screw_pull_through_allowable_N ?? Number.NaN)} N/개`} />
+            <KeyValue label="풀스루 사용률" value={formatNumber(data.result.intermediate.screw_pull_through_utilization ?? Number.NaN)} />
+          </div>
+        </ReportBlock>
+      </section>
+
+      <section className="mt-5">
         <ReportBlock title="층별 중간값">
           <table className="w-full border-collapse text-xs">
             <thead>
@@ -426,8 +470,9 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <TableHead>A'</TableHead>
                 <TableHead>d</TableHead>
                 <TableHead>I</TableHead>
-                <TableHead>축강도</TableHead>
-                <TableHead>전단누계</TableHead>
+                <TableHead>Py,i(항복축력)</TableHead>
+                <TableHead>전단누계(강성)</TableHead>
+                <TableHead>전단누계(강도)</TableHead>
               </tr>
             </thead>
             <tbody>
@@ -495,6 +540,7 @@ function LayerRow({ layer }: { layer: LayerResult }) {
       <TableCell>{formatNumber(layer.inertia_about_neutral_axis_mm4)}</TableCell>
       <TableCell>{formatNumber(layer.axial_strength_kN)}</TableCell>
       <TableCell>{formatNumber(layer.cumulative_shear_kN)}</TableCell>
+      <TableCell>{formatNumber(layer.strength_shear_kN ?? layer.cumulative_shear_kN)}</TableCell>
     </tr>
   );
 }
@@ -526,18 +572,20 @@ function MnTermRow({ term }: { term: NominalMomentTerm }) {
 }
 
 function nominalMomentTerms(data: CalculationReportData) {
-  const sectionModulusDepth = data.stud.sectionModulusDepth ?? data.stud.H ?? 0;
+  const intermediate = data.result.intermediate;
+  const studYieldStrength = intermediate.stud_yield_strength_MPa ?? defaultStudYieldStrength;
   const includeBoardMoment = data.result.strength_check_mode !== "stud_only";
   return data.result.layers.map<NominalMomentTerm>((layer) => {
     if (layer.layer_type === "board") {
-      const appliedForce = Math.min(layer.axial_strength_kN, layer.cumulative_shear_kN);
+      const strengthShear = layer.strength_shear_kN ?? layer.cumulative_shear_kN;
+      const appliedForce = Math.min(layer.axial_strength_kN, strengthShear);
       const boardMoment = Math.abs(appliedForce * layer.distance_to_neutral_axis_mm * 1e-3);
       return {
         name: layer.name,
         type: "board",
-        expression: includeBoardMoment ? "|min(Pn,Vc)×d|×10^-3" : "강도판정 미반영",
+        expression: includeBoardMoment ? "|min(Py,i,Vc,s)×d|×10^-3" : "강도판정 미반영",
         axialStrength_kN: layer.axial_strength_kN,
-        cumulativeShear_kN: layer.cumulative_shear_kN,
+        cumulativeShear_kN: strengthShear,
         appliedForce_kN: appliedForce,
         distanceOrSection: Math.abs(layer.distance_to_neutral_axis_mm),
         distanceOrSectionUnit: "mm",
@@ -545,11 +593,12 @@ function nominalMomentTerms(data: CalculationReportData) {
       };
     }
 
-    const sectionModulus = sectionModulusDepth > 0 ? (layer.inertia_about_neutral_axis_mm4 / sectionModulusDepth) * 2.0 : 0;
+    const sectionModulus =
+      (includeBoardMoment ? intermediate.stud_Se_composite_mm3 : intermediate.stud_Se_stud_only_mm3) ?? 0;
     return {
       name: layer.name,
       type: "stud",
-      expression: "Fy,stud×S×10^-6",
+      expression: "Fy,stud×Se×10^-6",
       axialStrength_kN: null,
       cumulativeShear_kN: null,
       appliedForce_kN: null,

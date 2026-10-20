@@ -1060,7 +1060,7 @@ function boardKindOptions(boards: BoardProperty[] | undefined, requiredThickness
   const source =
     boards && boards.length > 0
       ? boards
-      : [{ kind: "방화", thickness: 19, mass_kg_m2: 16.1, Fy: 0, Fu: 0, E_GPa: 0, is_complete: true, missing_fields: [] }];
+      : [{ kind: "방화", thickness: 19, mass_kg_m2: 16.1, Fy: 0, Fu: 0, E_GPa: 0, is_complete: true, missing_fields: [], yield_ratio: 0.65, yield_ratio_source: "시험" }];
   const kindMap = new Map<string, BoardProperty[]>();
   for (const board of source) {
     if (requiredThickness !== undefined && !isSameThickness(board.thickness, requiredThickness)) {
@@ -1427,19 +1427,21 @@ function createStudAssembly(stud: StudSection | undefined, method: string) {
   }
 
   if (isCentralJointMethod(method)) {
-    const distance = stud.H + centralJointStudGapMm / 2;
+    // 조립 도심 ~ 각 스터드 도심 거리 = H + g/2 − cy (backend _stud_assembly와 동일)
+    const distance = stud.H + centralJointStudGapMm / 2 - stud.cy;
     const Ix = 2 * (stud.A * distance ** 2 + stud.Ix);
+    const extremeFiber = stud.H + centralJointStudGapMm / 2;
     return {
       multiplier: 2,
       totalH: 2 * stud.H + centralJointStudGapMm,
       gapMm: centralJointStudGapMm,
       connectionInertiaFactor: studConnectionInertiaFactor,
-      sectionModulusDepth: stud.H,
+      sectionModulusDepth: extremeFiber,
       A: 2 * stud.A,
       IxRaw: Ix,
-      SxRaw: (Ix / stud.H) * 2,
+      SxRaw: Ix / extremeFiber,
       Ix,
-      Sx: (Ix / stud.H) * 2,
+      Sx: Ix / extremeFiber,
     };
   }
 
@@ -1449,7 +1451,7 @@ function createStudAssembly(stud: StudSection | undefined, method: string) {
     totalH: stud.H,
     gapMm: null,
     connectionInertiaFactor: null,
-    sectionModulusDepth: stud.H,
+    sectionModulusDepth: Math.max(stud.cy, stud.H - stud.cy),
     A: stud.A * multiplier,
     IxRaw: null,
     SxRaw: null,
@@ -1474,6 +1476,8 @@ function reportBoardSlot(
       Fy: null,
       Fu: null,
       E_GPa: null,
+      yieldRatio: null,
+      yieldRatioSource: null,
     };
   }
   const board = boards.find((item) => item.kind === selection.kind && item.thickness === selection.thickness);
@@ -1485,5 +1489,7 @@ function reportBoardSlot(
     Fy: board?.Fy ?? null,
     Fu: board?.Fu ?? null,
     E_GPa: board?.E_GPa ?? null,
+    yieldRatio: board?.yield_ratio ?? null,
+    yieldRatioSource: board?.yield_ratio_source ?? null,
   };
 }

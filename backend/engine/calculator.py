@@ -9,16 +9,32 @@ from backend.engine.constants import (
   ANCHOR_SPACING_INCREMENT_MM,
   ANCHOR_SPACING_MAX_MM,
   ANCHOR_SPACING_MIN_MM,
+  ASD_COMBINED_LIVE_FACTOR,
+  ASD_COMBINED_SEISMIC_FACTOR,
+  ASD_SEISMIC_FACTOR,
+  BOARD_ORDER_LABELS,
   BOLT_SHEAR_TO_YIELD_RATIO,
   DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_ANCHOR_SPACING_MM,
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
+  FIXED_REAR_BOARD_SCREW_COUNT,
+  FIXED_REAR_BOARD_SCREW_PITCH_MM,
   GRAVITY,
+  GYPSUM_SCREW_STRENGTH_DIVISOR,
+  GYPSUM_SCREW_ULTIMATE_SHEAR_N,
+  SCREW_PULLOUT_COEFFICIENT,
+  SCREW_SHEAR_OMEGA,
+  SCREW_STUD_BEARING_COEFFICIENT,
+  SCREW_TENSION_OMEGA,
+  SCREW_TILTING_COEFFICIENT,
+  SEISMIC_FP_COEFFICIENT,
+  STANDARD_SCREW_PITCH_MM,
   STEEL_DENSITY_KG_M3,
+  STIFFNESS_REF_SCREW_PITCH_MM,
+  STIFFNESS_REF_SUPPORT_SHEAR_N,
   STUD_ELASTIC_MODULUS,
-  STUD_YIELD_STRENGTH,
 )
 from backend.engine.models import (
   BoardLayer,
@@ -29,7 +45,7 @@ from backend.engine.models import (
   WallCheckRequest,
   WallCheckResult,
 )
-from backend.engine.repository import BoardProperty, JsonSeedRepository, MaterialRepository, StudSection
+from backend.engine.repository import BoardProperty, JsonSeedRepository, MaterialRepository, StudSection, StudSteel
 from backend.engine.seismic import calculate_fa
 
 MAX_HEIGHT_INCREMENT_MM = 50
@@ -60,7 +76,9 @@ class _Layer:
   axial_strength_kN: float
   mass_kN: float
   board_property: BoardProperty | None = None
-  fully_composite_with_stud: bool = False
+  # 피스 간격·개수 고정값(CH·I-STUD 고정 후면 보드). None이면 bolt 입력(층 순서별)을 따른다.
+  connection_pitch_mm: float | None = None
+  connection_count: float | None = None
 
 
 @dataclass(frozen=True)
@@ -71,7 +89,7 @@ class _Section:
   stud_multiplier: float
   stud_unfactored_self_inertia_mm4: float
   stud_connection_inertia_factor: float
-  stud_section_modulus_depth_mm: float
+  stud_assembly: "_StudAssembly"
 
 
 @dataclass(frozen=True)
@@ -83,7 +101,8 @@ class _StudAssembly:
   unfactored_self_inertia_mm4: float
   connection_inertia_factor: float
   multiplier: float
-  section_modulus_depth_mm: float
+  # 유효단면계수비 Se/Sx (AISI S100-16 부록 1, f = Fy) — 스터드 휨강도 항에 적용
+  effective_section_ratio: float
 
 
 @dataclass(frozen=True)
@@ -92,7 +111,7 @@ class _ReactionResult:
   seismic_kN_per_m: float
   load_combination_L_kN_per_m: float
   load_combination_0_7E_kN_per_m: float
-  load_combination_0_75L_0_7E_kN_per_m: float
+  load_combination_0_75L_0_525E_kN_per_m: float
   required_kN_per_m: float
   anchor_capacity_kN: float
   anchor_spacing_mm: float
@@ -125,14 +144,16 @@ def _calculate_wall_check_once(
   _validate_design_case(request.design_case)
   _validate_strength_check_mode(request.strength_check_mode)
   _validate_anchor_spacing(request.anchor_spacing_mm)
+  _validate_pull_through(request.screw_pull_through_nominal_N)
   repo = repository
   section = _build_section(request, repo)
   neutral_axis = _neutral_axis(section.layers)
+  neutral_axis_notices = _neutral_axis_notices(section, neutral_axis)
   layer_results = _layer_results(section.layers, neutral_axis)
   I_full = sum(layer.inertia_about_neutral_axis_mm4 for layer in layer_results)
   stud_result = next(layer for layer in layer_results if layer.layer_type == "stud")
 
-  shear_by_name = _shear_connection_by_layer(section.layers, request)
+  shear_by_name = _shear_connection_by_layer(section, request)
   eta = _composite_ratio(section.layers, shear_by_name)
   group, method = _parse_stud_type(request.stud)
   I_eff_raw = stud_result.inertia_about_neutral_axis_mm4 + math.sqrt(eta) * (
@@ -143,12 +164,21 @@ def _calculate_wall_check_once(
     method,
     has_rear_board=bool(request.rear_boards),
   )
-  I_eff = I_eff_raw * I_eff_correction_factor
-  Mn_composite = _nominal_moment(layer_results, shear_by_name, section.stud_section_modulus_depth_mm)
+  # 하한: 부분합성 강성은 스터드 단독 강성(자체 도심 기준) 이상
+  I_eff_lower_bound = section.stud_assembly.self_inertia_mm4
+  utilization_ratio, curve_exponent, stiffness_load_factor = _stiffness_load_factor(request, section, group, method)
+  I_eff = max(I_eff_raw * I_eff_correction_factor * stiffness_load_factor, I_eff_lower_bound)
+  stud_assembly = section.stud_assembly
+  S_stud_composite, c_stud_composite = _stud_section_modulus(stud_result, stud_assembly, composite=True)
+  S_stud_only, c_stud_only = _stud_section_modulus(stud_result, stud_assembly, composite=False)
+  strength_shear_by_name = _shear_connection_by_layer(section, request, for_strength=True)
+  stud_steel = _stud_steel(section.stud_section)
+  Mn_composite = _nominal_moment(layer_results, strength_shear_by_name, S_stud_composite, stud_steel.Fy)
   Mn_stud_only = _nominal_moment(
     layer_results,
     shear_by_name,
-    section.stud_section_modulus_depth_mm,
+    S_stud_only,
+    stud_steel.Fy,
     include_board_layers=False,
   )
   Mn = _strength_check_nominal_moment(request.strength_check_mode, Mn_composite, Mn_stud_only)
@@ -159,6 +189,7 @@ def _calculate_wall_check_once(
   reaction = _reaction_result_kN_per_m(request, fp)
   Mu = _required_moment_kNm(request, live_moment, seismic_moment)
   stress_ratio = request.omega * Mu / Mn
+  screw_tension = _screw_tension_result(request, section, sds)
 
   enriched_layers = tuple(
     LayerResult(
@@ -170,6 +201,7 @@ def _calculate_wall_check_once(
       inertia_about_neutral_axis_mm4=layer.inertia_about_neutral_axis_mm4,
       axial_strength_kN=layer.axial_strength_kN,
       cumulative_shear_kN=shear_by_name.get(layer.name, 0.0),
+      strength_shear_kN=strength_shear_by_name.get(layer.name, 0.0),
     )
     for layer in layer_results
   )
@@ -189,21 +221,38 @@ def _calculate_wall_check_once(
     seismic_moment_kNm=seismic_moment,
     deflection_verdict="O.K" if deflection <= deflection_limit else "N.G",
     stress_verdict="O.K" if stress_ratio <= 1.0 else "N.G",
+    screw_tension_verdict="O.K" if screw_tension["screw_tension_utilization"] <= 1.0 else "N.G",
     layers=enriched_layers,
+    notices=neutral_axis_notices + _screw_pitch_notices(section, request.bolt),
     intermediate={
       "stud_I_mm4": stud_result.inertia_about_neutral_axis_mm4,
       "stud_I_unfactored_mm4": section.stud_unfactored_self_inertia_mm4,
       "stud_section_height_mm": section.stud_layer.thickness_mm,
-      "stud_section_modulus_depth_mm": section.stud_section_modulus_depth_mm,
+      "stud_self_inertia_mm4": stud_assembly.self_inertia_mm4,
+      "stud_yield_strength_MPa": stud_steel.Fy,
+      "stud_tensile_strength_MPa": stud_steel.Fu,
+      "stud_effective_section_ratio": stud_assembly.effective_section_ratio,
+      "stud_extreme_fiber_composite_mm": c_stud_composite,
+      "stud_extreme_fiber_stud_only_mm": c_stud_only,
+      "stud_Se_composite_mm3": S_stud_composite,
+      "stud_Se_stud_only_mm3": S_stud_only,
       "stud_connection_inertia_factor": section.stud_connection_inertia_factor,
       "Mn_composite_kNm": Mn_composite,
       "Mn_stud_only_kNm": Mn_stud_only,
       "I_eff_raw_mm4": I_eff_raw,
       "I_eff_correction_factor": I_eff_correction_factor,
+      "I_eff_lower_bound_mm4": I_eff_lower_bound,
+      "screw_utilization_ratio": utilization_ratio,
+      "screw_stud_side_shear_N": _screw_stud_side_shear_N(_stud_thickness_mm(section), request.bolt.diameter, stud_steel.Fu),
+      "stiffness_curve_exponent_m": curve_exponent,
+      "stiffness_load_factor": stiffness_load_factor,
+      "I_eff_lower_bound_governs": 1.0
+      if I_eff_raw * I_eff_correction_factor * stiffness_load_factor < I_eff_lower_bound
+      else 0.0,
       "live_moment_kNm": live_moment,
       "moment_L_kNm": live_moment,
-      "moment_0_7E_kNm": 0.7 * seismic_moment,
-      "moment_0_75L_0_7E_kNm": 0.75 * live_moment + 0.7 * seismic_moment,
+      "moment_0_7E_kNm": ASD_SEISMIC_FACTOR * seismic_moment,
+      "moment_0_75L_0_525E_kNm": _combined_live_seismic(live_moment, seismic_moment),
       "vertical_load_kN_m": request.vertical_load_kN_m,
       "seismic_weight_kN": seismic_weight,
       "Fa": _seismic_fa(request),
@@ -212,6 +261,7 @@ def _calculate_wall_check_once(
       "reaction_live_kN_per_m": reaction.live_kN_per_m,
       "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
       **_reaction_intermediate(request, reaction),
+      **screw_tension,
     },
   )
 
@@ -272,7 +322,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
     bolt=BoltInput(
       diameter=float(inputs["bolt_diameter"]),
       yield_strength=float(yield_strength_raw),
-      pitch=tuple(float(value) for value in pitch_raw),
+      pitch=bolt_values_from_ply_order(tuple(float(value) for value in pitch_raw)),
     ),
     seismic=SeismicInput(
       S=float(seismic_raw["S"]),
@@ -290,6 +340,7 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
 def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Section:
   group, method = _parse_stud_type(request.stud)
   stud = repo.get_stud(group, request.stud.spec)
+  _stud_steel(stud)
   stud_assembly = _stud_assembly(stud, method)
   fixed_rear_board = _fixed_rear_board_for_group(group)
   if fixed_rear_board is not None:
@@ -306,7 +357,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
       y_cursor,
       request,
       repo,
-      fully_composite_with_stud=fixed_rear_board is not None,
+      fixed_rear_board=fixed_rear_board is not None,
     )
     layers.append(layer)
     if fixed_rear_board is None:
@@ -333,7 +384,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
     stud_multiplier=stud_assembly.multiplier,
     stud_unfactored_self_inertia_mm4=stud_assembly.unfactored_self_inertia_mm4,
     stud_connection_inertia_factor=stud_assembly.connection_inertia_factor,
-    stud_section_modulus_depth_mm=stud_assembly.section_modulus_depth_mm,
+    stud_assembly=stud_assembly,
   )
 
 
@@ -357,7 +408,7 @@ def _board_layer(
   y_bottom: float,
   request: WallCheckRequest,
   repo: MaterialRepository,
-  fully_composite_with_stud: bool = False,
+  fixed_rear_board: bool = False,
 ) -> tuple[_Layer, float]:
   prop = repo.get_board(board.kind, board.thickness)
   elastic_ratio = prop.E_GPa * 1000.0 / STUD_ELASTIC_MODULUS
@@ -380,7 +431,8 @@ def _board_layer(
       axial_strength_kN=axial,
       mass_kN=mass,
       board_property=prop,
-      fully_composite_with_stud=fully_composite_with_stud,
+      connection_pitch_mm=FIXED_REAR_BOARD_SCREW_PITCH_MM if fixed_rear_board else None,
+      connection_count=FIXED_REAR_BOARD_SCREW_COUNT if fixed_rear_board else None,
     ),
     y_bottom + board.thickness,
   )
@@ -401,14 +453,43 @@ def _stud_layer(
     y_centroid_mm=y_bottom + assembly.centroid_mm,
     transformed_area_mm2=assembly.area_mm2,
     self_inertia_mm4=assembly.self_inertia_mm4,
-    axial_strength_kN=assembly.area_mm2 * STUD_YIELD_STRENGTH * 1e-3,
+    axial_strength_kN=assembly.area_mm2 * _stud_steel(stud).Fy * 1e-3,
     mass_kN=mass,
   )
 
 
+def _stud_steel(stud: StudSection) -> StudSteel:
+  """스터드 강재(Fy·Fu)를 반환한다(심사의견 B-8). Se가 다른 Fy 기준으로 산정되었으면 계산을 차단한다."""
+  label = f"{stud.group} {stud.name}"
+  if stud.steel is None:
+    raise ValueError(f"스터드 {label}에 강재(Fy·Fu)가 연결되지 않았습니다. init_db를 다시 실행하십시오.")
+  if stud.Se is not None:
+    if stud.Se_basis_Fy_MPa is None:
+      raise ValueError(f"스터드 {label}의 Se 산정 기준 Fy(Se_basis_Fy_MPa)가 없습니다. init_db를 다시 실행하십시오.")
+    if not math.isclose(stud.Se_basis_Fy_MPa, stud.steel.Fy):
+      raise ValueError(
+        f"스터드 {label}의 Se는 Fy {stud.Se_basis_Fy_MPa:g} MPa 기준 값이나 연결 강재 {stud.steel.steel_grade}의 Fy는 "
+        f"{stud.steel.Fy:g} MPa입니다. Se를 재산정하십시오."
+      )
+  return stud.steel
+
+
+def _stud_effective_section_ratio(stud: StudSection) -> float:
+  if stud.Se is None:
+    raise ValueError(
+      f"스터드 유효단면계수 Se가 등록되지 않았습니다: {stud.group} {stud.name} "
+      "(자재 DB를 data/seed 기준으로 재초기화(init_db)해야 합니다.)",
+    )
+  if stud.Sx <= 0.0:
+    raise ValueError(f"스터드 단면계수 Sx가 0 이하입니다: {stud.group} {stud.name}")
+  return min(1.0, stud.Se / stud.Sx)
+
+
 def _stud_assembly(stud: StudSection, method: str) -> _StudAssembly:
+  effective_section_ratio = _stud_effective_section_ratio(stud)
   if _is_central_joint_method(method):
-    distance = stud.H + CENTRAL_JOINT_STUD_GAP_MM / 2.0
+    # 두 스터드를 깊이 방향으로 간격 g만큼 띄워 배치: 조립 도심 ~ 각 스터드 도심 거리 = H + g/2 - cy
+    distance = stud.H + CENTRAL_JOINT_STUD_GAP_MM / 2.0 - stud.cy
     self_inertia = 2.0 * (stud.A * distance**2 + stud.Ix)
     return _StudAssembly(
       area_mm2=2.0 * stud.A,
@@ -418,7 +499,7 @@ def _stud_assembly(stud: StudSection, method: str) -> _StudAssembly:
       unfactored_self_inertia_mm4=self_inertia,
       connection_inertia_factor=1.0,
       multiplier=2.0,
-      section_modulus_depth_mm=stud.H,
+      effective_section_ratio=effective_section_ratio,
     )
 
   multiplier = 2.0 if "맞댐" in method else 1.0
@@ -430,7 +511,7 @@ def _stud_assembly(stud: StudSection, method: str) -> _StudAssembly:
     unfactored_self_inertia_mm4=stud.Ix * multiplier,
     connection_inertia_factor=1.0,
     multiplier=multiplier,
-    section_modulus_depth_mm=stud.H,
+    effective_section_ratio=effective_section_ratio,
   )
 
 
@@ -449,28 +530,90 @@ def _effective_inertia_correction_factor(
   method: str,
   has_rear_board: bool = True,
 ) -> float:
+  # 시험 보정계수 R. 시험체 조건(L=2400)의 보정 강성 R·Ieff_raw를 유지하도록
+  # R_new = R_old × Ieff_raw,old / Ieff_raw,new (소수 2자리, 동률은 보수측 하향).
+  # 2026-10 1차: DXF 단면성능·중앙부이음 관성 수정. 2026-10 2차(B-3): 보드 항복비 0.6 → 실측 Py/Pu
+  # (시험 보드 방화 19 0.65, 방화 25 0.80, 방화 15 0.70)에 따른 η 감소분 재보정.
+  # 변동 1% 미만(C 기본 일면 1.006)은 기존값 유지.
+  # 2026-10 3차(A-4·D-7): 피스 전단에 스터드 tilting·지압 / Ω 3.0 반영(강성 경로 포함)에 따른 η 감소분 재보정.
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
     if _is_central_joint_method(method):
-      return 0.25
+      return 0.37
     if _is_basic_method(method) and not has_rear_board:
       return 1.0
-    return 0.7
+    return 0.73
   if normalized_group.startswith("CH-STUD"):
-    return 0.65
+    return 0.68
   if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
-    return 0.4
+    return 0.56
   if normalized_group == "R-STUD":
-    return 0.26
+    return 0.28
   if normalized_group == "I-STUD":
-    return 0.87
+    # 재보정 계산값 1.005 → R ≤ 1.0 상한(이론 부분합성 강성 초과 금지, 사용자 결정)
+    return 1.0
   if normalized_group == "HR-STUD":
-    return 0.71
+    return 0.74
   if normalized_group == "RV-STUD":
-    return 0.43
+    return 0.54
   if normalized_group == "MP-STUD":
-    return 0.42
+    return 0.52
   return 1.0
+
+
+def _stiffness_curve_exponent(group: str, method: str) -> float:
+  """실측 M–δ 곡선 δ = c·M^m 의 형식별 지수 m (실험 분석 시트 0724, 10~100% Mmax 구간, ch4 회귀)."""
+  normalized_group = group.replace(".", "-").replace(" ", "").upper()
+  if normalized_group == "C-STUD":
+    if _is_central_joint_method(method) or "맞댐" in method:
+      return 1.49
+    return 1.38
+  if normalized_group.startswith("CH-STUD"):
+    return 1.25
+  if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
+    return 1.29
+  if normalized_group == "R-STUD":
+    return 1.11
+  if normalized_group == "I-STUD":
+    return 1.26
+  if normalized_group == "HR-STUD":
+    return 1.33
+  if normalized_group == "RV-STUD":
+    return 1.25
+  if normalized_group == "MP-STUD":
+    return 1.24
+  # 미등록 형식: 시험 최대 m(보수측)
+  return 1.49
+
+
+def _stiffness_load_factor(
+  request: WallCheckRequest,
+  section: _Section,
+  group: str,
+  method: str,
+) -> tuple[float, float, float]:
+  """피스 활용도 기준 단방향 강성 보정계수 min[1, (u/u_ref)^(1−m)].
+
+  u/u_ref = (V_d / V_ref) × (p / p_ref)_max
+  - V_d: 처짐 검토 하중(활하중)에 의한 스터드 1개당 지점 전단력 = q·s·L/2
+  - V_ref: 시험 최대 가력 시 짧은 전단경간의 전단력(R 정의 하중 수준)
+  - p/p_ref: 층별 피스 간격 / 시험 피스 간격(피스 1개당 전단력 ∝ 간격)
+  피스력이 시험 수준 이하(u ≤ u_ref)이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
+  """
+  support_shear_N = request.live_load_kN_m2 * 1e-3 * request.spacing_mm * request.span_mm / 2.0
+  pitch_ratio = max(
+    (
+      _layer_pitch_count(layer, request.bolt)[0] / _pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, layer.order)
+      for layer in section.layers
+      if layer.layer_type == "board"
+    ),
+    default=1.0,
+  )
+  utilization_ratio = support_shear_N / STIFFNESS_REF_SUPPORT_SHEAR_N * pitch_ratio
+  exponent = _stiffness_curve_exponent(group, method)
+  if utilization_ratio <= 1.0:
+    return utilization_ratio, exponent, 1.0
+  return utilization_ratio, exponent, utilization_ratio ** (1.0 - exponent)
 
 
 def _parse_stud_type(stud: StudInput) -> tuple[str, str]:
@@ -537,6 +680,42 @@ def _neutral_axis(layers: tuple[_Layer, ...]) -> float:
   return sum(layer.transformed_area_mm2 * layer.y_centroid_mm for layer in layers) / total_area
 
 
+def _neutral_axis_notices(section: _Section, neutral_axis: float) -> tuple[str, ...]:
+  """중립축 위치 검사(심사의견 E-9). 전단 누계(외측→스터드)·Mn 보드항은 중립축이 스터드 안에 있다는 전제에 기반한다.
+
+  - 스터드 범위 안: 안내 없음
+  - 스터드와 1번 보드 사이 이격 간극(R-STUD 등) 안: 경고(보드는 모두 중립축 한쪽 — 판정 불변)
+  - 스터드에 가장 가까운 1번 보드 두께 안: 경고(판정 불변)
+  - 1번 보드를 넘음: 적용 범위 밖으로 보고 계산을 거부(ValueError)
+  """
+  stud = section.stud_layer
+  bottom = stud.y_centroid_mm - section.stud_assembly.centroid_mm
+  top = bottom + section.stud_assembly.height_mm
+  if bottom <= neutral_axis <= top:
+    return ()
+  boards = [layer for layer in section.layers if layer.layer_type == "board"]
+  if neutral_axis > top:
+    side, excess = "전면", neutral_axis - top
+    inner = min((layer for layer in boards if layer.y_centroid_mm > top), key=lambda layer: layer.y_centroid_mm, default=None)
+    # 스터드 쪽 경계(near)와 반대쪽 경계(far)까지의 거리(중립축 기준, 스터드에서 멀어지는 방향 +)
+    near = None if inner is None else inner.y_centroid_mm - inner.thickness_mm / 2.0 - neutral_axis
+    far = None if inner is None else inner.y_centroid_mm + inner.thickness_mm / 2.0 - neutral_axis
+  else:
+    side, excess = "후면", bottom - neutral_axis
+    inner = max((layer for layer in boards if layer.y_centroid_mm < bottom), key=lambda layer: layer.y_centroid_mm, default=None)
+    near = None if inner is None else neutral_axis - (inner.y_centroid_mm + inner.thickness_mm / 2.0)
+    far = None if inner is None else neutral_axis - (inner.y_centroid_mm - inner.thickness_mm / 2.0)
+  location = f"중립축({neutral_axis:.1f} mm)이 스터드 범위({bottom:.1f}~{top:.1f} mm)를 {side} 보드 쪽으로 {excess:.1f} mm 벗어남"
+  if near is not None and near > 0.0:
+    return (f"{location} — 스터드와 {side} 1번(내측) 보드 사이 이격 간극 안이므로 계산하나, 결과 적용에 유의할 것",)
+  if far is not None and far >= 0.0:
+    return (f"{location} — {side} 1번(내측) 보드 두께 안이므로 계산하나, 부분합성 전단 누계 전제와 차이가 있어 결과 적용에 유의할 것",)
+  raise ValueError(
+    f"{location}. {side} 1번(내측) 보드도 넘어 부분합성 전단 누계 전제가 성립하지 않는 적용 범위 밖 구성입니다. "
+    f"{side} 보드를 줄이거나 반대면 보드를 추가하십시오."
+  )
+
+
 def _layer_results(layers: tuple[_Layer, ...], neutral_axis: float) -> tuple[LayerResult, ...]:
   results: list[LayerResult] = []
   for layer in layers:
@@ -556,40 +735,94 @@ def _layer_results(layers: tuple[_Layer, ...], neutral_axis: float) -> tuple[Lay
 
 
 def _shear_connection_by_layer(
-  layers: tuple[_Layer, ...],
+  section: _Section,
   request: WallCheckRequest,
+  for_strength: bool = False,
 ) -> dict[str, float]:
+  """외곽→내측 피스 전단 누계. for_strength=True이면 Mn용(석고보드 피스 설계강도 상한 적용)."""
+  layers = section.layers
+  stud_thickness_mm = _stud_thickness_mm(section)
+  stud_fu = _stud_steel(section.stud_section).Fu
   result: dict[str, float] = {}
   stud_index = next(index for index, layer in enumerate(layers) if layer.layer_type == "stud")
   rear_layers = tuple(layer for layer in layers[:stud_index] if layer.layer_type == "board")
   front_layers = tuple(layer for layer in layers[stud_index + 1 :] if layer.layer_type == "board")
 
-  for layer, value in _side_cumulative_shear(tuple(rear_layers), request).items():
+  for layer, value in _side_cumulative_shear(rear_layers, request, stud_thickness_mm, stud_fu, for_strength).items():
     result[layer] = value
-  for layer, value in _side_cumulative_shear(tuple(reversed(front_layers)), request).items():
+  for layer, value in _side_cumulative_shear(
+    tuple(reversed(front_layers)), request, stud_thickness_mm, stud_fu, for_strength
+  ).items():
     result[layer] = value
   return result
 
 
-def _side_cumulative_shear(layers_outer_to_inner: tuple[_Layer, ...], request: WallCheckRequest) -> dict[str, float]:
+def _side_cumulative_shear(
+  layers_outer_to_inner: tuple[_Layer, ...],
+  request: WallCheckRequest,
+  stud_thickness_mm: float,
+  stud_tensile_strength: float,
+  for_strength: bool = False,
+) -> dict[str, float]:
   cumulative = 0.0
   result: dict[str, float] = {}
   for layer in layers_outer_to_inner:
-    capacity = (
-      layer.axial_strength_kN
-      if layer.fully_composite_with_stud
-      else _connection_capacity_kN(layer, request.bolt, request.span_mm)
+    capacity = _connection_capacity_kN(
+      layer, request.bolt, request.span_mm, stud_thickness_mm=stud_thickness_mm,
+      stud_tensile_strength=stud_tensile_strength,
+      for_strength=for_strength,
     )
     cumulative += min(layer.axial_strength_kN, capacity)
     result[layer.name] = cumulative
   return result
 
 
-def _connection_capacity_kN(layer: _Layer, bolt: BoltInput, span_mm: float) -> float:
+def _gypsum_screw_design_shear_N(board_thickness_mm: float) -> float:
+  """석고보드–스터드 피스 1개당 설계 전단강도(N) — AISI S240-20 해설 Table C-B3.2-1(No.6) 극한 / 2.0.
+
+  12.7 mm 미만은 두께 비례 외삽(확인 필요), 12.7~15.9 mm는 선형 보간, 15.9 mm 초과는 15.9 mm 값(문헌 없음, 보수측).
+  """
+  (t1, u1), (t2, u2) = GYPSUM_SCREW_ULTIMATE_SHEAR_N
+  if board_thickness_mm <= t1:
+    ultimate = u1 * board_thickness_mm / t1
+  elif board_thickness_mm < t2:
+    ultimate = u1 + (u2 - u1) * (board_thickness_mm - t1) / (t2 - t1)
+  else:
+    ultimate = u2
+  return ultimate / GYPSUM_SCREW_STRENGTH_DIVISOR
+
+
+def _layer_pitch_count(layer: _Layer, bolt: BoltInput) -> tuple[float, float]:
+  pitch = layer.connection_pitch_mm if layer.connection_pitch_mm is not None else _pitch_for_order(bolt.pitch, layer.order)
+  count = layer.connection_count if layer.connection_count is not None else _count_for_order(bolt.count, layer.order)
+  return pitch, count
+
+
+def _stud_thickness_mm(section: _Section) -> float:
+  thickness = section.stud_section.t
+  if thickness is None:
+    raise ValueError(f"스터드 {section.stud_section.name} 두께 t가 없어 피스 tilting·지압을 검토할 수 없습니다.")
+  return thickness
+
+
+def _screw_stud_side_shear_N(stud_thickness_mm: float, diameter_mm: float, stud_tensile_strength: float) -> float:
+  """피스 1개당 스터드(강재)측 허용 전단강도(N) — AISI S100-16 J4.3.1 (t2/t1 ≤ 1.0) min(tilting, 스터드 지압) / Ω."""
+  tilting = SCREW_TILTING_COEFFICIENT * math.sqrt(stud_thickness_mm**3 * diameter_mm) * stud_tensile_strength
+  bearing = SCREW_STUD_BEARING_COEFFICIENT * stud_thickness_mm * diameter_mm * stud_tensile_strength
+  return min(tilting, bearing) / SCREW_SHEAR_OMEGA
+
+
+def _connection_capacity_kN(
+  layer: _Layer,
+  bolt: BoltInput,
+  span_mm: float,
+  stud_thickness_mm: float,
+  stud_tensile_strength: float,
+  for_strength: bool = False,
+) -> float:
   if layer.board_property is None:
     return 0.0
-  pitch = _pitch_for_order(bolt.pitch, layer.order)
-  count = _count_for_order(bolt.count, layer.order)
+  pitch, count = _layer_pitch_count(layer, bolt)
   board_bearing_strength = layer.board_property.Fu
   # 피스 1개당 전단강도 = 0.5 × Fv × Ab / 1.25 (EN 1993-1-8 인용), Fv = 0.6 × Fy
   shear_n = (
@@ -601,9 +834,13 @@ def _connection_capacity_kN(layer: _Layer, bolt: BoltInput, span_mm: float) -> f
     * bolt.diameter**2
     / 1.25
   )
-  shear_n *= count
-  bearing_n = 2.0 * 0.85 * layer.thickness_mm * count * bolt.diameter * board_bearing_strength
-  return min(shear_n, bearing_n) * (span_mm / 2.0) / pitch * 1e-3
+  bearing_n = 2.0 * 0.85 * layer.thickness_mm * bolt.diameter * board_bearing_strength
+  # 스터드측 tilting·지압 한계(Ω 3.0)는 강성·강도 경로 모두 적용
+  per_screw_n = min(shear_n, bearing_n, _screw_stud_side_shear_N(stud_thickness_mm, bolt.diameter, stud_tensile_strength))
+  if for_strength:
+    # 강도(Mn)용: 석고보드 피스 문헌 설계강도로 상한(강성 η·R 보정에는 미적용)
+    per_screw_n = min(per_screw_n, _gypsum_screw_design_shear_N(layer.thickness_mm))
+  return per_screw_n * count * (span_mm / 2.0) / pitch * 1e-3
 
 
 def _pitch_for_order(pitches: tuple[float, ...], order: int) -> float:
@@ -616,6 +853,37 @@ def _pitch_for_order(pitches: tuple[float, ...], order: int) -> float:
   if order <= 1 and len(pitches) >= 3:
     return pitches[2]
   return pitches[-1]
+
+
+def bolt_values_from_ply_order(ply_values: tuple[float, ...]) -> tuple[float, ...]:
+  """층별 값(피스 간격·개수)을 [1P(내측, 스터드 인접), 2P, 3P(외측)] 순서(엑셀 VAR. C32:C34 등)에서
+  엔진 bolt.pitch·bolt.count 순서 [외측, 중간, 내측]로 변환한다."""
+  if len(ply_values) != 3:
+    raise ValueError(f"층별 피스 값은 1P·2P·3P 3개가 필요합니다: {ply_values}")
+  return tuple(reversed(ply_values))
+
+
+def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
+  """표준 외 피스 간격 경고(판정 불변). CH·I-STUD 고정 후면 보드(간격 고정)는 제외한다."""
+  # _pitch_for_order와 같은 기준으로 order를 1~3에 정규화한 뒤 중복 제거(order ≥ 3은 모두 외측 피치)
+  orders = sorted(
+    {
+      min(max(layer.order, 1), 3)
+      for layer in section.layers
+      if layer.layer_type == "board" and layer.connection_pitch_mm is None
+    }
+  )
+  notices: list[str] = []
+  for order in orders:
+    pitch = _pitch_for_order(bolt.pitch, order)
+    standard = _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
+    if math.isclose(pitch, standard):
+      continue
+    label = BOARD_ORDER_LABELS[order]
+    notices.append(
+      f"{label} 피스 간격 {pitch:g} mm는 표준 간격 {standard:g} mm와 다름 — 실험 검증 범위 밖의 입력이므로 결과 적용에 유의할 것"
+    )
+  return tuple(notices)
 
 
 def _count_for_order(counts: tuple[float, ...], order: int) -> float:
@@ -641,10 +909,36 @@ def _composite_ratio(layers: tuple[_Layer, ...], shear_by_name: dict[str, float]
   return max(0.0, min(1.0, min(ratios)))
 
 
+def _stud_section_modulus(
+  stud_layer: LayerResult,
+  assembly: _StudAssembly,
+  composite: bool,
+) -> tuple[float, float]:
+  """스터드 유효단면계수 Se(mm³)와 최외단 거리 c(mm)를 반환한다.
+
+  - 부분합성: 합성 중립축 기준 스터드 I / 합성 중립축~스터드 최외단 거리
+  - 스터드 단독: 스터드 자체 도심 기준 I / 자체 도심~최외단 거리(비대칭 단면은 큰 쪽)
+  두 경우 모두 총단면 S에 Se/Sx 비(AISI S100-16 부록 1)를 곱한다.
+  """
+  if composite:
+    neutral_axis = stud_layer.y_centroid_mm - stud_layer.distance_to_neutral_axis_mm
+    y_bottom = stud_layer.y_centroid_mm - assembly.centroid_mm
+    y_top = y_bottom + assembly.height_mm
+    extreme_fiber = max(neutral_axis - y_bottom, y_top - neutral_axis)
+    inertia = stud_layer.inertia_about_neutral_axis_mm4
+  else:
+    extreme_fiber = max(assembly.centroid_mm, assembly.height_mm - assembly.centroid_mm)
+    inertia = assembly.self_inertia_mm4
+  if extreme_fiber <= 0.0:
+    raise ValueError("스터드 최외단 거리가 0 이하입니다.")
+  return inertia / extreme_fiber * assembly.effective_section_ratio, extreme_fiber
+
+
 def _nominal_moment(
   layers: tuple[LayerResult, ...],
   shear_by_name: dict[str, float],
-  stud_section_modulus_depth_mm: float,
+  stud_section_modulus_mm3: float,
+  stud_yield_strength: float,
   include_board_layers: bool = True,
 ) -> float:
   total = 0.0
@@ -655,8 +949,7 @@ def _nominal_moment(
       force = min(layer.axial_strength_kN, shear_by_name.get(layer.name, 0.0))
       total += abs(force * layer.distance_to_neutral_axis_mm * 1e-3)
     else:
-      section_modulus = layer.inertia_about_neutral_axis_mm4 / stud_section_modulus_depth_mm * 2.0
-      total += STUD_YIELD_STRENGTH * section_modulus * 1e-6
+      total += stud_yield_strength * stud_section_modulus_mm3 * 1e-6
   return total
 
 
@@ -682,7 +975,7 @@ def _maximum_allowable_height_mm(
   for height_mm in range(MAX_HEIGHT_INCREMENT_MM, int(search_limit) + MAX_HEIGHT_INCREMENT_MM, MAX_HEIGHT_INCREMENT_MM):
     trial_request = replace(request, span_mm=float(height_mm))
     result = _calculate_wall_check_once(trial_request, repository)
-    if result.stress_verdict == "O.K" and result.deflection_verdict == "O.K":
+    if _all_checks_ok(result):
       max_height = float(height_mm)
   return max_height
 
@@ -702,11 +995,7 @@ def _maximum_anchor_allowable_height_mm(
     trial_request = replace(request, span_mm=float(height_mm))
     result = _calculate_wall_check_once(trial_request, repository)
     anchor_utilization = result.intermediate.get("anchor_utilization", math.inf)
-    if (
-      result.stress_verdict == "O.K"
-      and result.deflection_verdict == "O.K"
-      and anchor_utilization <= 1.0
-    ):
+    if _all_checks_ok(result) and anchor_utilization <= 1.0:
       max_height = float(height_mm)
   return max_height
 
@@ -725,7 +1014,16 @@ def _live_moment_kNm(request: WallCheckRequest) -> float:
 def _required_moment_kNm(request: WallCheckRequest, live_moment: float, seismic_moment: float) -> float:
   if request.design_case == DESIGN_CASE_NON_SEISMIC:
     return live_moment
-  return max(live_moment, 0.7 * seismic_moment, 0.75 * live_moment + 0.7 * seismic_moment)
+  return max(
+    live_moment,
+    ASD_SEISMIC_FACTOR * seismic_moment,
+    _combined_live_seismic(live_moment, seismic_moment),
+  )
+
+
+def _combined_live_seismic(live: float, seismic: float) -> float:
+  """KDS 41 10 15 허용응력 조합 0.75L + 0.75(0.7E)."""
+  return ASD_COMBINED_LIVE_FACTOR * live + ASD_COMBINED_SEISMIC_FACTOR * ASD_SEISMIC_FACTOR * seismic
 
 
 def _seismic_moment_kNm(
@@ -735,7 +1033,7 @@ def _seismic_moment_kNm(
   seismic_weight = sum(layer.mass_kN for layer in layers)
   fa = _seismic_fa(request)
   sds = request.seismic.S * 2.5 * 2.0 / 3.0 * fa
-  fp = 0.48 * sds * request.seismic.Ip * seismic_weight
+  fp = SEISMIC_FP_COEFFICIENT * sds * request.seismic.Ip * seismic_weight
   moment = 0.25 * fp * (request.span_mm / 1000.0)
   return moment, seismic_weight, sds, fp
 
@@ -748,12 +1046,12 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
   live_kN_per_m = live_per_spacing / spacing_m
   seismic_kN_per_m = seismic_per_spacing / spacing_m
   load_combination_L = live_kN_per_m
-  load_combination_0_7E = 0.7 * seismic_kN_per_m
-  load_combination_0_75L_0_7E = 0.75 * live_kN_per_m + 0.7 * seismic_kN_per_m
+  load_combination_0_7E = ASD_SEISMIC_FACTOR * seismic_kN_per_m
+  load_combination_0_75L_0_525E = _combined_live_seismic(live_kN_per_m, seismic_kN_per_m)
   if request.design_case == DESIGN_CASE_NON_SEISMIC:
     required = load_combination_L
   else:
-    required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_7E)
+    required = max(load_combination_L, load_combination_0_7E, load_combination_0_75L_0_525E)
   anchor_allowable_spacing_mm = _anchor_spacing_floor_mm(
     request.anchor_capacity_kN / required * 1000.0 if required > 0.0 else 0.0,
   )
@@ -764,7 +1062,7 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
     seismic_kN_per_m=seismic_kN_per_m,
     load_combination_L_kN_per_m=load_combination_L,
     load_combination_0_7E_kN_per_m=load_combination_0_7E,
-    load_combination_0_75L_0_7E_kN_per_m=load_combination_0_75L_0_7E,
+    load_combination_0_75L_0_525E_kN_per_m=load_combination_0_75L_0_525E,
     required_kN_per_m=required,
     anchor_capacity_kN=request.anchor_capacity_kN,
     anchor_spacing_mm=request.anchor_spacing_mm,
@@ -783,7 +1081,7 @@ def _reaction_intermediate(request: WallCheckRequest, reaction: _ReactionResult)
     values.update(
       {
         "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
-        "reaction_0_75L_0_7E_kN_per_m": reaction.load_combination_0_75L_0_7E_kN_per_m,
+        "reaction_0_75L_0_525E_kN_per_m": reaction.load_combination_0_75L_0_525E_kN_per_m,
         "anchor_capacity_kN": reaction.anchor_capacity_kN,
         "anchor_spacing_mm": reaction.anchor_spacing_mm,
         "anchor_allowable_spacing_mm": reaction.anchor_allowable_spacing_mm,
@@ -818,6 +1116,85 @@ def _validate_design_case(design_case: str) -> None:
 def _validate_strength_check_mode(strength_check_mode: str) -> None:
   if strength_check_mode not in STRENGTH_CHECK_MODES:
     raise ValueError(f"지원하지 않는 강도 체크 기준입니다: {strength_check_mode}")
+
+
+def _all_checks_ok(result: WallCheckResult) -> bool:
+  return (
+    result.stress_verdict == "O.K"
+    and result.deflection_verdict == "O.K"
+    and result.screw_tension_verdict == "O.K"
+  )
+
+
+def _screw_tension_result(
+  request: WallCheckRequest,
+  section: _Section,
+  sds: float,
+) -> dict[str, float]:
+  """피스 인장(면외 이탈) 검토 — AISI S100-16 J4.4.
+
+  - 요구 인장력 T = q × s × p_max [N/개] (피치당 피스 1개, 보수측)
+    q: 면별 설계 횡압력(kN/m²) = L 또는 max(L, 0.7E, 0.75L + 0.75(0.7E)),
+       E = 0.48·SDS·Ip × (해당 면 보드 자중). 면의 전체 하중을 피스가 가장 성긴 층이 부담한다고 가정(보수측).
+  - 풀아웃 Pnot = 0.85·tc·d·Fu2 (Eq. J4.4.1-1), tc = 스터드 두께, Ω = 3.0
+  - 풀스루(석고보드) = 입력 공칭값 / Ω (AISI 강판식 J4.4.2는 석고보드에 적용 불가)
+  벽 높이와 무관한 검토이다.
+  """
+  stud = section.stud_section
+  if stud.t is None:
+    raise ValueError(f"스터드 두께 t가 등록되지 않아 피스 풀아웃 검토를 할 수 없습니다: {stud.group} {stud.name}")
+  stud_index = next(index for index, layer in enumerate(section.layers) if layer.layer_type == "stud")
+  faces = (
+    tuple(layer for layer in section.layers[:stud_index] if layer.layer_type == "board"),
+    tuple(layer for layer in section.layers[stud_index + 1 :] if layer.layer_type == "board"),
+  )
+  demand_N = 0.0
+  governing_pressure = 0.0
+  governing_spacing = 0.0
+  for face in faces:
+    if not face:
+      continue
+    face_weight_kN_m2 = sum(
+      layer.board_property.mass_kg_m2 * GRAVITY / 1000.0
+      for layer in face
+      if layer.board_property is not None
+    )
+    seismic_kN_m2 = SEISMIC_FP_COEFFICIENT * sds * request.seismic.Ip * face_weight_kN_m2
+    live = request.live_load_kN_m2
+    if request.design_case == DESIGN_CASE_NON_SEISMIC:
+      pressure = live
+    else:
+      pressure = max(live, ASD_SEISMIC_FACTOR * seismic_kN_m2, _combined_live_seismic(live, seismic_kN_m2))
+    # 보수측: 피치당 피스 1개로 봄(bolt.count는 보드 이음부 2열 체결 등을 포함할 수 있어 인장 분담에는 미적용 — 확인 필요)
+    spacing_per_screw = max(_layer_pitch_count(layer, request.bolt)[0] for layer in face)
+    face_demand = pressure * 1e-3 * request.spacing_mm * spacing_per_screw
+    if face_demand > demand_N:
+      demand_N = face_demand
+      governing_pressure = pressure
+      governing_spacing = spacing_per_screw
+  pullout_nominal = SCREW_PULLOUT_COEFFICIENT * stud.t * request.bolt.diameter * _stud_steel(stud).Fu
+  pullout_allowable = pullout_nominal / SCREW_TENSION_OMEGA
+  pull_through_allowable = request.screw_pull_through_nominal_N / SCREW_TENSION_OMEGA
+  pullout_utilization = demand_N / pullout_allowable
+  pull_through_utilization = demand_N / pull_through_allowable
+  return {
+    "screw_tension_pressure_kN_m2": governing_pressure,
+    "screw_tension_spacing_mm": governing_spacing,
+    "screw_tension_demand_N": demand_N,
+    "screw_pullout_tc_mm": stud.t,
+    "screw_pullout_nominal_N": pullout_nominal,
+    "screw_pullout_allowable_N": pullout_allowable,
+    "screw_pull_through_nominal_N": request.screw_pull_through_nominal_N,
+    "screw_pull_through_allowable_N": pull_through_allowable,
+    "screw_pullout_utilization": pullout_utilization,
+    "screw_pull_through_utilization": pull_through_utilization,
+    "screw_tension_utilization": max(pullout_utilization, pull_through_utilization),
+  }
+
+
+def _validate_pull_through(value_N: float) -> None:
+  if not math.isfinite(value_N) or value_N <= 0.0:
+    raise ValueError("석고보드 풀스루 공칭강도는 0보다 커야 합니다.")
 
 
 def _validate_anchor_spacing(anchor_spacing_mm: float) -> None:

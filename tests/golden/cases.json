@@ -69,6 +69,20 @@
       },
       "expected": {
         "neutral_axis_mm": 63.0,
+        "I_full_mm4": 1124745.714285714,
+        "eta": 0.3376910106266487,
+        "I_eff_mm4": 513849.3187895894,
+        "Mn_kNm": 2.857151817211579,
+        "Mu_kNm": 1.3672931109002664,
+        "stress_ratio": 0.7178266321010559,
+        "deflection_mm": 42.95179084287022,
+        "deflection_limit_mm": 31.25,
+        "seismic_moment_kNm": 1.4743455088576507,
+        "deflection_verdict": "N.G",
+        "stress_verdict": "O.K"
+      },
+      "expected_legacy": {
+        "neutral_axis_mm": 63.0,
         "I_full_mm4": 1121645.714285714,
         "eta": 0.3831251882290465,
         "I_eff_mm4": 517187.3100667071,
@@ -149,6 +163,20 @@
       },
       "expected": {
         "neutral_axis_mm": 63.0,
+        "I_full_mm4": 1124745.714285714,
+        "eta": 0.2701528085013189,
+        "I_eff_mm4": 468855.14632264577,
+        "Mn_kNm": 2.5648611922115787,
+        "Mu_kNm": 0.8750675909761705,
+        "stress_ratio": 0.5117631279423941,
+        "deflection_mm": 19.281389235743852,
+        "deflection_limit_mm": 25.0,
+        "seismic_moment_kNm": 0.9435811256688964,
+        "deflection_verdict": "O.K",
+        "stress_verdict": "O.K"
+      },
+      "expected_legacy": {
+        "neutral_axis_mm": 63.0,
         "I_full_mm4": 1121645.714285714,
         "eta": 0.30650015058323715,
         "I_eff_mm4": 471231.3280015482,
@@ -228,6 +256,20 @@
         ]
       },
       "expected": {
+        "neutral_axis_mm": 63.0,
+        "I_full_mm4": 789857.142857143,
+        "eta": 0.506536515939973,
+        "I_eff_mm4": 435641.828014146,
+        "Mn_kNm": 2.857151817211579,
+        "Mu_kNm": 0.9294264380065164,
+        "stress_ratio": 0.48794734973879594,
+        "deflection_mm": 33.775067874772745,
+        "deflection_limit_mm": 31.25,
+        "seismic_moment_kNm": 1.0169878581076504,
+        "deflection_verdict": "N.G",
+        "stress_verdict": "O.K"
+      },
+      "expected_legacy": {
         "neutral_axis_mm": 63.00000000000001,
         "I_full_mm4": 786757.1428571428,
         "eta": 0.5746877823435699,
@@ -243,5 +285,6 @@
       }
     }
   ],
-  "_fix01_status": "현재 엑셀에 FIX-01(N13=SUM(G13:M13), 지진중량 후면보드 포함) 반영됨. expected는 이 상태 기준."
+  "_fix01_status": "현재 엑셀에 FIX-01(N13=SUM(G13:M13), 지진중량 후면보드 포함) 반영됨. expected는 이 상태 기준.",
+  "_recalc_note": "2026-10-16 1차 심사의견 반영 재산정(DXF 단면성능·Se·Fy 295·S=I/c_max·KDS 0.75L+0.75(0.7E)·중앙부이음 관성 수정·R 재보정). 이전 엑셀 기준값은 expected_legacy 참조. / 2026-10-19 갱신: Mn 보드항 피스 강도 상한(AISI S240-20 해설 C-B3.2-1 극한/2.0), CH·I-STUD 후면 보드 피스 체결(300 mm, 2개). / 2026-10-21 갱신(B-3): 석고보드 항복비 Fy/Fu = 종류·두께별 실측 Py/Pu(미시험 종류는 유사 보드 준용), 시험체 강성 유지를 위한 R 재보정(C 0.72, 중앙부 0.36, CH 0.67, T 0.46, R 0.27, I 0.90, HR 0.73, RV 0.44, MP 0.43). / 2026-10-20 갱신(피스 피치 순서·개수): 골든 bolt_pitch·count는 [1P(내측, 스터드 인접), 2P, 3P(외측)] 순서(엑셀 VAR. C32:C34)이며 로더에서 엔진 순서 [외측, 중간, 내측]로 변환(bolt_values_from_ply_order). E-8 시험 피치 STIFFNESS_REF_SCREW_PITCH_MM 내측 600 정정. 피치당 연결 피스 개수 표준 = 누계 1-3-5(층별 1·2·2, STANDARD_SCREW_COUNT) — cases.json은 엔진 기본값, 시편 common.bolt.count = [1, 2, 2]. / 2026-10-20 갱신(A-4·D-7): 피스 전단에 스터드측 tilting(AISI S100-16 Eq. J4.3.1-1)·지압(Eq. J4.3.1-3) / Ω 3.0 추가 — 강성(η)·강도(Mn) 경로 모두 적용. 시험 강성 유지 R 재보정: C 중앙부 0.37, C 0.73, CH 0.68, HR 0.74, MP 0.52, RV 0.54, T.silent 0.56, R 0.28, I 1.00(계산 1.005, R ≤ 1.0 상한), C 기본 일면 1.0 유지."
 }

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Mapping, cast
 
 from backend.engine.calculator import calculate_wall_check, request_from_golden_case
-from backend.engine.constants import BOARD_YIELD_RATIO_FROM_FRACTURE
+from backend.engine.constants import BOARD_YIELD_RATIO_BY_BOARD, BOARD_YIELD_RATIO_FROM_FRACTURE
 from backend.engine.repository import (
   DEFAULT_BOARD_E_GPA,
   JsonSeedRepository,
@@ -65,7 +65,27 @@ class SqliteRepositoryTest(unittest.TestCase):
     self.assertTrue(waterproof.is_complete)
     self.assertEqual(waterproof.missing_fields, ())
     self.assertAlmostEqual(waterproof.E_GPa or 0.0, 4.72)
-    self.assertAlmostEqual(waterproof.Fy or 0.0, (waterproof.Fu or 0.0) * BOARD_YIELD_RATIO_FROM_FRACTURE)
+    self.assertAlmostEqual(waterproof.Fy or 0.0, (waterproof.Fu or 0.0) * BOARD_YIELD_RATIO_BY_BOARD[("방수", 9.5)][0])
+    self.assertEqual(waterproof.yield_ratio_source, "준용: 일반 9.5")
+    unlisted = next(board for board in catalog if board.kind == "차음" and board.thickness == 15.0)
+    self.assertAlmostEqual(unlisted.yield_ratio, BOARD_YIELD_RATIO_FROM_FRACTURE)
+    self.assertEqual(unlisted.yield_ratio_source, "기본값")
+
+  def test_board_yield_ratio_by_kind_and_thickness(self) -> None:
+    # B-3: 시험 보드는 실측 Py/Pu, 미시험 보드는 유사 보드 준용값으로 Fy = Fu × 항복비
+    for (kind, thickness), (ratio, source) in BOARD_YIELD_RATIO_BY_BOARD.items():
+      with self.subTest(kind=kind, thickness=thickness):
+        for repository in (self.json_repository, self.sqlite_repository):
+          try:
+            board = repository.get_board(kind, thickness)
+          except RepositoryLookupError:
+            continue  # 단위중량 미등재 보드(계산 불가)
+          self.assertAlmostEqual(board.Fy, board.Fu * ratio)
+          self.assertAlmostEqual(board.yield_ratio, ratio)
+          self.assertEqual(board.yield_ratio_source, source)
+    fire_19 = self.json_repository.get_board("방화", 19.0)
+    self.assertAlmostEqual(fire_19.yield_ratio, 0.65)
+    self.assertEqual(fire_19.yield_ratio_source, "시험")
 
   def test_stud_method_catalog_preserves_seed_rows(self) -> None:
     methods = self.sqlite_repository.list_stud_methods()
@@ -99,7 +119,7 @@ class SqliteRepositoryTest(unittest.TestCase):
     migrated_repository = SqliteRepository(self.db_path)
     board = migrated_repository.get_board("방수", 9.5)
 
-    self.assertAlmostEqual(board.Fy, board.Fu * BOARD_YIELD_RATIO_FROM_FRACTURE)
+    self.assertAlmostEqual(board.Fy, board.Fu * BOARD_YIELD_RATIO_BY_BOARD[("방수", 9.5)][0])
     self.assertAlmostEqual(board.E_GPa, 4.72)
 
   def test_existing_sqlite_without_fu_column_is_migrated(self) -> None:
@@ -116,7 +136,7 @@ class SqliteRepositoryTest(unittest.TestCase):
     migrated_repository = SqliteRepository(self.db_path)
     board = migrated_repository.get_board("방화", 19.0)
 
-    self.assertAlmostEqual(board.Fy, board.Fu * BOARD_YIELD_RATIO_FROM_FRACTURE)
+    self.assertAlmostEqual(board.Fy, board.Fu * BOARD_YIELD_RATIO_BY_BOARD[("방화", 19.0)][0])
     with closing(sqlite3.connect(self.db_path)) as connection:
       columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(board_property)").fetchall()}
     self.assertIn("Fu", columns)
