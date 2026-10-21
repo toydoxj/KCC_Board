@@ -71,7 +71,7 @@ STUD_STEEL_SEED_FILE = "stud_steel.json"
 
 @dataclass(frozen=True)
 class StudSteel:
-  """스터드 강재(심사의견 B-8). status가 '미확정'이면 강종·밀시트 확인 전의 이관값이다."""
+  """스터드 강재(심사의견 B-8). status '확정'/'미확정'으로 강종 확인 여부를 표시한다."""
 
   steel_grade: str
   label: str

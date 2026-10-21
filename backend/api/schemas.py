@@ -317,7 +317,7 @@ class StudSectionData(ApiModel):
   section_class: str
   Se: float | None = None
   Se_basis_Fy_MPa: float | None = None
-  # 연결 강재(심사의견 B-8). steel_status가 '미확정'이면 강종·밀시트 확인 전 이관값
+  # 연결 강재(심사의견 B-8). steel_status '확정'/'미확정'으로 강종 확인 여부를 표시
   steel_grade: str | None = None
   Fy: float | None = None
   Fu: float | None = None

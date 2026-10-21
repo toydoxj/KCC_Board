@@ -62,7 +62,7 @@ SCREW_TILTING_COEFFICIENT = 4.2  # Eq. J4.3.1-1: Pns = 4.2·(t2³·d)^0.5·Fu2
 SCREW_STUD_BEARING_COEFFICIENT = 2.7  # Eq. J4.3.1-3: Pns = 2.7·t2·d·Fu2
 SCREW_SHEAR_OMEGA = 3.0  # J4 Ω (ASD). 강성(η)·강도(Mn) 경로 모두 적용(사용자 결정, 심사의견 A-4·D-7)
 # 석고보드 풀스루 공칭강도(N/개). 참고값: ASTM C1396 nail pull 최소값 12.7mm 77 lbf ≈ 343 N
-# (못 기준 — KCC 피스·보드 시험값 확보 전 잠정값, 확인 필요)
+# (못 기준 참고값을 기본값으로 적용 — 사용자 확정 2026-10-21)
 DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N = 343.0
 
 # 석고보드–스터드 피스 1개당 극한 전단하중(No.6 피스 ≈ φ3.5) — AISI S240-20 해설 Table C-B3.2-1

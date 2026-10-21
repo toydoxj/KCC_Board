@@ -58,12 +58,13 @@ class StudSteelSeedTest(unittest.TestCase):
     self.temp = _TempSeed()
     self.addCleanup(self.temp.cleanup)
 
-  def test_default_steel_keeps_legacy_values_and_is_unconfirmed(self) -> None:
+  def test_default_steel_is_confirmed_sgmh295y(self) -> None:
     steels = JsonSeedRepository(SEED).list_stud_steels()
     self.assertEqual(len(steels), 1)
     steel = steels[0]
     self.assertEqual((steel.steel_grade, steel.Fy, steel.Fu), (LEGACY_GRADE, 295.0, 400.0))
-    self.assertEqual(steel.status, "미확정")
+    self.assertEqual(steel.status, "확정")
+    self.assertEqual(steel.candidate_standard, "KS D 3030 SGMH295Y")
     self.assertTrue(steel.is_default)
 
   def test_every_stud_links_default_steel_with_matching_se_basis(self) -> None:
@@ -223,7 +224,7 @@ class StudSteelSqliteTest(unittest.TestCase):
     stud = response.json()["data"][0]
     self.assertEqual(stud["steel_grade"], LEGACY_GRADE)
     self.assertEqual((stud["Fy"], stud["Fu"], stud["Se_basis_Fy_MPa"]), (295.0, 400.0, 295.0))
-    self.assertEqual(stud["steel_status"], "미확정")
+    self.assertEqual(stud["steel_status"], "확정")
 
 
 if __name__ == "__main__":

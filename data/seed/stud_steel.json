@@ -1,16 +1,16 @@
 {
-  "_source": "기존 계산 상수 이관(STUD_YIELD_STRENGTH 295 — 1차 심사의견 275→295, STUD_TENSILE_STRENGTH 400 — B-8). 2026-10-20",
+  "_source": "기존 계산 상수 이관(STUD_YIELD_STRENGTH 295 — 1차 심사의견 275→295, STUD_TENSILE_STRENGTH 400 — B-8). 2026-10-20. 강종 SGMH295Y·Fy·Fu 사용자 확정 2026-10-21",
   "_unit": "Fy·Fu: N/mm^2",
-  "_note": "강종·밀시트 미확정. candidate_standard는 후보 정보이며 확정값이 아님. Fy를 바꾸면 stud_section.json의 Se(Se_basis_Fy_MPa 기준)를 함께 재산정해야 함",
+  "_note": "steel_grade는 안정 식별자이므로 강종 확정 후에도 유지함. Fy를 바꾸면 stud_section.json의 Se(Se_basis_Fy_MPa 기준)를 함께 재산정해야 함",
   "items": [
     {
       "steel_grade": "legacy_stud_295_400",
-      "label": "스터드 강재(강종 미확정)",
+      "label": "SGMH295Y (KS D 3030)",
       "Fy": 295,
       "Fu": 400,
-      "status": "미확정",
-      "candidate_standard": "KS D 3030 SGMH295Y (후보, 확인 필요)",
-      "source": "기존 계산 상수 이관, 강종·밀시트 미확정",
+      "status": "확정",
+      "candidate_standard": "KS D 3030 SGMH295Y",
+      "source": "강종 SGMH295Y, Fy 295·Fu 400 — 사용자 확정(2026-10-21)",
       "is_default": true
     }
   ]

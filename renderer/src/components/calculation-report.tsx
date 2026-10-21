@@ -444,7 +444,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <div>T = q × s × p_max (피치당 피스 1개, 면 하중 전체를 가장 성긴 층 피스가 부담 — 보수측)</div>
             <div>q = {isSeismic ? "max(L, 0.7E, 0.75L+0.75(0.7E)), E = 0.48·SDS·Ip·W보드(면)" : "L"}</div>
             <div>풀아웃 Pnot = 0.85 × tc × d × Fu2 (Eq. J4.4.1-1), Ω = 3.0</div>
-            <div>풀스루(석고보드) = 입력 공칭값 / Ω (시험값 확보 전 잠정값)</div>
+            <div>풀스루(석고보드) = 입력 공칭값 / Ω (기본 343 N — ASTM C1396 nail pull 참고값)</div>
           </div>
           <div className="grid gap-1 text-sm md:grid-cols-2">
             <KeyValue label="횡압력 q" value={`${formatNumber(data.result.intermediate.screw_tension_pressure_kN_m2 ?? Number.NaN)} kN/m²`} />
