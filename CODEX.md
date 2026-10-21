@@ -46,7 +46,7 @@ repo/
 - ASD 안전계수 Ω=1.5, 처짐한계 기본 L/240. (둘 다 설정값으로 분리, 하드코딩 금지)
 
 ## 6. 자재 DB (data/seed)
-- `stud_section.json`: 정본 = `stud.dxf`(KCC 단면도, 9그룹·69규격, 2026-10 교체; 이전 `스터드_단면성능_2.xlsx`). 컬럼 H,B,t,A,cx,cy,Ix,Iy,Sx,Sy,rx,ry + section_class + Se(유효단면계수, AISI S100-16 부록 1, f=Fy=295MPa). Sx = Ix/c_max.
+- `stud_section.json`: 정본 = `stud.dxf`(KCC 단면도, 9그룹·69규격, 2026-10 교체; 이전 `스터드_단면성능_2.xlsx`). 컬럼 H,B,t,A,cx,cy,Ix,Iy,Sx,Sy,rx,ry + section_class + Se(유효단면계수, AISI S100-16 부록 1, f=Fy=295MPa). Sx = Ix/c_max. I-STUD Se는 2겹 플랜지 일체 거동 기준(2026-10-21 확정) — `backend/tools/se_istud.py`로 산정·대조(`--check`).
 - section_class: closed(직접적분) / thin_plate(T.silent, 박판) / composite_channel(MP·RV, 2채널 합).
 - `board_property.json`: 종류×두께 → mass, Fy, E_GPa (E는 *10³ 후 N/mm²).
 - `stud_steel.json`(심사의견 B-8): 스터드 강재 Fy·Fu. 기본 강재는 정확히 1개(`is_default`). 현재 1종 `legacy_stud_295_400`(KS D 3030 SGMH295Y, Fy 295·Fu 400, status '확정' — 2026-10-21 사용자 확정. 식별자는 안정 키로 유지). `stud_section.json` 항목의 선택 필드 `steel_grade`가 없으면 기본 강재, 미등록 식별자는 오류. 각 규격의 `Se_basis_Fy_MPa`(Se 산정 Fy)가 연결 강재 Fy와 다르면 계산 차단 — Fy 변경 시 Se 재산정 필수.

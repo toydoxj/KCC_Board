@@ -7,7 +7,7 @@
 | 항목 | 관련 의견 | 종전 | 수정 | 파일 |
 |---|---|---|---|---|
 | 스터드 단면 DB | E-7 | 스터드_단면성능_2.xlsx | stud.dxf(KCC 단면도) 직접 산정, `Se` 필드 추가 | data/seed/stud_section.json |
-| 유효단면계수 Se | E-7 | 미적용 | AISI S100-16 App.1, f = Fy = 295 MPa, 양방향 최소(I-STUD 2겹 독립 하한) | 위와 동일, repository.py |
+| 유효단면계수 Se | E-7 | 미적용 | AISI S100-16 App.1, f = Fy = 295 MPa, 양방향 최소(I-STUD 2겹 일체 — §1-11) | 위와 동일, repository.py, backend/tools/se_istud.py |
 | 스터드 Fy | B-8 | 275 MPa | 295 MPa | constants.py |
 | 스터드 단면계수 | E-6 | I_NA/(H/2) | 부분합성 I_NA/c_max(합성 NA), 단독 I/max(cy, H−cy), × Se/Sx | calculator.py `_stud_section_modulus` |
 | 중앙부 이음 관성 | E-6 | 2[A(h+12.5)²+Ix] | 2[A(h+12.5−cy)²+Ix] | calculator.py `_stud_assembly` |
@@ -119,6 +119,27 @@
 - API `/api/db/studs`: `steel_grade`·`Fy`·`Fu`·`steel_status`·`Se_basis_Fy_MPa` 추가(기존 필드 유지)
 - 설계 결정 기록: DevVault `decisions/ADR-001_stud_steel_material_db.md`
 
+## 1-11. I-STUD 2겹 플랜지 일체 거동 Se 재산정 (2026-10-21, 사용자 결정)
+
+- 산정 도구 `backend/tools/se_istud.py` 신설(종전 Se 산정 스크립트 부재). AISI S100-16 App.1: 플랜지 1.2.1(비보강, k = 0.43), 웨브 1.1.2(응력경사, h0/b0 ≤ 4). 압축 플랜지 f = Fy(§1.1(a), 압축 연단 선항복). E 210,000(`STUD_ELASTIC_MODULUS`)·Fy 295(기본 강재)
+- 단면: stud.dxf 폴리라인을 직사각형으로 분해(A·Ix 시드와 0.01% 이내 일치). 웨브 1겹, 한쪽 플랜지 2겹, 반대쪽 플랜지 1겹 + 자유단 hem 3 mm
+- 모델 검증: 같은 모델의 독립 거동(2겹을 t 판 2장) Se가 종전 DB를 −0.57~−0.90%로 재현함
+- 일체 거동: 2겹 플랜지를 두께 2t 판 1장으로 산정. Se 증가 +21.5~30.5%, Se/Sx 0.56~0.73 → 0.73~0.89
+
+| 규격 | Se 종전(독립) | Se 수정(일체) | Se/Sx |
+|---|---|---|---|
+| I-STUD 75-06 | 1,947 | 2,539 | 0.774 |
+| I-STUD 102-06 | 2,651 | 3,459 | 0.726 |
+| I-STUD 75-08 | 3,081 | 3,794 | 0.878 |
+| I-STUD 92-08 | 4,032 | 4,899 | 0.884 |
+| I-STUD 102-08 | 4,590 | 5,587 | 0.888 |
+| I-STUD 127-08 | 5,672 | 7,174 | 0.865 |
+| I-STUD 152-08 | 6,752 | 8,496 | 0.812 |
+
+- 영향: Se는 강도(Mn) 경로만 사용 → I_eff·R(I 1.00) 불변, 골든 `cases.json`(C-STUD) 불변. 시편 11 허용높이 4조건: 내진·부분합성 6,100 → **6,350**, 내진·단독 3,500 → **4,000**, 비내진·부분합성 6,350 불변, 비내진·단독 4,500 → **5,150**
+- 검토의견(주의): 일체 거동은 2겹 사이 미끄럼이 없다는 가정이며 비안전측(허용높이 증가)임. 2겹 체결 방식 근거 자료 확인 필요
+- 회귀: `tests/test_se_istud.py`(시드 Se = 도구 산정값, 독립 모드 종전값 1% 이내 재현). 시드 대조 `python -m backend.tools.se_istud --check`
+
 ## 2. R 재보정
 
 R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
@@ -151,7 +172,7 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 - 강도 검토 기본값(C-2): **composite 유지로 확정**(2026-10-16, 사용자 결정). 부분합성 전제(보드–스터드 피스 체결)는 §1-1 피스 인장 검토(풀아웃·풀스루)로 확인함. stud_only 기본값 변경은 적용하지 않음
 - 풀스루 공칭강도 343 N — **기본값 적용 확정**(2026-10-21, 사용자 결정)
 - T.silent 두께 — **t 0.6(DXF 정본) 확정**(2026-10-21, 사용자 결정). 종전 DB(t 0.5, A 257.61)는 폐기, 현행 단면값·R 0.56 유지
-- I-STUD 2겹 플랜지 — **일체 거동 확정**(2026-10-21, 사용자 결정). 일체 기준 Se 재산정·골든 재산정 미반영(stud.dxf·Se 산정 스크립트 확보 후 진행)
+- I-STUD 2겹 플랜지 — **일체 거동 확정**(2026-10-21, 사용자 결정). 일체 기준 Se 재산정 반영(§1-11). 2겹 체결 방식 근거 자료는 확인 필요
 - 스터드 강종 — **KS D 3030 SGMH295Y, Fy 295·Fu 400 확정**(2026-10-21, 사용자 결정). 강종별 DB 분리는 §1-10
 - 구 로컬 SQLite: Se 열 자동 추가되나 값은 NULL → 계산 시 오류. `init_db` 재실행 필요
 - **피스 피치 순서 불일치·층별 볼트 개수 — 2026-10-20 §1-6으로 해소**: `_pitch_for_order`는 `bolt.pitch[0]`을 3번(외측), `[2]`를 1번(내측)에 배정함. 표준(내측 1P 600)은 렌더러 기본값 `[300, 300, 600]`과 일치하나, E-8 시험 기준 `STIFFNESS_REF_SCREW_PITCH_MM = (600, 300, 300)`과 골든·11개 시편 입력 `[600, 300, 300]`은 외측 600 / 내측 300으로 해석됨. 앱 기본 입력 시 내측 피치비 2 → u/u_ref 2배. 엑셀 원본의 피치 열 순서 확인 후 수정 여부 결정 필요(골든 재산정 수반 가능)
@@ -162,6 +183,7 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 
 ## 5. 검증
 
+- `python -m pytest` : 92 passed + 209 subtests (2026-10-21, I-STUD 일체 Se 재산정 후, Windows)
 - `python -m pytest` : 86 passed + 195 subtests (2026-10-20, B-8 강재 DB 분리 후, Windows)
 - `python -m pytest` : 73 passed + 57 subtests (2026-10-20, E-9 중립축 검사 후, Windows)
 - `python -m pytest` : 67 passed + 57 subtests (2026-10-20, 피스 tilting·지압 Ω 3.0·R 재보정 후, Windows)

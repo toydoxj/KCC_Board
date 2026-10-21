@@ -1,7 +1,7 @@
 {
   "_source": "stud.dxf (KCC 단면도, 정본) — 2026-10-16 재산정. 이전: 스터드_단면성능_2.xlsx",
   "_unit": "mm, mm^2, mm^3, mm^4",
-  "_method": "DXF 폴리라인 Shoelace(A)·Green(I, 도심축), Sx=Ix/c_max(최외단), Sy=Iy/x_max, r=sqrt(I/A). Se=유효단면계수(AISI S100-16 App.1, f=Fy=295MPa, 압축 양방향 중 최소, I-STUD는 2겹 독립 하한). Se_basis_Fy_MPa=Se 산정에 쓴 Fy(MPa) — 연결 강재 Fy와 다르면 계산 차단(B-8)",
+  "_method": "DXF 폴리라인 Shoelace(A)·Green(I, 도심축), Sx=Ix/c_max(최외단), Sy=Iy/x_max, r=sqrt(I/A). Se=유효단면계수(AISI S100-16 App.1, f=Fy=295MPa, 압축 양방향 중 최소, I-STUD는 2겹 플랜지 일체 거동(2026-10-21 확정, backend/tools/se_istud.py)). Se_basis_Fy_MPa=Se 산정에 쓴 Fy(MPa) — 연결 강재 Fy와 다르면 계산 차단(B-8)",
   "count": 69,
   "items": [
     {
@@ -437,7 +437,7 @@
       "Sy": 494,
       "rx": 32.08,
       "ry": 9.42,
-      "Se": 1947,
+      "Se": 2539,
       "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
@@ -456,7 +456,7 @@
       "Sy": 499,
       "rx": 42.31,
       "ry": 8.85,
-      "Se": 2651,
+      "Se": 3459,
       "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
@@ -475,7 +475,7 @@
       "Sy": 659,
       "rx": 31.94,
       "ry": 9.43,
-      "Se": 3081,
+      "Se": 3794,
       "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
@@ -494,7 +494,7 @@
       "Sy": 659,
       "rx": 38.44,
       "ry": 9.03,
-      "Se": 4032,
+      "Se": 4899,
       "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
@@ -513,7 +513,7 @@
       "Sy": 664,
       "rx": 42.17,
       "ry": 8.85,
-      "Se": 4590,
+      "Se": 5587,
       "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
@@ -532,7 +532,7 @@
       "Sy": 671,
       "rx": 51.25,
       "ry": 8.41,
-      "Se": 5672,
+      "Se": 7174,
       "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
@@ -551,7 +551,7 @@
       "Sy": 675,
       "rx": 60.04,
       "ry": 8.03,
-      "Se": 6752,
+      "Se": 8496,
       "Se_basis_Fy_MPa": 295,
       "section_class": "closed"
     },
