@@ -13,6 +13,7 @@ from typing import Mapping, cast
 from backend.engine.calculator import calculate_wall_check, request_from_golden_case
 from backend.engine.constants import BOARD_YIELD_RATIO_BY_BOARD, BOARD_YIELD_RATIO_FROM_FRACTURE
 from backend.engine.repository import (
+  BOARD_ELASTIC_MODULUS_GPA,
   DEFAULT_BOARD_E_GPA,
   JsonSeedRepository,
   RepositoryLookupError,
@@ -121,6 +122,27 @@ class SqliteRepositoryTest(unittest.TestCase):
 
     self.assertAlmostEqual(board.Fy, board.Fu * BOARD_YIELD_RATIO_BY_BOARD[("방수", 9.5)][0])
     self.assertAlmostEqual(board.E_GPa, 4.72)
+
+  def test_seed_elastic_modulus_matches_migration_table(self) -> None:
+    # 시드 E와 로컬 DB 이관 표 E가 같아야 한다(한쪽만 수정하는 회귀 방지)
+    seed = json.loads((ROOT / "data/seed/board_property.json").read_text(encoding="utf-8"))
+    # E 미등재(차음 15 → 기본값 적용)는 이관 표 대상이 아님
+    seed_e = {
+      (item["kind"], float(item["thickness"])): item["E_GPa"] for item in seed["items"] if item.get("E_GPa") is not None
+    }
+    self.assertEqual(seed_e, BOARD_ELASTIC_MODULUS_GPA)
+
+  def test_high_strength_12_5_elastic_modulus_corrected_thickness(self) -> None:
+    # 2026-10-24: 휨시험 시트 1~4 두께 15 → 12.5 mm 정정 후 평균 6.06 GPa(종전 3.49)
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute(
+        "UPDATE board_property SET E_GPa = ? WHERE kind = ? AND thickness = ?",
+        (3.49, "고강도일반", 12.5),
+      )
+      connection.commit()
+    migrated = SqliteRepository(self.db_path).get_board("고강도일반", 12.5)
+    self.assertAlmostEqual(migrated.E_GPa, 6.06)
+    self.assertAlmostEqual(self.json_repository.get_board("고강도일반", 12.5).E_GPa, 6.06)
 
   def test_existing_sqlite_without_fu_column_is_migrated(self) -> None:
     with closing(sqlite3.connect(self.db_path)) as connection:
