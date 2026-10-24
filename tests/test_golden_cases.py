@@ -19,6 +19,7 @@ from backend.engine.calculator import (
   _nominal_moment,
   _pitch_for_order,
   _screw_stud_side_shear_N,
+  _stiffness_reference_shear_N,
   _shear_connection_by_layer,
   bolt_values_from_ply_order,
   calculate_wall_check,
@@ -30,6 +31,8 @@ from backend.engine.constants import (
   STANDARD_SCREW_COUNT,
   STANDARD_SCREW_PITCH_MM,
   STIFFNESS_REF_SCREW_PITCH_MM,
+  STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE,
+  STIFFNESS_TYPE_C,
 )
 from backend.engine.models import BoardLayer, StudInput
 from backend.engine.repository import JsonSeedRepository
@@ -293,20 +296,22 @@ class GoldenCaseTest(unittest.TestCase):
 
   def test_effective_inertia_correction_factor_mapping(self) -> None:
     cases = [
-      ("C-STUD", "기본", 0.73),
-      ("C-STUD", "맞댐이음", 0.73),
-      ("C-STUD", "중앙부 이음", 0.37),
-      ("C-STUD", "중앙부연결", 0.37),
-      ("CH-STUD", "기본", 0.68),
-      ("CH-STUD(개량형)", "기본", 0.68),
-      ("T-Silent", "기본", 0.56),
-      ("T.silent-STUD", "기본", 0.56),
-      ("R.STUD", "기본", 0.28),
-      ("R-STUD", "기본", 0.28),
+      # E-11(2026-10-24): 허용처짐 상태 실측 할선강성 기준(backend/tools/r_calibration.py), 상한 1.0
+      ("C-STUD", "기본", 1.00),
+      ("C-STUD", "맞댐이음", 1.00),
+      ("C-STUD", "중앙부 이음", 0.44),
+      ("C-STUD", "중앙부연결", 0.44),
+      ("CH-STUD", "기본", 0.79),
+      ("CH-STUD(개량형)", "기본", 0.79),
+      ("T-Silent", "기본", 0.70),
+      ("T.silent-STUD", "기본", 0.70),
+      ("R.STUD", "기본", 0.31),
+      ("R-STUD", "기본", 0.31),
       ("I-STUD", "기본", 1.00),
-      ("HR-STUD", "기본", 0.74),
-      ("RV-STUD", "기본", 0.54),
-      ("MP-STUD", "기본", 0.52),
+      ("HR-STUD", "기본", 0.77),
+      ("RV-STUD", "기본", 0.66),
+      ("MP-STUD", "기본", 0.63),
+      ("미등록-STUD", "기본", 1.00),
     ]
 
     for group, method, expected in cases:
@@ -333,7 +338,7 @@ class GoldenCaseTest(unittest.TestCase):
     result = _calculate_wall_check_once(request, self.repository)
     layer_inertia_sum = sum(layer.inertia_about_neutral_axis_mm4 for layer in result.layers)
 
-    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.68)
+    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.79)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
     self.assertAlmostEqual(
       result.I_eff_mm4,
@@ -346,11 +351,11 @@ class GoldenCaseTest(unittest.TestCase):
     )
     central_result = _calculate_wall_check_once(central_request, self.repository)
 
-    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.37)
+    self.assertAlmostEqual(central_result.intermediate["I_eff_correction_factor"], 0.44)
     self.assertAlmostEqual(
       central_result.I_eff_mm4,
       max(
-        central_result.intermediate["I_eff_raw_mm4"] * 0.37,
+        central_result.intermediate["I_eff_raw_mm4"] * 0.44,
         central_result.intermediate["I_eff_lower_bound_mm4"],
       ),
     )
@@ -605,7 +610,9 @@ class GoldenCaseTest(unittest.TestCase):
       bolt=replace(base.bolt, pitch=tuple(2.0 * value for value in base.bolt.pitch)),
     )
     heavy_result = _calculate_wall_check_once(heavy, self.repository)
-    v_ref = 306.0 * 9.81 * 1500.0 / 2400.0
+    # 형식별 V* (C-STUD 맞댐 → C-STUD 형식, R 보정점 피스력)
+    v_ref = STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE[STIFFNESS_TYPE_C]
+    self.assertAlmostEqual(_stiffness_reference_shear_N("C-STUD", "맞댐"), v_ref)
     expected_ratio = 1.0e-3 * heavy.spacing_mm * heavy.span_mm / 2.0 / v_ref * 2.0
     m = heavy_result.intermediate["stiffness_curve_exponent_m"]
     self.assertAlmostEqual(heavy_result.intermediate["screw_utilization_ratio"], expected_ratio)
