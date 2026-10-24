@@ -32,8 +32,20 @@ from backend.engine.constants import (
   SEISMIC_FP_COEFFICIENT,
   STANDARD_SCREW_PITCH_MM,
   STEEL_DENSITY_KG_M3,
+  DEFAULT_EFFECTIVE_INERTIA_CORRECTION,
+  EFFECTIVE_INERTIA_CORRECTION_BY_TYPE,
   STIFFNESS_REF_SCREW_PITCH_MM,
-  STIFFNESS_REF_SUPPORT_SHEAR_N,
+  STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE,
+  STIFFNESS_TYPE_C,
+  STIFFNESS_TYPE_C_CENTRAL_JOINT,
+  STIFFNESS_TYPE_C_FRONT_ONLY,
+  STIFFNESS_TYPE_CH,
+  STIFFNESS_TYPE_HR,
+  STIFFNESS_TYPE_I,
+  STIFFNESS_TYPE_MP,
+  STIFFNESS_TYPE_R,
+  STIFFNESS_TYPE_RV,
+  STIFFNESS_TYPE_T_SILENT,
   STUD_ELASTIC_MODULUS,
 )
 from backend.engine.models import (
@@ -525,40 +537,51 @@ def _is_basic_method(method: str) -> bool:
   return normalized == "C-STUD" or "기본" in normalized
 
 
+def _stiffness_calibration_type(group: str, method: str, has_rear_board: bool = True) -> str | None:
+  """시험 보정계수 R·E-8 기준 피스력의 형식 분류(시험 시편 11종 기준). 미등록 형식은 None."""
+  normalized_group = group.replace(".", "-").replace(" ", "").upper()
+  if normalized_group == "C-STUD":
+    if _is_central_joint_method(method):
+      return STIFFNESS_TYPE_C_CENTRAL_JOINT
+    if _is_basic_method(method) and not has_rear_board:
+      return STIFFNESS_TYPE_C_FRONT_ONLY
+    return STIFFNESS_TYPE_C
+  if normalized_group.startswith("CH-STUD"):
+    return STIFFNESS_TYPE_CH
+  if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
+    return STIFFNESS_TYPE_T_SILENT
+  if normalized_group == "R-STUD":
+    return STIFFNESS_TYPE_R
+  if normalized_group == "I-STUD":
+    return STIFFNESS_TYPE_I
+  if normalized_group == "HR-STUD":
+    return STIFFNESS_TYPE_HR
+  if normalized_group == "RV-STUD":
+    return STIFFNESS_TYPE_RV
+  if normalized_group == "MP-STUD":
+    return STIFFNESS_TYPE_MP
+  return None
+
+
 def _effective_inertia_correction_factor(
   group: str,
   method: str,
   has_rear_board: bool = True,
 ) -> float:
-  # 시험 보정계수 R. 시험체 조건(L=2400)의 보정 강성 R·Ieff_raw를 유지하도록
-  # R_new = R_old × Ieff_raw,old / Ieff_raw,new (소수 2자리, 동률은 보수측 하향).
-  # 2026-10 1차: DXF 단면성능·중앙부이음 관성 수정. 2026-10 2차(B-3): 보드 항복비 0.6 → 실측 Py/Pu
-  # (시험 보드 방화 19 0.65, 방화 25 0.80, 방화 15 0.70)에 따른 η 감소분 재보정.
-  # 변동 1% 미만(C 기본 일면 1.006)은 기존값 유지.
-  # 2026-10 3차(A-4·D-7): 피스 전단에 스터드 tilting·지압 / Ω 3.0 반영(강성 경로 포함)에 따른 η 감소분 재보정.
-  normalized_group = group.replace(".", "-").replace(" ", "").upper()
-  if normalized_group == "C-STUD":
-    if _is_central_joint_method(method):
-      return 0.37
-    if _is_basic_method(method) and not has_rear_board:
-      return 1.0
-    return 0.73
-  if normalized_group.startswith("CH-STUD"):
-    return 0.68
-  if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
-    return 0.56
-  if normalized_group == "R-STUD":
-    return 0.28
-  if normalized_group == "I-STUD":
-    # 재보정 계산값 1.005 → R ≤ 1.0 상한(이론 부분합성 강성 초과 금지, 사용자 결정)
-    return 1.0
-  if normalized_group == "HR-STUD":
-    return 0.74
-  if normalized_group == "RV-STUD":
-    return 0.54
-  if normalized_group == "MP-STUD":
-    return 0.52
-  return 1.0
+  # 시험 보정계수 R(E-11, 2026-10-24): 허용처짐(H/240) 상태 사용하중 모멘트 M_L에서의
+  # 실측 할선강성 / 엔진 Ieff,raw(L = 2,400). 값은 constants 표(backend/tools/r_calibration.py 산정).
+  calibration_type = _stiffness_calibration_type(group, method, has_rear_board)
+  if calibration_type is None:
+    return DEFAULT_EFFECTIVE_INERTIA_CORRECTION
+  return EFFECTIVE_INERTIA_CORRECTION_BY_TYPE[calibration_type]
+
+
+def _stiffness_reference_shear_N(group: str, method: str, has_rear_board: bool = True) -> float:
+  """E-8 형식별 기준 피스력 V*(N). 미등록 형식은 표의 최솟값(강성 저감이 가장 큰 쪽)."""
+  calibration_type = _stiffness_calibration_type(group, method, has_rear_board)
+  if calibration_type is None:
+    return min(STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE.values())
+  return STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE[calibration_type]
 
 
 def _stiffness_curve_exponent(group: str, method: str) -> float:
@@ -596,9 +619,9 @@ def _stiffness_load_factor(
 
   u/u_ref = (V_d / V_ref) × (p / p_ref)_max
   - V_d: 처짐 검토 하중(활하중)에 의한 스터드 1개당 지점 전단력 = q·s·L/2
-  - V_ref: 시험 최대 가력 시 짧은 전단경간의 전단력(R 정의 하중 수준)
+  - V_ref: 형식별 R 보정점(허용처짐 상태)의 시험 피스 전단력 V* = P*·a/L
   - p/p_ref: 층별 피스 간격 / 시험 피스 간격(피스 1개당 전단력 ∝ 간격)
-  피스력이 시험 수준 이하(u ≤ u_ref)이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
+  피스력이 보정점 수준 이하(u ≤ u_ref)이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
   """
   support_shear_N = request.live_load_kN_m2 * 1e-3 * request.spacing_mm * request.span_mm / 2.0
   pitch_ratio = max(
@@ -609,7 +632,8 @@ def _stiffness_load_factor(
     ),
     default=1.0,
   )
-  utilization_ratio = support_shear_N / STIFFNESS_REF_SUPPORT_SHEAR_N * pitch_ratio
+  reference_shear_N = _stiffness_reference_shear_N(group, method, has_rear_board=bool(request.rear_boards))
+  utilization_ratio = support_shear_N / reference_shear_N * pitch_ratio
   exponent = _stiffness_curve_exponent(group, method)
   if utilization_ratio <= 1.0:
     return utilization_ratio, exponent, 1.0

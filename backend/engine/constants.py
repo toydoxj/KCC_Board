@@ -16,32 +16,34 @@ ANCHOR_SPACING_MAX_MM = 600.0
 
 # 석고보드 항복비 Fy/Fu 기본값 — 아래 표에 없는 보드(미등재)에만 적용
 BOARD_YIELD_RATIO_FROM_FRACTURE = 0.6
-# 석고보드 종류·두께별 항복비 Fy/Fu = Py/Pu (1차 심사의견 B-3, 2026-10).
-# 시험: KCC 휨-변위 시험 41개 시험체, 초기 선형 회귀 직선 대비 하중 5% 저하점(비례한도)의 평균.
+# 석고보드 종류·두께별 항복비 Fy/Fu = Py/Pu (1차 심사의견 B-3, 2026-10-24 갱신).
+# 시험: KCC 휨-변위 시험 41개 시험체. 원점~최대하중 구간의 하중-변위 곡선을 연속 이선형
+# 근사(최소제곱)했을 때의 꺾임점 하중 Py와 최대하중 Pu의 비를 종류·두께별로 평균함.
+# 산정 도구: backend/tools/board_yield_ratio.py (종전 5% 저하점 기준 값은 docs/review_round1_changes.md §1-4).
 # 준용: 미시험 종류는 심재 계열·단위중량이 같은(유사한) 시험 보드 값을 적용함.
 # 값: (Fy/Fu, 근거)
 BOARD_YIELD_RATIO_BY_BOARD: dict[tuple[str, float], tuple[float, str]] = {
-  ("일반", 9.5): (0.52, "시험"),
-  ("일반", 12.5): (0.55, "시험"),
-  ("일반", 15.0): (0.59, "시험"),
-  ("방화", 12.5): (0.56, "시험"),
-  ("방화", 15.0): (0.70, "시험"),
-  ("방화", 19.0): (0.65, "시험"),
-  ("방화", 25.0): (0.80, "시험"),
-  ("고강도일반", 12.5): (0.61, "시험"),
-  ("전방수", 12.5): (0.48, "시험"),
-  ("전방수", 15.0): (0.38, "시험"),
-  ("방수", 9.5): (0.52, "준용: 일반 9.5"),
-  ("방수", 12.5): (0.55, "준용: 일반 12.5"),
-  ("방균", 9.5): (0.52, "준용: 일반 9.5"),
-  ("방균", 12.5): (0.55, "준용: 일반 12.5"),
-  ("방화방수", 12.5): (0.56, "준용: 방화 12.5"),
-  ("방화방수", 15.0): (0.70, "준용: 방화 15"),
-  ("방화방수", 19.0): (0.65, "준용: 방화 19"),
-  ("차음", 9.5): (0.56, "준용: 방화 12.5"),
-  ("차음", 12.5): (0.56, "준용: 방화 12.5"),
-  ("고강도일반", 15.0): (0.61, "준용: 고강도일반 12.5"),
-  ("고강도전방수", 12.5): (0.61, "준용: 고강도일반 12.5"),
+  ("일반", 9.5): (0.58, "시험"),
+  ("일반", 12.5): (0.61, "시험"),
+  ("일반", 15.0): (0.68, "시험"),
+  ("방화", 12.5): (0.66, "시험"),
+  ("방화", 15.0): (0.75, "시험"),
+  ("방화", 19.0): (0.70, "시험"),
+  ("방화", 25.0): (0.83, "시험"),
+  ("고강도일반", 12.5): (0.68, "시험"),
+  ("전방수", 12.5): (0.50, "시험"),
+  ("전방수", 15.0): (0.39, "시험"),
+  ("방수", 9.5): (0.58, "준용: 일반 9.5"),
+  ("방수", 12.5): (0.61, "준용: 일반 12.5"),
+  ("방균", 9.5): (0.58, "준용: 일반 9.5"),
+  ("방균", 12.5): (0.61, "준용: 일반 12.5"),
+  ("방화방수", 12.5): (0.66, "준용: 방화 12.5"),
+  ("방화방수", 15.0): (0.75, "준용: 방화 15"),
+  ("방화방수", 19.0): (0.70, "준용: 방화 19"),
+  ("차음", 9.5): (0.66, "준용: 방화 12.5"),
+  ("차음", 12.5): (0.66, "준용: 방화 12.5"),
+  ("고강도일반", 15.0): (0.68, "준용: 고강도일반 12.5"),
+  ("고강도전방수", 12.5): (0.68, "준용: 고강도일반 12.5"),
 }
 # 피스(볼트) 전단강도 Fv = 0.6 × Fy (전단항복비, EN 1993-1-8 계열)
 BOLT_SHEAR_TO_YIELD_RATIO = 0.6
@@ -74,9 +76,50 @@ GYPSUM_SCREW_STRENGTH_DIVISOR = 2.0
 FIXED_REAR_BOARD_SCREW_PITCH_MM = 300.0
 FIXED_REAR_BOARD_SCREW_COUNT = 2.0
 
+# 시험 보정계수 R(E-11)과 E-8 기준 피스력 V*의 형식 분류명 (calculator._stiffness_calibration_type)
+STIFFNESS_TYPE_C_CENTRAL_JOINT = "C-STUD 중앙부이음"
+STIFFNESS_TYPE_C_FRONT_ONLY = "C-STUD 기본 일면"
+STIFFNESS_TYPE_C = "C-STUD"
+STIFFNESS_TYPE_CH = "CH-STUD"
+STIFFNESS_TYPE_T_SILENT = "T.silent-STUD"
+STIFFNESS_TYPE_R = "R-STUD"
+STIFFNESS_TYPE_I = "I-STUD"
+STIFFNESS_TYPE_HR = "HR-STUD"
+STIFFNESS_TYPE_RV = "RV-STUD"
+STIFFNESS_TYPE_MP = "MP-STUD"
+
+# 시험 보정계수 R = 허용처짐 상태 실측 할선강성 / Ieff,raw(L = 2,400) (E-11, 2026-10-24).
+# 산정 도구: backend/tools/r_calibration.py. 소수 2자리 내림, 상한 1.0(이론 부분합성 강성 초과 금지).
+EFFECTIVE_INERTIA_CORRECTION_BY_TYPE: dict[str, float] = {
+  STIFFNESS_TYPE_C_CENTRAL_JOINT: 0.44,
+  STIFFNESS_TYPE_C_FRONT_ONLY: 1.0,
+  STIFFNESS_TYPE_C: 1.0,
+  STIFFNESS_TYPE_CH: 0.79,
+  STIFFNESS_TYPE_T_SILENT: 0.70,
+  STIFFNESS_TYPE_R: 0.31,
+  STIFFNESS_TYPE_I: 1.0,
+  STIFFNESS_TYPE_HR: 0.77,
+  STIFFNESS_TYPE_RV: 0.66,
+  STIFFNESS_TYPE_MP: 0.63,
+}
+# 미등록 형식의 R
+DEFAULT_EFFECTIVE_INERTIA_CORRECTION = 1.0
+
 # 피스 활용도 기준 단방향 강성 보정 (E-8): I = R·Ieff,raw·min[1, (u/u_ref)^(1−m)]
-# 시험 기준 피스 전단 대리값: 스터드 1개당 지점 전단력 V_ref = P·a/L (P = 306 kgf, a = 1,500, L = 2,400 mm)
-STIFFNESS_REF_SUPPORT_SHEAR_N = 306.0 * 9.81 * 1500.0 / 2400.0
+# 형식별 기준 피스력 V* = P*·a/L (N). P* = M_L/(a·b/L)는 R 보정점(허용처짐 상태)의 시험 환산 하중
+# (a = 1,500, b = 900, L = 2,400 mm). 산정 도구: backend/tools/r_calibration.py
+STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE: dict[str, float] = {
+  STIFFNESS_TYPE_C_CENTRAL_JOINT: 1169.1,
+  STIFFNESS_TYPE_C_FRONT_ONLY: 390.6,
+  STIFFNESS_TYPE_C: 787.7,
+  STIFFNESS_TYPE_CH: 800.8,
+  STIFFNESS_TYPE_T_SILENT: 754.7,
+  STIFFNESS_TYPE_R: 620.2,
+  STIFFNESS_TYPE_I: 826.9,
+  STIFFNESS_TYPE_HR: 1772.2,
+  STIFFNESS_TYPE_RV: 711.9,
+  STIFFNESS_TYPE_MP: 691.0,
+}
 # 시험 피스 간격(엔진 bolt.pitch 순서: 3번 외측 / 2번 중간 / 1번 내측, mm) — u/u_ref에 피치비로 반영
 # 엑셀 VAR. C32:C34 = [1P 600, 2P 300, 3P 300], 1P = 내측(스터드 인접)
 STIFFNESS_REF_SCREW_PITCH_MM = (300.0, 300.0, 600.0)

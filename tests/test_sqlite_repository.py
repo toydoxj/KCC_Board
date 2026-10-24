@@ -84,7 +84,7 @@ class SqliteRepositoryTest(unittest.TestCase):
           self.assertAlmostEqual(board.yield_ratio, ratio)
           self.assertEqual(board.yield_ratio_source, source)
     fire_19 = self.json_repository.get_board("방화", 19.0)
-    self.assertAlmostEqual(fire_19.yield_ratio, 0.65)
+    self.assertAlmostEqual(fire_19.yield_ratio, 0.70)  # 이선형 근사 꺾임점(2026-10-24)
     self.assertEqual(fire_19.yield_ratio_source, "시험")
 
   def test_stud_method_catalog_preserves_seed_rows(self) -> None:
