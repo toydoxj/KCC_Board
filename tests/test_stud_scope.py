@@ -14,10 +14,12 @@ from backend.engine.calculator import (
   CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM,
   _calculate_wall_check_once,
   _effective_inertia_correction_factor,
+  _require_calibration_type,
   _stiffness_curve_exponent,
   _stiffness_reference_shear_N,
   calculate_wall_check,
 )
+from backend.engine.constants import STIFFNESS_TYPE_C, STIFFNESS_TYPE_C_CENTRAL_JOINT, STIFFNESS_TYPE_C_FRONT_ONLY
 from backend.engine.models import StudInput, WallCheckRequest
 from backend.engine.repository import JsonSeedRepository
 from backend.tools.r_calibration import specimen_requests
@@ -108,6 +110,70 @@ class RegisteredStudTypeTest(unittest.TestCase):
           request = _base_request(group, method)
           request = replace(request, stud=StudInput(stud_type=group, spec=section["name"], method=method))
           _calculate_wall_check_once(request, repository)
+
+
+class CStudOneSideClassificationTest(unittest.TestCase):
+  """C-STUD 이중스터드·일면마감은 한쪽 면만 검토 — 후면 보드 없음 = 'C-STUD 기본 일면'(2026-10-24 사용자 승인)."""
+
+  @classmethod
+  def setUpClass(cls) -> None:
+    cls.repository = JsonSeedRepository(ROOT / "data/seed")
+    cls.requests = specimen_requests()
+
+  def test_c_stud_without_rear_board_is_front_only_type(self) -> None:
+    for method in ("기본", "C-STUD", "일면마감", "이중스터드", "일면 마감", "맞댐이음"):
+      with self.subTest(method=method):
+        self.assertEqual(_require_calibration_type("C-STUD", method, has_rear_board=False), STIFFNESS_TYPE_C_FRONT_ONLY)
+        self.assertEqual(_stiffness_reference_shear_N("C-STUD", method, has_rear_board=False), 390.6)
+        self.assertEqual(_effective_inertia_correction_factor("C-STUD", method, has_rear_board=False), 1.0)
+    # 맞댐이음·후면 없음: 분류는 일면, m은 맞댐 기준 1.49 유지(보수측)
+    self.assertEqual(_stiffness_curve_exponent("C-STUD", "맞댐이음", has_rear_board=False), 1.49)
+
+  def test_c_stud_classification_with_rear_board_and_central_joint(self) -> None:
+    for method in ("기본", "맞댐이음"):
+      with self.subTest(method=method):
+        self.assertEqual(_require_calibration_type("C-STUD", method, has_rear_board=True), STIFFNESS_TYPE_C)
+    for has_rear_board in (True, False):
+      with self.subTest(central_joint=True, has_rear_board=has_rear_board):
+        self.assertEqual(
+          _require_calibration_type("C-STUD", "중앙부 이음", has_rear_board=has_rear_board),
+          STIFFNESS_TYPE_C_CENTRAL_JOINT,
+        )
+
+  def test_one_side_review_method_rejects_rear_boards(self) -> None:
+    base = self.requests["requested_04_c_stud_basic"]  # 후면 보드 2장
+    self.assertTrue(base.rear_boards)
+    for method in ("일면마감", "이중스터드", "이중 스터드", "이중\t스터드", "일면 마감"):
+      with self.subTest(method=method):
+        request = replace(base, stud=replace(base.stud, method=method))
+        with self.assertRaisesRegex(ValueError, "후면 석고보드를 입력할 수 없습니다"):
+          calculate_wall_check(request, self.repository)
+    # 공법이 형식명에 포함된 복합 형식명(method 생략)
+    for stud_type in ("C-STUD(이중스터드)", "C-STUD(일면마감)"):
+      with self.subTest(stud_type=stud_type):
+        request = replace(base, stud=StudInput(stud_type=stud_type, spec=base.stud.spec))
+        with self.assertRaisesRegex(ValueError, "후면 석고보드를 입력할 수 없습니다"):
+          calculate_wall_check(request, self.repository)
+
+  def test_api_rejects_rear_boards_for_compound_one_side_type(self) -> None:
+    client = TestClient(create_app(self.repository))
+    base = self.requests["requested_04_c_stud_basic"]
+    payload = asdict(replace(base, stud=StudInput(stud_type="C-STUD(이중스터드)", spec=base.stud.spec)))
+    response = client.post("/api/check", json=payload)
+    self.assertEqual(response.status_code, 400)
+    self.assertEqual(response.json()["error"]["code"], "CALCULATION_ERROR")
+
+  def test_one_side_review_method_equals_basic_front_only(self) -> None:
+    base = self.requests["requested_02_c_stud_basic_front_only"]
+    for spec, spacing in (("50S-45-08", 450.0), ("160S-45-10", 600.0)):
+      basic = replace(base, spacing_mm=spacing, stud=replace(base.stud, spec=spec, method="기본"))
+      basic_result = calculate_wall_check(basic, self.repository)
+      for method in ("일면마감", "이중스터드"):
+        with self.subTest(spec=spec, spacing=spacing, method=method):
+          result = calculate_wall_check(replace(basic, stud=replace(basic.stud, method=method)), self.repository)
+          self.assertEqual(result.max_height_mm, basic_result.max_height_mm)
+          self.assertEqual(result.I_eff_mm4, basic_result.I_eff_mm4)
+          self.assertEqual(result.intermediate["stiffness_load_factor"], basic_result.intermediate["stiffness_load_factor"])
 
 
 def _base_request(group: str, method: str | None) -> WallCheckRequest:

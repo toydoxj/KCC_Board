@@ -69,6 +69,9 @@ CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM = 12.5
 I_STUD_REAR_BOARD_KIND = "방화"
 I_STUD_REAR_BOARD_THICKNESS_MM = 25.0
 R_STUD_BOARD_STUD_CLEAR_GAP_MM = 12.0
+# 한쪽 면만 검토하는 C-STUD 공법명(stud_method.json, 공백 제거 비교)
+C_STUD_ONE_SIDE_FINISH_METHOD = "일면마감"
+C_STUD_DOUBLE_STUD_METHOD = "이중스터드"
 DESIGN_CASE_SEISMIC = "seismic"
 DESIGN_CASE_NON_SEISMIC = "non_seismic"
 DESIGN_CASES = {DESIGN_CASE_SEISMIC, DESIGN_CASE_NON_SEISMIC}
@@ -358,6 +361,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
   fixed_rear_board = _fixed_rear_board_for_group(group)
   if fixed_rear_board is not None:
     _validate_fixed_rear_boards(group, request.rear_boards, fixed_rear_board)
+  _validate_one_side_review_rear_boards(group, method, request.rear_boards)
   layers: list[_Layer] = []
   y_cursor = 0.0
   rear_boards = _assign_rear_orders(request.rear_boards)
@@ -533,18 +537,34 @@ def _is_central_joint_method(method: str) -> bool:
   return "중앙부이음" in normalized or "중앙부연결" in normalized
 
 
-def _is_basic_method(method: str) -> bool:
-  normalized = method.replace(".", "-").replace(" ", "").upper()
-  return normalized == "C-STUD" or "기본" in normalized
+def _is_one_side_review_method(method: str) -> bool:
+  """일면마감·이중스터드: 한쪽 면만 검토하는 C-STUD 공법(후면 보드 없음).
+
+  모든 공백 문자를 제거하고 부분 일치로 판정한다(복합 형식명 "C-STUD(이중스터드)" 포함).
+  """
+  normalized = "".join(method.split())
+  return C_STUD_ONE_SIDE_FINISH_METHOD in normalized or C_STUD_DOUBLE_STUD_METHOD in normalized
+
+
+def _is_c_stud_group(group: str) -> bool:
+  return group.replace(".", "-").replace(" ", "").upper() == "C-STUD"
+
+
+def _validate_one_side_review_rear_boards(group: str, method: str, rear_boards: tuple[BoardLayer, ...]) -> None:
+  if _is_c_stud_group(group) and _is_one_side_review_method(method) and rear_boards:
+    raise ValueError("이중스터드·일면마감은 한쪽 면만 검토하므로 후면 석고보드를 입력할 수 없습니다.")
 
 
 def _stiffness_calibration_type(group: str, method: str, has_rear_board: bool = True) -> str | None:
-  """시험 보정계수 R·E-8 기준 피스력의 형식 분류(시험 시편 11종 기준). 미등록 형식은 None."""
+  """시험 보정계수 R·E-8 기준 피스력의 형식 분류(시험 시편 11종 기준). 미등록 형식은 None.
+
+  C-STUD: 중앙부 이음 → 중앙부이음, 후면 보드 없음 → 기본 일면(공법 무관, 2026-10-24), 그 외 → C.
+  """
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
     if _is_central_joint_method(method):
       return STIFFNESS_TYPE_C_CENTRAL_JOINT
-    if _is_basic_method(method) and not has_rear_board:
+    if not has_rear_board:
       return STIFFNESS_TYPE_C_FRONT_ONLY
     return STIFFNESS_TYPE_C
   if normalized_group.startswith("CH-STUD"):
