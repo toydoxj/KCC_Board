@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, net, protocol } = require("electron");
+const { app, BrowserWindow, Menu, dialog, net, protocol } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("node:child_process");
@@ -8,6 +8,7 @@ const API_HOST = "127.0.0.1";
 const API_PORT = "8000";
 
 let backendProcess = null;
+let helpWindow = null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -204,15 +205,58 @@ async function createWindow() {
     mainWindow.show();
   });
 
-  if (app.isPackaged) {
-    await mainWindow.loadURL("kcc-board://kcc-board/");
-  } else {
-    await mainWindow.loadURL("http://127.0.0.1:3000");
+  await mainWindow.loadURL(getRendererUrl("/"));
+}
+
+function getRendererUrl(route) {
+  return app.isPackaged ? `kcc-board://kcc-board${route}` : `http://127.0.0.1:3000${route}`;
+}
+
+// 사용 매뉴얼(/help)은 별도 창으로 연다. 계산 화면 입력값을 유지하기 위함
+function openHelpWindow() {
+  if (helpWindow && !helpWindow.isDestroyed()) {
+    helpWindow.focus();
+    return;
   }
+  helpWindow = new BrowserWindow({
+    width: 1200,
+    height: 900,
+    minWidth: 800,
+    minHeight: 600,
+    title: "KCC Board 사용 매뉴얼",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  helpWindow.setMenuBarVisibility(false);
+  helpWindow.on("closed", () => {
+    helpWindow = null;
+  });
+  helpWindow.loadURL(getRendererUrl("/help")).catch((error) => {
+    dialog.showErrorBox("사용 매뉴얼을 열 수 없습니다", error instanceof Error ? error.message : String(error));
+  });
+}
+
+function buildApplicationMenu() {
+  const template = [
+    { role: "fileMenu" },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        { label: "사용 매뉴얼", accelerator: "F1", click: openHelpWindow },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 app.whenReady().then(() => {
   registerRendererProtocol();
+  buildApplicationMenu();
   return createWindow();
 });
 
