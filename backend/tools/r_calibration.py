@@ -195,9 +195,10 @@ def calibrate_specimen(
   if request.deflection_limit_denom != CALIBRATION_DEFLECTION_DENOM:
     raise CalibrationError(f"{specimen_id}: 처짐 한계 L/{request.deflection_limit_denom} ≠ L/{CALIBRATION_DEFLECTION_DENOM}")
   group, method = calculator._parse_stud_type(request.stud)
-  calibration_type = calculator._stiffness_calibration_type(group, method, bool(request.rear_boards))
-  if calibration_type is None:
-    raise CalibrationError(f"{specimen_id}: 형식 분류가 없습니다({group}, {method}).")
+  try:
+    calibration_type = calculator._require_calibration_type(group, method, bool(request.rear_boards))
+  except ValueError as error:
+    raise CalibrationError(f"{specimen_id}: {error}") from error
   I_raw_2400 = calculator._calculate_wall_check_once(
     replace(request, span_mm=TEST_SPAN_MM), repository
   ).intermediate["I_eff_raw_mm4"]

@@ -32,8 +32,9 @@ from backend.engine.constants import (
   SEISMIC_FP_COEFFICIENT,
   STANDARD_SCREW_PITCH_MM,
   STEEL_DENSITY_KG_M3,
-  DEFAULT_EFFECTIVE_INERTIA_CORRECTION,
   EFFECTIVE_INERTIA_CORRECTION_BY_TYPE,
+  STIFFNESS_CURVE_EXPONENT_BY_TYPE,
+  STIFFNESS_CURVE_EXPONENT_C_BUTT_JOINT,
   STIFFNESS_REF_SCREW_PITCH_MM,
   STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE,
   STIFFNESS_TYPE_C,
@@ -68,6 +69,9 @@ CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM = 12.5
 I_STUD_REAR_BOARD_KIND = "방화"
 I_STUD_REAR_BOARD_THICKNESS_MM = 25.0
 R_STUD_BOARD_STUD_CLEAR_GAP_MM = 12.0
+# 한쪽 면만 검토하는 C-STUD 공법명(stud_method.json, 공백 제거 비교)
+C_STUD_ONE_SIDE_FINISH_METHOD = "일면마감"
+C_STUD_DOUBLE_STUD_METHOD = "이중스터드"
 DESIGN_CASE_SEISMIC = "seismic"
 DESIGN_CASE_NON_SEISMIC = "non_seismic"
 DESIGN_CASES = {DESIGN_CASE_SEISMIC, DESIGN_CASE_NON_SEISMIC}
@@ -357,6 +361,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
   fixed_rear_board = _fixed_rear_board_for_group(group)
   if fixed_rear_board is not None:
     _validate_fixed_rear_boards(group, request.rear_boards, fixed_rear_board)
+  _validate_one_side_review_rear_boards(group, method, request.rear_boards)
   layers: list[_Layer] = []
   y_cursor = 0.0
   rear_boards = _assign_rear_orders(request.rear_boards)
@@ -532,18 +537,34 @@ def _is_central_joint_method(method: str) -> bool:
   return "중앙부이음" in normalized or "중앙부연결" in normalized
 
 
-def _is_basic_method(method: str) -> bool:
-  normalized = method.replace(".", "-").replace(" ", "").upper()
-  return normalized == "C-STUD" or "기본" in normalized
+def _is_one_side_review_method(method: str) -> bool:
+  """일면마감·이중스터드: 한쪽 면만 검토하는 C-STUD 공법(후면 보드 없음).
+
+  모든 공백 문자를 제거하고 부분 일치로 판정한다(복합 형식명 "C-STUD(이중스터드)" 포함).
+  """
+  normalized = "".join(method.split())
+  return C_STUD_ONE_SIDE_FINISH_METHOD in normalized or C_STUD_DOUBLE_STUD_METHOD in normalized
+
+
+def _is_c_stud_group(group: str) -> bool:
+  return group.replace(".", "-").replace(" ", "").upper() == "C-STUD"
+
+
+def _validate_one_side_review_rear_boards(group: str, method: str, rear_boards: tuple[BoardLayer, ...]) -> None:
+  if _is_c_stud_group(group) and _is_one_side_review_method(method) and rear_boards:
+    raise ValueError("이중스터드·일면마감은 한쪽 면만 검토하므로 후면 석고보드를 입력할 수 없습니다.")
 
 
 def _stiffness_calibration_type(group: str, method: str, has_rear_board: bool = True) -> str | None:
-  """시험 보정계수 R·E-8 기준 피스력의 형식 분류(시험 시편 11종 기준). 미등록 형식은 None."""
+  """시험 보정계수 R·E-8 기준 피스력의 형식 분류(시험 시편 11종 기준). 미등록 형식은 None.
+
+  C-STUD: 중앙부 이음 → 중앙부이음, 후면 보드 없음 → 기본 일면(공법 무관, 2026-10-24), 그 외 → C.
+  """
   normalized_group = group.replace(".", "-").replace(" ", "").upper()
   if normalized_group == "C-STUD":
     if _is_central_joint_method(method):
       return STIFFNESS_TYPE_C_CENTRAL_JOINT
-    if _is_basic_method(method) and not has_rear_board:
+    if not has_rear_board:
       return STIFFNESS_TYPE_C_FRONT_ONLY
     return STIFFNESS_TYPE_C
   if normalized_group.startswith("CH-STUD"):
@@ -563,6 +584,17 @@ def _stiffness_calibration_type(group: str, method: str, has_rear_board: bool = 
   return None
 
 
+def _require_calibration_type(group: str, method: str, has_rear_board: bool = True) -> str:
+  """시험 형식 분류를 반환한다. 시험 보정계수 R이 없는 형식은 적용 범위 밖이므로 ValueError."""
+  calibration_type = _stiffness_calibration_type(group, method, has_rear_board)
+  if calibration_type is None:
+    raise ValueError(
+      f"{group}({method})은(는) 시험 보정계수 R이 산정되지 않은 형식으로 적용 범위 밖입니다. "
+      "시험 형식(C·CH·T.silent·R·I·HR·RV·MP-STUD)만 계산할 수 있습니다."
+    )
+  return calibration_type
+
+
 def _effective_inertia_correction_factor(
   group: str,
   method: str,
@@ -570,43 +602,20 @@ def _effective_inertia_correction_factor(
 ) -> float:
   # 시험 보정계수 R(E-11, 2026-10-24): 허용처짐(H/240) 상태 사용하중 모멘트 M_L에서의
   # 실측 할선강성 / 엔진 Ieff,raw(L = 2,400). 값은 constants 표(backend/tools/r_calibration.py 산정).
-  calibration_type = _stiffness_calibration_type(group, method, has_rear_board)
-  if calibration_type is None:
-    return DEFAULT_EFFECTIVE_INERTIA_CORRECTION
-  return EFFECTIVE_INERTIA_CORRECTION_BY_TYPE[calibration_type]
+  return EFFECTIVE_INERTIA_CORRECTION_BY_TYPE[_require_calibration_type(group, method, has_rear_board)]
 
 
 def _stiffness_reference_shear_N(group: str, method: str, has_rear_board: bool = True) -> float:
-  """E-8 형식별 기준 피스력 V*(N). 미등록 형식은 표의 최솟값(강성 저감이 가장 큰 쪽)."""
-  calibration_type = _stiffness_calibration_type(group, method, has_rear_board)
-  if calibration_type is None:
-    return min(STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE.values())
-  return STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE[calibration_type]
+  """E-8 형식별 기준 피스력 V*(N)."""
+  return STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE[_require_calibration_type(group, method, has_rear_board)]
 
 
-def _stiffness_curve_exponent(group: str, method: str) -> float:
-  """실측 M–δ 곡선 δ = c·M^m 의 형식별 지수 m (실험 분석 시트 0724, 10~100% Mmax 구간, ch4 회귀)."""
-  normalized_group = group.replace(".", "-").replace(" ", "").upper()
-  if normalized_group == "C-STUD":
-    if _is_central_joint_method(method) or "맞댐" in method:
-      return 1.49
-    return 1.38
-  if normalized_group.startswith("CH-STUD"):
-    return 1.25
-  if normalized_group in {"T-SILENT", "T-SILENT-STUD"}:
-    return 1.29
-  if normalized_group == "R-STUD":
-    return 1.11
-  if normalized_group == "I-STUD":
-    return 1.26
-  if normalized_group == "HR-STUD":
-    return 1.33
-  if normalized_group == "RV-STUD":
-    return 1.25
-  if normalized_group == "MP-STUD":
-    return 1.24
-  # 미등록 형식: 시험 최대 m(보수측)
-  return 1.49
+def _stiffness_curve_exponent(group: str, method: str, has_rear_board: bool = True) -> float:
+  """실측 M–δ 곡선 δ = c·M^m 의 형식별 지수 m. C-STUD 맞댐이음은 분류명이 같아 공법으로 구분한다."""
+  calibration_type = _require_calibration_type(group, method, has_rear_board)
+  if calibration_type in {STIFFNESS_TYPE_C, STIFFNESS_TYPE_C_FRONT_ONLY} and "맞댐" in method:
+    return STIFFNESS_CURVE_EXPONENT_C_BUTT_JOINT
+  return STIFFNESS_CURVE_EXPONENT_BY_TYPE[calibration_type]
 
 
 def _stiffness_load_factor(
@@ -634,7 +643,7 @@ def _stiffness_load_factor(
   )
   reference_shear_N = _stiffness_reference_shear_N(group, method, has_rear_board=bool(request.rear_boards))
   utilization_ratio = support_shear_N / reference_shear_N * pitch_ratio
-  exponent = _stiffness_curve_exponent(group, method)
+  exponent = _stiffness_curve_exponent(group, method, has_rear_board=bool(request.rear_boards))
   if utilization_ratio <= 1.0:
     return utilization_ratio, exponent, 1.0
   return utilization_ratio, exponent, utilization_ratio ** (1.0 - exponent)

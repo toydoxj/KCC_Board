@@ -102,8 +102,23 @@ EFFECTIVE_INERTIA_CORRECTION_BY_TYPE: dict[str, float] = {
   STIFFNESS_TYPE_RV: 0.66,
   STIFFNESS_TYPE_MP: 0.63,
 }
-# 미등록 형식의 R
-DEFAULT_EFFECTIVE_INERTIA_CORRECTION = 1.0
+# 표에 없는 형식은 계산을 거부한다(2026-10-24, 인증 범위 = 시험 형식). calculator._require_calibration_type
+
+# 실측 M–δ 곡선 δ = c·M^m 의 형식별 지수 m (실험 분석 시트 0724, 10~100% Mmax 구간, ch4 회귀)
+STIFFNESS_CURVE_EXPONENT_BY_TYPE: dict[str, float] = {
+  STIFFNESS_TYPE_C_CENTRAL_JOINT: 1.49,
+  STIFFNESS_TYPE_C_FRONT_ONLY: 1.38,
+  STIFFNESS_TYPE_C: 1.38,
+  STIFFNESS_TYPE_CH: 1.25,
+  STIFFNESS_TYPE_T_SILENT: 1.29,
+  STIFFNESS_TYPE_R: 1.11,
+  STIFFNESS_TYPE_I: 1.26,
+  STIFFNESS_TYPE_HR: 1.33,
+  STIFFNESS_TYPE_RV: 1.25,
+  STIFFNESS_TYPE_MP: 1.24,
+}
+# C-STUD 맞댐이음의 m(분류명은 C·C 기본 일면과 같으므로 공법으로 구분)
+STIFFNESS_CURVE_EXPONENT_C_BUTT_JOINT = 1.49
 
 # 피스 활용도 기준 단방향 강성 보정 (E-8): I = R·Ieff,raw·min[1, (u/u_ref)^(1−m)]
 # 형식별 기준 피스력 V* = P*·a/L (N). P* = M_L/(a·b/L)는 R 보정점(허용처짐 상태)의 시험 환산 하중

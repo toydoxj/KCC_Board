@@ -238,13 +238,13 @@ export default function Home() {
   const selectedFixedRearBoardThickness = fixedRearBoardThicknessForGroup(selectedStudGroup);
   const selectedFixedRearBoardKind = fixedRearBoardKindForGroup(selectedStudGroup);
   const selectedHasFixedRearBoard = selectedFixedRearBoardThickness !== null;
-  const selectedIsOneSideFinish = isOneSideFinishMethod(selectedStudMethod);
-  const selectedRearBoardInputsDisabled = selectedHasFixedRearBoard || selectedIsOneSideFinish;
+  const selectedIsOneSideReview = isOneSideReviewMethod(selectedStudMethod);
+  const selectedRearBoardInputsDisabled = selectedHasFixedRearBoard || selectedIsOneSideReview;
   const selectedRearBoards = useMemo(
     () =>
       compactBoards(
         catalog?.boards ?? [],
-        selectedIsOneSideFinish
+        selectedIsOneSideReview
           ? []
           : selectedFixedRearBoardThickness === null
             ? [
@@ -266,7 +266,7 @@ export default function Home() {
       formValues.rearBoardOuterThickness,
       selectedFixedRearBoardKind,
       selectedFixedRearBoardThickness,
-      selectedIsOneSideFinish,
+      selectedIsOneSideReview,
     ],
   );
   const selectedFrontBoards = useMemo(
@@ -311,7 +311,7 @@ export default function Home() {
   const [productMessage, setProductMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selectedIsOneSideFinish) {
+    if (selectedIsOneSideReview) {
       setRearBoardValue("rearBoardOuterKind", noneBoardValue, formValues.rearBoardOuterKind);
       setRearBoardValue("rearBoardOuterThickness", noThicknessValue, formValues.rearBoardOuterThickness);
       setRearBoardValue("rearBoardMiddleKind", noneBoardValue, formValues.rearBoardMiddleKind);
@@ -368,7 +368,7 @@ export default function Home() {
     formValues.rearBoardOuterThickness,
     selectedFixedRearBoardKind,
     selectedFixedRearBoardThickness,
-    selectedIsOneSideFinish,
+    selectedIsOneSideReview,
     selectedStudGroup,
     setErrorMessage,
     setValue,
@@ -633,7 +633,7 @@ export default function Home() {
                     disabled: selectedRearBoardInputsDisabled,
                   })}
                   {renderBoardSlot("후면 내측 보드", "rearBoardInnerKind", "rearBoardInnerThickness", {
-                    disabled: selectedIsOneSideFinish,
+                    disabled: selectedIsOneSideReview,
                     fixedThickness: selectedFixedRearBoardThickness ?? undefined,
                     required: selectedHasFixedRearBoard,
                   })}
@@ -890,7 +890,7 @@ function applyRearBoardPreset(
   studGroup: string,
   studMethod: string,
 ) {
-  if (isOneSideFinishMethod(studMethod)) {
+  if (isOneSideReviewMethod(studMethod)) {
     setBoardSlot(values, "rearBoardOuterKind", "rearBoardOuterThickness", null);
     setBoardSlot(values, "rearBoardMiddleKind", "rearBoardMiddleThickness", null);
     setBoardSlot(values, "rearBoardInnerKind", "rearBoardInnerThickness", null);
@@ -1210,8 +1210,10 @@ function firstStudSpecValue(studs: StudSection[], group: string) {
   return studSpecOptions(studs, group)[0]?.value ?? defaultValues.studSpec;
 }
 
-function isOneSideFinishMethod(method: string | undefined) {
-  return (method ?? "").replace(/\s/g, "") === oneSideFinishMethod;
+// 일면마감·이중스터드는 한쪽 면만 검토하는 공법 — 후면 보드 입력 없음
+function isOneSideReviewMethod(method: string | undefined) {
+  const normalized = (method ?? "").replace(/\s/g, "");
+  return normalized === oneSideFinishMethod || normalized === doubleStudMethod;
 }
 
 function fixedRearBoardThicknessForGroup(group: string) {
@@ -1254,7 +1256,7 @@ function compactBoardPayloads(selections: Array<{ kind: string; thickness: numbe
 }
 
 function rearBoardPayloads(values: CheckFormValues) {
-  if (isOneSideFinishMethod(values.studMethod)) {
+  if (isOneSideReviewMethod(values.studMethod)) {
     return [];
   }
 
@@ -1323,13 +1325,13 @@ function createReportData(
   const studAssembly = createStudAssembly(stud, values.studMethod);
   const fixedRearBoardThickness = fixedRearBoardThicknessForGroup(values.studGroup);
   const fixedRearBoardKind = fixedRearBoardKindForGroup(values.studGroup);
-  const isOneSideFinish = isOneSideFinishMethod(values.studMethod);
+  const isOneSideReview = isOneSideReviewMethod(values.studMethod);
 
   return {
     generatedAt: new Date().toISOString(),
     calculationMode: values.calculationMode,
     rearBoards:
-      isOneSideFinish
+      isOneSideReview
         ? [
             reportBoardSlot("후면 3번(외측)", noneBoardValue, noThicknessValue, boards),
             reportBoardSlot("후면 2번(중간)", noneBoardValue, noThicknessValue, boards),
