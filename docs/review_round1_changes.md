@@ -16,6 +16,7 @@
 | R 재보정 | — | 중앙부 이음 0.25, T.silent 0.40 | 0.35, 0.45 (L=2400 보정 강성 유지) — 2026-10-24 허용처짐 기준 산정으로 대체(§1-13) | calculator.py, constants.py, backend/tools/r_calibration.py |
 | 석고보드 항복비 | B-3 | 5% 저하점 Py/Pu | 이선형 근사 꺾임점 Py/Pu(§1-12) | constants.py, board_property.json, backend/tools/board_yield_ratio.py |
 | E-8 기준 피스력 | E-8 | 시험 최대 가력 1,876 N | 형식별 R 보정점 V* = P*·a/L(§1-13) | constants.py, calculator.py |
+| 미등록 형식 | — | R 1.0·V* 표 최솟값·m 1.49로 계산 | 계산 거부(ValueError, §1-14) | calculator.py, constants.py |
 | 출력 키 | — | `moment_0_75L_0_7E_kNm`, `reaction_0_75L_0_7E_kN_per_m` | `..._0_75L_0_525E_...`; 신규 `stud_Se_*`, `stud_extreme_fiber_*`, `I_eff_lower_bound_*`, `stud_yield_strength_MPa` | calculator.py, renderer |
 | 렌더러 | — | Fy 275·S=I/h×2 자체 계산 | 백엔드 중간값(Se, Fy) 사용, 조합 표기 정정, 중앙부 이음 식 정정 | renderer/src |
 
@@ -193,7 +194,7 @@
 | 11 I 75-06 | 447,575 | 6,710.7 | 0.8444 | 1.1709 | 1.00 → 1.00(상한) | 826.9 |
 
 - C-STUD 형식(03 맞댐·04 기본)은 두 시편 모두 상한 1.00으로 R이 같음. V*는 두 값 중 최솟값 787.7 N
-- E-8 기준 피스력: 종전 `STIFFNESS_REF_SUPPORT_SHEAR_N` = 시험 최대 가력 시 1,876 N → 형식별 V* = P*·a/L(P* = M_L/(a·b/L), M_L은 설계 R의 비내진 허용높이 기준). 미등록 형식은 표의 최솟값(강성 저감이 가장 큰 쪽). 보정점보다 피스력이 큰 구성에서만 강성을 낮춤
+- E-8 기준 피스력: 종전 `STIFFNESS_REF_SUPPORT_SHEAR_N` = 시험 최대 가력 시 1,876 N → 형식별 V* = P*·a/L(P* = M_L/(a·b/L), M_L은 설계 R의 비내진 허용높이 기준). 미등록 형식은 표의 최솟값(강성 저감이 가장 큰 쪽 — §1-14에서 계산 거부로 변경). 보정점보다 피스력이 큰 구성에서만 강성을 낮춤
   - 11개 시편 설계 상태: u/u_ref < 1 → 보정계수 1.0(`tests/test_r_calibration.py`로 확인)
   - V*가 종전보다 작으므로(390.6~1,772.2 N) 고하중·넓은 간격·넓은 피치 구성에서 E-8 강성 저감이 종전보다 빨리 시작됨
 - 11개 시편 허용높이 4조건(내진·부분합성 / 내진·STUD만 / 비내진·부분합성 / 비내진·STUD만, mm). 종전 = main 775ea64, 수정 = §1-12 항복비 + §1-13 R·V*
@@ -216,6 +217,20 @@
 - 골든 `cases.json`(C-STUD 맞댐, R 0.73 → 1.00): η 0.3377 → 0.3136, I_eff 513,849 → 682,666 mm⁴, Mn·응력비 불변. **case_03_spacing300 처짐 판정 N.G → O.K**(33.78 → 25.39 mm, 한계 31.25 mm). case_01·02 판정 불변. `expected_legacy` 유지, `_recalc_note` 이력 추가
 - 검토의견(주의): ① C-STUD 맞댐·기본은 실측 할선강성이 엔진 부분합성 강성의 1.32~1.59배로, 상한 1.0이 지배함(시험이 엔진 가정보다 강성이 큼 — 엔진 Ieff,raw의 보수성 또는 시험 조건 차이, 확인 필요) ② R은 설계 허용높이 상태 1점의 할선강성이므로, 시편과 다른 높이·간격 구성에는 같은 R을 외삽함 ③ 소수 2자리 내림으로 CH(0.7995 → 0.79)처럼 경계에 가까운 값은 보수측으로 내려감
 - 회귀: `tests/test_r_calibration.py`(선형 합성 곡선의 R 복원, 시험 범위 초과 예외, 시험 환산식, 11개 시편 E-8 보정계수 1.0 — 엑셀 원본 의존 없음)
+
+## 1-14. 미등록 형식 계산 차단 (2026-10-25, 사용자 승인 2026-10-24)
+
+- 취지: 인증 범위를 시험 형식으로 한정함. 시험 보정계수 R 표(`EFFECTIVE_INERTIA_CORRECTION_BY_TYPE`)에 대응 형식이 없는 스터드는 계산하지 않음
+- 종전: `_stiffness_calibration_type()`이 `None`을 반환하면 세 함수가 각자 fallback으로 계산을 계속함
+  - R: `DEFAULT_EFFECTIVE_INERTIA_CORRECTION` = 1.0(보정 없음)
+  - E-8 V*: `STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE`의 최솟값
+  - m: 1.49(시험 최대값)
+- 수정: 공통 함수 `_require_calibration_type()`이 미등록 형식에서 `ValueError`를 발생시킴. 세 fallback 값과 `DEFAULT_EFFECTIVE_INERTIA_CORRECTION`은 삭제함
+  - 메시지: "{그룹}({공법})은(는) 시험 보정계수 R이 산정되지 않은 형식으로 적용 범위 밖입니다. 시험 형식(C·CH·T.silent·R·I·HR·RV·MP-STUD)만 계산할 수 있습니다."
+  - 차단 시점: 단면 조립 직후 R 조회(`_calculate_wall_check_once`). 중간 결과를 반환하지 않음. API는 기존 `ValueError` 핸들러로 400 `CALCULATION_ERROR`와 위 메시지를 반환함
+  - m은 분류명 기준 표 `STIFFNESS_CURVE_EXPONENT_BY_TYPE`로 바꿈. C 맞댐이음 1.49는 분류명이 C와 같아 공법으로 구분함(`STIFFNESS_CURVE_EXPONENT_C_BUTT_JOINT`). 값은 불변
+- 대상 형식: 시드 DB 기준 SH-STUD(`stud_method.json`에만 있고 `stud_section.json`에 없음). 화면 스터드 그룹 목록은 단면 DB에서 만들므로 UI 경로로는 도달하지 않음. 엔진 안전장치임. SH-STUD 원자료 항목은 보존함
+- 판정 영향: 없음. 골든값 불변, 시드 DB 전 단면 그룹 × 공법 계산 통과(`tests/test_stud_scope.py`), `r_calibration --check` 일치
 
 ## 2. R 재보정
 
@@ -262,6 +277,7 @@ R_new = R_old × Ieff,raw,old(2400) / Ieff,raw,new(2400) — 소수 2자리.
 
 ## 5. 검증
 
+- `python -m pytest` : 113 passed + 411 subtests (2026-10-25, 미등록 형식 계산 차단 후, Windows). 골든 불변, `board_yield_ratio --check`·`r_calibration --check` 일치
 - `python -m pytest` : 108 passed + 223 subtests (2026-10-24, 항복비 꺾임점·R 허용처짐 기준·E-8 V* 반영, 고강도일반 12.5 E 정정 후, Windows). `board_yield_ratio --check`·`r_calibration --check` 일치
 - `python -m pytest` : 92 passed + 209 subtests (2026-10-21, I-STUD 일체 Se 재산정 후, Windows)
 - `python -m pytest` : 86 passed + 195 subtests (2026-10-20, B-8 강재 DB 분리 후, Windows)

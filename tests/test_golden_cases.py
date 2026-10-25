@@ -311,7 +311,6 @@ class GoldenCaseTest(unittest.TestCase):
       ("HR-STUD", "기본", 0.77),
       ("RV-STUD", "기본", 0.66),
       ("MP-STUD", "기본", 0.63),
-      ("미등록-STUD", "기본", 1.00),
     ]
 
     for group, method, expected in cases:
