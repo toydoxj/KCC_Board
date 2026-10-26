@@ -12,7 +12,9 @@ from backend.engine.constants import (
   ASD_COMBINED_LIVE_FACTOR,
   ASD_COMBINED_SEISMIC_FACTOR,
   ASD_SEISMIC_FACTOR,
+  ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR,
   BOARD_ORDER_LABELS,
+  BILATERAL_SINGLE_PLY_SCREW_PITCH_MM,
   BOLT_SHEAR_TO_YIELD_RATIO,
   DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_ANCHOR_SPACING_MM,
@@ -36,6 +38,7 @@ from backend.engine.constants import (
   STIFFNESS_CURVE_EXPONENT_BY_TYPE,
   STIFFNESS_CURVE_EXPONENT_C_BUTT_JOINT,
   STIFFNESS_REF_SCREW_PITCH_MM,
+  STIFFNESS_REF_MOMENT_KNM_BY_TYPE,
   STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE,
   STIFFNESS_TYPE_C,
   STIFFNESS_TYPE_C_CENTRAL_JOINT,
@@ -66,8 +69,6 @@ MAX_HEIGHT_SEARCH_LIMIT_MM = 30000
 CENTRAL_JOINT_STUD_GAP_MM = 25.0
 CH_STUD_REAR_BOARD_THICKNESS_MM = 25.0
 CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM = 12.5
-I_STUD_REAR_BOARD_KIND = "방화"
-I_STUD_REAR_BOARD_THICKNESS_MM = 25.0
 R_STUD_BOARD_STUD_CLEAR_GAP_MM = 12.0
 # 한쪽 면만 검토하는 C-STUD 공법명(stud_method.json, 공백 제거 비교)
 C_STUD_ONE_SIDE_FINISH_METHOD = "일면마감"
@@ -95,6 +96,8 @@ class _Layer:
   # 피스 간격·개수 고정값(CH·I-STUD 고정 후면 보드). None이면 bolt 입력(층 순서별)을 따른다.
   connection_pitch_mm: float | None = None
   connection_count: float | None = None
+  # 비대칭 단독 1P의 마감행 간격 기준. 개수는 connection_count로 별도 지정 가능.
+  connection_order: int | None = None
 
 
 @dataclass(frozen=True)
@@ -182,7 +185,8 @@ def _calculate_wall_check_once(
   )
   # 하한: 부분합성 강성은 스터드 단독 강성(자체 도심 기준) 이상
   I_eff_lower_bound = section.stud_assembly.self_inertia_mm4
-  utilization_ratio, curve_exponent, stiffness_load_factor = _stiffness_load_factor(request, section, group, method)
+  stiffness_load = _stiffness_load_factor(request, section, group, method)
+  stiffness_load_factor = stiffness_load.load_factor
   I_eff = max(I_eff_raw * I_eff_correction_factor * stiffness_load_factor, I_eff_lower_bound)
   stud_assembly = section.stud_assembly
   S_stud_composite, c_stud_composite = _stud_section_modulus(stud_result, stud_assembly, composite=True)
@@ -258,9 +262,15 @@ def _calculate_wall_check_once(
       "I_eff_raw_mm4": I_eff_raw,
       "I_eff_correction_factor": I_eff_correction_factor,
       "I_eff_lower_bound_mm4": I_eff_lower_bound,
-      "screw_utilization_ratio": utilization_ratio,
+      "screw_utilization_ratio": stiffness_load.utilization_ratio,
+      "service_moment_kNm": stiffness_load.service_moment_kNm,
+      "reference_moment_kNm": stiffness_load.reference_moment_kNm,
+      "moment_utilization_ratio": stiffness_load.moment_utilization_ratio,
+      "shear_utilization_ratio": stiffness_load.shear_utilization_ratio,
+      # 1.0 = 모멘트 기준 지배, 0.0 = 피스력 기준 지배 (intermediate는 숫자만 허용)
+      "stiffness_load_basis_moment": 1.0 if stiffness_load.moment_governs else 0.0,
       "screw_stud_side_shear_N": _screw_stud_side_shear_N(_stud_thickness_mm(section), request.bolt.diameter, stud_steel.Fu),
-      "stiffness_curve_exponent_m": curve_exponent,
+      "stiffness_curve_exponent_m": stiffness_load.curve_exponent,
       "stiffness_load_factor": stiffness_load_factor,
       "I_eff_lower_bound_governs": 1.0
       if I_eff_raw * I_eff_correction_factor * stiffness_load_factor < I_eff_lower_bound
@@ -276,6 +286,10 @@ def _calculate_wall_check_once(
       "Fp_kN": fp,
       "reaction_live_kN_per_m": reaction.live_kN_per_m,
       "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
+      **({
+        "fixed_rear_board_screw_pitch_mm": FIXED_REAR_BOARD_SCREW_PITCH_MM,
+        "fixed_rear_board_screw_count": FIXED_REAR_BOARD_SCREW_COUNT,
+      } if _fixed_rear_board_for_group(group) is not None else {}),
       **_reaction_intermediate(request, reaction),
       **screw_tension,
     },
@@ -355,6 +369,8 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
 
 def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Section:
   group, method = _parse_stud_type(request.stud)
+  if _is_i_stud_group(group) and "".join(method.split()) == "일면마감":
+    raise ValueError("I-STUD 일면마감은 지원하지 않습니다. 후면 보드 1장을 포함한 기본 형식을 사용하십시오.")
   stud = repo.get_stud(group, request.stud.spec)
   _stud_steel(stud)
   stud_assembly = _stud_assembly(stud, method)
@@ -393,6 +409,24 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
   for board in front_boards:
     layer, y_cursor = _board_layer(board, y_cursor, request, repo)
     layers.append(layer)
+
+  active_count = max(len(rear_boards), len(front_boards))
+  layers = [
+    # 2026-10-26 승인: 2P/3P+1P의 단독 1P는 마감층 간격만 따르고,
+    # 개수는 원래 1P 값을 유지한다(UI 기본 1개). 반대 방향에도 동일 적용.
+    replace(
+      layer,
+      connection_order=active_count,
+      connection_count=_count_for_order(request.bolt.count, layer.order)
+      if active_count in (2, 3) else layer.connection_count,
+    )
+    if layer.layer_type == "board"
+    and layer.connection_pitch_mm is None
+    and ((index < len(rear_boards) and len(rear_boards) == 1)
+         or (index > len(rear_boards) and len(front_boards) == 1))
+    else layer
+    for index, layer in enumerate(layers)
+  ]
 
   return _Section(
     layers=tuple(layers),
@@ -618,35 +652,62 @@ def _stiffness_curve_exponent(group: str, method: str, has_rear_board: bool = Tr
   return STIFFNESS_CURVE_EXPONENT_BY_TYPE[calibration_type]
 
 
+@dataclass(frozen=True)
+class _StiffnessLoad:
+  utilization_ratio: float
+  curve_exponent: float
+  load_factor: float
+  service_moment_kNm: float
+  reference_moment_kNm: float
+  moment_utilization_ratio: float
+  shear_utilization_ratio: float
+  moment_governs: bool
+
+
 def _stiffness_load_factor(
   request: WallCheckRequest,
   section: _Section,
   group: str,
   method: str,
-) -> tuple[float, float, float]:
-  """피스 활용도 기준 단방향 강성 보정계수 min[1, (u/u_ref)^(1−m)].
+) -> _StiffnessLoad:
+  """하중 수준 기준 단방향 강성 보정계수 k_L = min[1, (u/u_ref)^(1−m)] (v0.7.4, 심사의견 E-3·E-8).
 
-  u/u_ref = (V_d / V_ref) × (p / p_ref)_max
-  - V_d: 처짐 검토 하중(활하중)에 의한 스터드 1개당 지점 전단력 = q·s·L/2
-  - V_ref: 형식별 R 보정점(허용처짐 상태)의 시험 피스 전단력 V* = P*·a/L
+  u/u_ref = max(M_L / M*, V_d / V*) × (p / p_ref)_max
+  - M_L: 처짐 검토 하중(활하중)에 의한 최대모멘트 = q·s·L²/8
+  - M*: 형식별 기준 모멘트(실측 할선강성비가 적용 R과 같아지는 모멘트)
+  - V_d: 스터드 1개당 지점 전단력 = q·s·L/2, V*: 형식별 R 보정점의 시험 피스 전단력
   - p/p_ref: 층별 피스 간격 / 시험 피스 간격(피스 1개당 전단력 ∝ 간격)
-  피스력이 보정점 수준 이하(u ≤ u_ref)이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
+  두 기준 중 불리한(큰) 활용도를 쓴다. u ≤ u_ref이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
   """
+  has_rear_board = bool(request.rear_boards)
+  service_moment_kNm = request.live_load_kN_m2 * (request.spacing_mm / 1000.0) * (request.span_mm / 1000.0) ** 2 / 8.0
+  reference_moment_kNm = STIFFNESS_REF_MOMENT_KNM_BY_TYPE[_require_calibration_type(group, method, has_rear_board)]
   support_shear_N = request.live_load_kN_m2 * 1e-3 * request.spacing_mm * request.span_mm / 2.0
   pitch_ratio = max(
     (
-      _layer_pitch_count(layer, request.bolt)[0] / _pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, layer.order)
+      _layer_pitch_count(layer, request.bolt)[0] / _pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, layer.connection_order or layer.order)
       for layer in section.layers
       if layer.layer_type == "board"
     ),
     default=1.0,
   )
-  reference_shear_N = _stiffness_reference_shear_N(group, method, has_rear_board=bool(request.rear_boards))
-  utilization_ratio = support_shear_N / reference_shear_N * pitch_ratio
-  exponent = _stiffness_curve_exponent(group, method, has_rear_board=bool(request.rear_boards))
-  if utilization_ratio <= 1.0:
-    return utilization_ratio, exponent, 1.0
-  return utilization_ratio, exponent, utilization_ratio ** (1.0 - exponent)
+  reference_shear_N = _stiffness_reference_shear_N(group, method, has_rear_board=has_rear_board)
+  moment_ratio = service_moment_kNm / reference_moment_kNm
+  shear_ratio = support_shear_N / reference_shear_N
+  moment_governs = moment_ratio > shear_ratio
+  utilization_ratio = max(moment_ratio, shear_ratio) * pitch_ratio
+  exponent = _stiffness_curve_exponent(group, method, has_rear_board=has_rear_board)
+  load_factor = 1.0 if utilization_ratio <= 1.0 else utilization_ratio ** (1.0 - exponent)
+  return _StiffnessLoad(
+    utilization_ratio=utilization_ratio,
+    curve_exponent=exponent,
+    load_factor=load_factor,
+    service_moment_kNm=service_moment_kNm,
+    reference_moment_kNm=reference_moment_kNm,
+    moment_utilization_ratio=moment_ratio,
+    shear_utilization_ratio=shear_ratio,
+    moment_governs=moment_governs,
+  )
 
 
 def _parse_stud_type(stud: StudInput) -> tuple[str, str]:
@@ -658,13 +719,14 @@ def _parse_stud_type(stud: StudInput) -> tuple[str, str]:
   return group, method
 
 
-def _fixed_rear_board_for_group(group: str) -> tuple[str | None, float] | None:
+def _fixed_rear_board_for_group(group: str) -> tuple[str | None, float | None] | None:
   if _is_ch_stud_group(group):
     if "개량형" in group:
       return (None, CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM)
     return (None, CH_STUD_REAR_BOARD_THICKNESS_MM)
   if _is_i_stud_group(group):
-    return (I_STUD_REAR_BOARD_KIND, I_STUD_REAR_BOARD_THICKNESS_MM)
+    # 후면 한 장 끼움 구성은 유지하되 종류·두께는 사용자 선택 물성을 적용한다.
+    return (None, None)
   return None
 
 
@@ -683,9 +745,13 @@ def _is_r_stud_group(group: str) -> bool:
 def _validate_fixed_rear_boards(
   group: str,
   rear_boards: tuple[BoardLayer, ...],
-  fixed_rear_board: tuple[str | None, float],
+  fixed_rear_board: tuple[str | None, float | None],
 ) -> None:
   required_kind, required_thickness_mm = fixed_rear_board
+  if required_thickness_mm is None:
+    if len(rear_boards) != 1:
+      raise ValueError(f"{group}는 선택한 종류·두께의 후면 석고보드 1장이 필요합니다.")
+    return
   required_label = (
     f"{required_kind} {required_thickness_mm:g}T"
     if required_kind is not None
@@ -826,8 +892,9 @@ def _gypsum_screw_design_shear_N(board_thickness_mm: float) -> float:
 
 
 def _layer_pitch_count(layer: _Layer, bolt: BoltInput) -> tuple[float, float]:
-  pitch = layer.connection_pitch_mm if layer.connection_pitch_mm is not None else _pitch_for_order(bolt.pitch, layer.order)
-  count = layer.connection_count if layer.connection_count is not None else _count_for_order(bolt.count, layer.order)
+  order = layer.connection_order or layer.order
+  pitch = layer.connection_pitch_mm if layer.connection_pitch_mm is not None else _pitch_for_order(bolt.pitch, order)
+  count = layer.connection_count if layer.connection_count is not None else _count_for_order(bolt.count, order)
   return pitch, count
 
 
@@ -899,9 +966,14 @@ def bolt_values_from_ply_order(ply_values: tuple[float, ...]) -> tuple[float, ..
 def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   """표준 외 피스 간격 경고(판정 불변). CH·I-STUD 고정 후면 보드(간격 고정)는 제외한다."""
   # _pitch_for_order와 같은 기준으로 order를 1~3에 정규화한 뒤 중복 제거(order ≥ 3은 모두 외측 피치)
+  stud_index = next(i for i, layer in enumerate(section.layers) if layer.layer_type == "stud")
+  bilateral_single_ply = (
+    sum(layer.layer_type == "board" for layer in section.layers[:stud_index]) == 1
+    and sum(layer.layer_type == "board" for layer in section.layers[stud_index + 1:]) == 1
+  )
   orders = sorted(
     {
-      min(max(layer.order, 1), 3)
+      min(max(layer.connection_order or layer.order, 1), 3)
       for layer in section.layers
       if layer.layer_type == "board" and layer.connection_pitch_mm is None
     }
@@ -909,7 +981,11 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   notices: list[str] = []
   for order in orders:
     pitch = _pitch_for_order(bolt.pitch, order)
-    standard = _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
+    standard = (
+      BILATERAL_SINGLE_PLY_SCREW_PITCH_MM
+      if bilateral_single_ply and order == 1
+      else _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
+    )
     if math.isclose(pitch, standard):
       continue
     label = BOARD_ORDER_LABELS[order]
@@ -1078,9 +1154,11 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
   seismic_per_spacing = fp_kN / 2.0 * 2.0
   live_kN_per_m = live_per_spacing / spacing_m
   seismic_kN_per_m = seismic_per_spacing / spacing_m
+  # 앵커 반력의 지진항에만 과강도계수 Ω0 적용
+  anchor_seismic_kN_per_m = ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR * seismic_kN_per_m
   load_combination_L = live_kN_per_m
-  load_combination_0_7E = ASD_SEISMIC_FACTOR * seismic_kN_per_m
-  load_combination_0_75L_0_525E = _combined_live_seismic(live_kN_per_m, seismic_kN_per_m)
+  load_combination_0_7E = ASD_SEISMIC_FACTOR * anchor_seismic_kN_per_m
+  load_combination_0_75L_0_525E = _combined_live_seismic(live_kN_per_m, anchor_seismic_kN_per_m)
   if request.design_case == DESIGN_CASE_NON_SEISMIC:
     required = load_combination_L
   else:
@@ -1115,6 +1193,7 @@ def _reaction_intermediate(request: WallCheckRequest, reaction: _ReactionResult)
       {
         "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
         "reaction_0_75L_0_525E_kN_per_m": reaction.load_combination_0_75L_0_525E_kN_per_m,
+        "anchor_seismic_overstrength_factor": ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR,
         "anchor_capacity_kN": reaction.anchor_capacity_kN,
         "anchor_spacing_mm": reaction.anchor_spacing_mm,
         "anchor_allowable_spacing_mm": reaction.anchor_allowable_spacing_mm,

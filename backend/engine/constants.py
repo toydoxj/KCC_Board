@@ -55,6 +55,10 @@ ASD_COMBINED_SEISMIC_FACTOR = 0.75
 
 # 비구조요소 지진력 계수: Fp = 0.48 × SDS × Ip × W (= 0.4·ap·(1+2z/h)/Rp, ap=1.0, z/h=1, Rp=2.5)
 SEISMIC_FP_COEFFICIENT = 0.48
+# 앵커(런너 고정못) 반력의 지진항 E에만 곱하는 과강도계수 Ω0 (2026-10-26 사용자 결정).
+# 근거: ASCE 7-16 §13.4.2, Table 13.5-1 내부 칸막이(기타 벽체) Ω0p = 2.0 — 원문·KDS 대응 조항 확인 필요.
+# 스터드 응력·처짐·피스 검토에는 적용하지 않는다.
+ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR = 2.0
 
 # 피스 인장(면외 이탈) 검토 — AISI S100-16 J4.4
 SCREW_PULLOUT_COEFFICIENT = 0.85  # Eq. J4.4.1-1: Pnot = 0.85·tc·d·Fu2
@@ -135,6 +139,22 @@ STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE: dict[str, float] = {
   STIFFNESS_TYPE_RV: 711.9,
   STIFFNESS_TYPE_MP: 691.0,
 }
+# 하중 수준 보정 모멘트 기준 M* (kN·m, v0.7.4, 심사의견 E-3·E-8): u/u_ref = max(M_L/M*, V_d/V*) × 피치비
+# M* = 실측 M–δ 곡선(ch4)의 할선강성비 I_test(M)/Ieff,raw(2,400)가 적용 R과 같아지는 모멘트.
+# 시험 범위에서 R 아래로 내려가지 않으면 시험 최대모멘트(외삽 금지). 같은 형식은 최솟값, 소수 셋째 자리 버림.
+# 산정 도구: backend/tools/r_calibration.py (--check로 대조)
+STIFFNESS_REF_MOMENT_KNM_BY_TYPE: dict[str, float] = {
+  STIFFNESS_TYPE_C_CENTRAL_JOINT: 1.126,
+  STIFFNESS_TYPE_C_FRONT_ONLY: 1.692,
+  STIFFNESS_TYPE_C: 1.690,
+  STIFFNESS_TYPE_CH: 0.732,
+  STIFFNESS_TYPE_T_SILENT: 0.732,
+  STIFFNESS_TYPE_R: 0.731,
+  STIFFNESS_TYPE_I: 1.690,
+  STIFFNESS_TYPE_HR: 1.647,
+  STIFFNESS_TYPE_RV: 0.663,
+  STIFFNESS_TYPE_MP: 0.672,
+}
 # 시험 피스 간격(엔진 bolt.pitch 순서: 3번 외측 / 2번 중간 / 1번 내측, mm) — u/u_ref에 피치비로 반영
 # 엑셀 VAR. C32:C34 = [1P 600, 2P 300, 3P 300], 1P = 내측(스터드 인접)
 STIFFNESS_REF_SCREW_PITCH_MM = (300.0, 300.0, 600.0)
@@ -142,6 +162,9 @@ STIFFNESS_REF_SCREW_PITCH_MM = (300.0, 300.0, 600.0)
 # 표준 피스 간격(3번 외측 / 2번 중간 / 1번 내측, mm). 1P(내측)는 스터드에 가장 가까운 층.
 # 이와 다른 입력은 결과 안내(notices)로 경고만 하고 판정에는 반영하지 않음 (심사의견 F-4)
 STANDARD_SCREW_PITCH_MM = (300.0, 300.0, 600.0)
+# 2026-10-26 사용자 지정: 양면 각각 1P인 구성의 마감 피스 표준 간격.
+# 다겹 내측 1P(600) 및 시험 강성보정 기준 STIFFNESS_REF_SCREW_PITCH_MM과 구분한다.
+BILATERAL_SINGLE_PLY_SCREW_PITCH_MM = 300.0
 # 표준 피치당 연결 피스 개수(같은 순서: 3번 외측 / 2번 중간 / 1번 내측). 누계 1-3-5개 = 층별 1·2·2개
 STANDARD_SCREW_COUNT = (2.0, 2.0, 1.0)
 BOARD_ORDER_LABELS = {1: "1번(내측)", 2: "2번(중간)", 3: "3번(외측)"}

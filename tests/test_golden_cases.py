@@ -339,9 +339,13 @@ class GoldenCaseTest(unittest.TestCase):
 
     self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.79)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
+    # v0.7.4: L = 7,500 mm에서 M_L 0.791 > M* 0.732이므로 하중 수준 보정 k_L < 1이 함께 곱해진다
+    self.assertLess(result.intermediate["stiffness_load_factor"], 1.0)
     self.assertAlmostEqual(
       result.I_eff_mm4,
-      result.intermediate["I_eff_raw_mm4"] * result.intermediate["I_eff_correction_factor"],
+      result.intermediate["I_eff_raw_mm4"]
+      * result.intermediate["I_eff_correction_factor"]
+      * result.intermediate["stiffness_load_factor"],
     )
 
     central_request = replace(
@@ -391,11 +395,16 @@ class GoldenCaseTest(unittest.TestCase):
     spacing_m = request.spacing_mm / 1000.0
     span_m = request.span_mm / 1000.0
     expected_live = request.live_load_kN_m2 * span_m * spacing_m / 2.0 / spacing_m
-    expected_seismic = result.intermediate["Fp_kN"] / 2.0 * 2.0 / spacing_m
+    # 앵커 반력의 지진항에는 과강도계수 Ω0 = 2.0을 곱한다
+    expected_seismic = 2.0 * result.intermediate["Fp_kN"] / 2.0 * 2.0 / spacing_m
+    self.assertAlmostEqual(result.intermediate["anchor_seismic_overstrength_factor"], 2.0)
+    # 지진반력 원값(Ω0 미적용)은 그대로 유지한다
+    self.assertAlmostEqual(result.intermediate["reaction_seismic_kN_per_m"], expected_seismic / 2.0)
     expected_0_7E = 0.7 * expected_seismic
     expected_0_75L_0_525E = 0.75 * expected_live + 0.75 * 0.7 * expected_seismic
     expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_525E)
-    expected_anchor_allowable_spacing = 200.0
+    # Ω0 적용 전 200 mm → 적용 후 150 mm (0.4 kN / 2.538 kN/m = 157.6 mm, 50 mm 내림)
+    expected_anchor_allowable_spacing = 150.0
     expected_anchor_capacity_per_m = request.anchor_capacity_kN / (request.anchor_spacing_mm / 1000.0)
     expected_anchor_utilization = expected_required / expected_anchor_capacity_per_m
 
@@ -418,7 +427,8 @@ class GoldenCaseTest(unittest.TestCase):
     )
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
     expected_stronger_spacing = math.floor(0.8 / expected_required * 1000.0 / 50.0) * 50.0
-    self.assertAlmostEqual(expected_stronger_spacing, 450.0)
+    # Ω0 적용 전 450 mm → 적용 후 300 mm
+    self.assertAlmostEqual(expected_stronger_spacing, 300.0)
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], expected_stronger_spacing)
 
   def test_screw_tension_pullout_and_pull_through(self) -> None:
@@ -647,14 +657,15 @@ class GoldenCaseTest(unittest.TestCase):
     ) + 295.0 * result.intermediate["stud_Se_composite_mm3"] * 1e-6
     self.assertAlmostEqual(result.intermediate["Mn_composite_kNm"], expected_mn)
 
-  def test_i_stud_rejects_non_fire_rated_25mm_rear_board(self) -> None:
+  def test_i_stud_rejects_unregistered_rear_board_material(self) -> None:
     request = replace(
       request_from_golden_case(dict(self.cases[0])),
       rear_boards=(BoardLayer("일반", 25.0),),
       stud=StudInput(stud_type="I-STUD", spec="I-STUD 102-08", method="기본"),
     )
 
-    with self.assertRaisesRegex(ValueError, "방화 25T"):
+    # 자유선택은 등록된 물성 범위 내에서만 허용한다. 일반 25T는 DB에 없다.
+    with self.assertRaisesRegex(ValueError, "등록되지 않은 석고보드"):
       _build_section(request, self.repository)
 
   def test_r_stud_uses_12mm_clear_gap_between_1p_board_and_stud(self) -> None:

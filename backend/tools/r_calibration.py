@@ -18,6 +18,9 @@
 4. 검증: R_conv로 산정한 엔진 허용높이가 H*와 50 mm 이내.
 5. V* = P*·a/L, P* = M_L(H_d)/(a·b/L). H_d = 설계 R의 엔진 허용높이(보정점 = 설계 상태).
    같은 형식에 시편이 여럿이면 V*의 최솟값(강성 저감이 큰 쪽)을 쓴다.
+6. M*(하중 수준 보정 모멘트 기준, v0.7.4): 실측 할선강성비 I_test(M)/Ieff,raw(2,400)가 설계 R과 같아지는 모멘트.
+   M_L(H*)(비 = R_conv ≥ R)와 시험 최대모멘트 사이에서 이분법으로 찾는다. 시험 범위 안에서 비가 R보다
+   낮아지지 않으면 M* = 시험 최대모멘트(외삽 금지). 소수 셋째 자리 버림. 같은 형식은 최솟값.
 
 계산엔진에서는 호출하지 않는다. R을 바꿔 넣기 위해 엔진의 R 함수만 도구 실행 중에 임시 대체한다.
 
@@ -43,6 +46,7 @@ import backend.engine.calculator as calculator
 from backend.engine.calculator import bolt_values_from_ply_order
 from backend.engine.constants import (
   EFFECTIVE_INERTIA_CORRECTION_BY_TYPE,
+  STIFFNESS_REF_MOMENT_KNM_BY_TYPE,
   STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE,
   STUD_ELASTIC_MODULUS,
 )
@@ -72,6 +76,8 @@ HEIGHT_SCAN_STEP_MM = 50.0
 HEIGHT_TOLERANCE_MM = 0.01
 VERIFY_HEIGHT_TOLERANCE_MM = 50.0
 V_STAR_RELATIVE_TOLERANCE = 1e-3
+M_STAR_DECIMALS = 3
+M_STAR_TOLERANCE_KNM = 1e-7
 
 # 분석 시트 이름 → 골든 시편 id
 SHEET_TO_SPECIMEN = {
@@ -110,6 +116,8 @@ class SpecimenCalibration:
   design_deflection_limit_mm: float
   design_stiffness_load_factor: float
   V_star_N: float
+  M_star_kNm: float
+  test_max_moment_kNm: float
 
 
 def rig_stiffness_constant() -> float:
@@ -159,6 +167,35 @@ def measured_secant_inertia_mm4(curve: Sequence[tuple[float, float]], moment_kNm
 def service_moment_kNm(request: WallCheckRequest, height_mm: float) -> float:
   """M_L = q·s·H²/8 (q = 활하중 kN/m², s·H [m])."""
   return request.live_load_kN_m2 * (request.spacing_mm / 1000.0) * (height_mm / 1000.0) ** 2 / 8.0
+
+
+def reference_moment_kNm(
+  curve: Sequence[tuple[float, float]],
+  I_raw_2400_mm4: float,
+  R: float,
+  start_moment_kNm: float,
+) -> float:
+  """M*: I_test(M)/Ieff,raw(2,400) = R인 모멘트(시험 최대모멘트 상한, 소수 셋째 자리 버림)."""
+
+  def ratio(moment_kNm: float) -> float:
+    return measured_secant_inertia_mm4(curve, moment_kNm)[0] / I_raw_2400_mm4
+
+  max_moment = curve[-1][0]
+  if ratio(max_moment) >= R:
+    moment = max_moment
+  else:
+    low, high = start_moment_kNm, max_moment
+    if ratio(low) < R:
+      raise CalibrationError(f"M* 탐색 시작점 {low:.4f} kN·m에서 강성비가 이미 R {R:.2f}보다 작습니다.")
+    while high - low > M_STAR_TOLERANCE_KNM:
+      middle = 0.5 * (low + high)
+      if ratio(middle) >= R:
+        low = middle
+      else:
+        high = middle
+    moment = low
+  scale = 10**M_STAR_DECIMALS
+  return math.floor(moment * scale + 1e-9) / scale
 
 
 def v_star_N(moment_kNm: float) -> float:
@@ -269,6 +306,8 @@ def calibrate_specimen(
     design_deflection_limit_mm=design.deflection_limit_mm,
     design_stiffness_load_factor=float(design.intermediate["stiffness_load_factor"]),
     V_star_N=v_star_N(service_moment_kNm(request, design_height)),
+    M_star_kNm=reference_moment_kNm(curve, I_raw_2400, R_design, moment),
+    test_max_moment_kNm=max_moment,
   )
 
 
@@ -337,27 +376,30 @@ def calibrate_workbook(path: Path, repository: MaterialRepository | None = None)
   ]
 
 
-def design_table(results: Sequence[SpecimenCalibration]) -> dict[str, tuple[float, float]]:
-  """형식 → (R, V* [N]). 같은 형식 시편이 여럿이면 R은 일치해야 하고 V*는 최솟값."""
-  table: dict[str, tuple[float, float]] = {}
+def design_table(results: Sequence[SpecimenCalibration]) -> dict[str, tuple[float, float, float]]:
+  """형식 → (R, V* [N], M* [kN·m]). 같은 형식 시편이 여럿이면 R은 일치해야 하고 V*·M*는 최솟값."""
+  table: dict[str, tuple[float, float, float]] = {}
   for result in results:
     if result.calibration_type in table:
-      R, v_star = table[result.calibration_type]
+      R, v_star, m_star = table[result.calibration_type]
       if abs(R - result.R_design) > 1e-9:
         raise CalibrationError(
           f"형식 {result.calibration_type}: 시편별 R이 다릅니다({R:.2f}, {result.R_design:.2f}) — 형식 분류 재검토 필요"
         )
-      table[result.calibration_type] = (R, min(v_star, result.V_star_N))
+      table[result.calibration_type] = (R, min(v_star, result.V_star_N), min(m_star, result.M_star_kNm))
     else:
-      table[result.calibration_type] = (result.R_design, result.V_star_N)
+      table[result.calibration_type] = (result.R_design, result.V_star_N, result.M_star_kNm)
   return table
 
 
-def check_against_constants(table: Mapping[str, tuple[float, float]]) -> list[str]:
+def check_against_constants(table: Mapping[str, tuple[float, float, float]]) -> list[str]:
   problems: list[str] = []
-  for calibration_type, (R, v_star) in table.items():
+  for calibration_type, (R, v_star, m_star) in table.items():
     current_R = EFFECTIVE_INERTIA_CORRECTION_BY_TYPE.get(calibration_type)
     current_v = STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE.get(calibration_type)
+    current_m = STIFFNESS_REF_MOMENT_KNM_BY_TYPE.get(calibration_type)
+    if current_m is None or abs(current_m - m_star) > 1e-9:
+      problems.append(f"{calibration_type}: M* 산정 {m_star:.3f} kN·m ≠ constants {current_m}")
     if current_R is None or abs(current_R - R) > 1e-9:
       problems.append(f"{calibration_type}: R 산정 {R:.2f} ≠ constants {current_R}")
     if current_v is None or abs(current_v / v_star - 1.0) > V_STAR_RELATIVE_TOLERANCE:
@@ -368,26 +410,26 @@ def check_against_constants(table: Mapping[str, tuple[float, float]]) -> list[st
 
 
 def main() -> None:
-  parser = argparse.ArgumentParser(description="시험 보정계수 R(허용처짐 기준)·E-8 기준 피스력 V* 산정")
+  parser = argparse.ArgumentParser(description="시험 보정계수 R(허용처짐 기준)·E-8 기준 피스력 V*·기준 모멘트 M* 산정")
   parser.add_argument("workbook", type=Path, help="벽체 시험 분석 시트(0724) 엑셀 경로")
   parser.add_argument("--check", action="store_true", help="constants 값과 대조")
   args = parser.parse_args()
   results = calibrate_workbook(args.workbook)
   print(
     f"{'시편':36s} {'Ieff,raw2400':>12s} {'H*':>8s} {'M_L':>7s} {'δt':>6s} {'R_conv':>7s} {'R':>5s} "
-    f"{'H(Rconv)':>8s} {'H_d':>6s} {'δ/한계':>13s} {'E8':>5s} {'V*':>7s}"
+    f"{'H(Rconv)':>8s} {'H_d':>6s} {'δ/한계':>13s} {'E8':>5s} {'V*':>7s} {'M*':>6s} {'Mmax':>6s}"
   )
   for r in results:
     print(
       f"{r.specimen_id:36s} {r.I_eff_raw_2400_mm4:12.0f} {r.calibration_height_mm:8.1f} {r.M_L_kNm:7.4f} "
       f"{r.test_deflection_mm:6.3f} {r.R_converged:7.4f} {r.R_design:5.2f} {r.height_with_R_converged_mm:8.0f} "
       f"{r.design_height_mm:6.0f} {r.design_deflection_mm:6.2f}/{r.design_deflection_limit_mm:6.2f} "
-      f"{r.design_stiffness_load_factor:5.3f} {r.V_star_N:7.1f}"
+      f"{r.design_stiffness_load_factor:5.3f} {r.V_star_N:7.1f} {r.M_star_kNm:6.3f} {r.test_max_moment_kNm:6.3f}"
     )
   table = design_table(results)
   print("\n형식별 설계값")
-  for calibration_type, (R, v_star) in table.items():
-    print(f"  {calibration_type:16s} R {R:.2f}  V* {v_star:.1f} N")
+  for calibration_type, (R, v_star, m_star) in table.items():
+    print(f"  {calibration_type:16s} R {R:.2f}  V* {v_star:.1f} N  M* {m_star:.3f} kN·m")
   if args.check:
     problems = check_against_constants(table)
     for problem in problems:

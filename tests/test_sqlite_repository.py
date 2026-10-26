@@ -38,7 +38,7 @@ class SqliteRepositoryTest(unittest.TestCase):
 
   def test_seed_counts(self) -> None:
     with closing(sqlite3.connect(self.db_path)) as connection:
-      self.assertEqual(_count_rows(connection, "board_property"), 22)
+      self.assertEqual(_count_rows(connection, "board_property"), 19)
       self.assertEqual(_count_rows(connection, "stud_section"), 69)
       self.assertEqual(_count_rows(connection, "bolt_material"), 9)
       self.assertEqual(_count_rows(connection, "stud_method"), 10)
@@ -57,20 +57,20 @@ class SqliteRepositoryTest(unittest.TestCase):
     sqlite_bolt = self.sqlite_repository.get_bolt_material("STS304")
     self.assertEqual(sqlite_bolt, json_bolt)
 
-  def test_board_catalog_preserves_incomplete_excel_rows(self) -> None:
+  def test_board_catalog_keeps_approved_exclusions(self) -> None:
     catalog = self.sqlite_repository.list_board_catalog()
-    self.assertEqual(len(catalog), 22)
+    self.assertEqual(len(catalog), 19)
     incomplete = [board for board in catalog if not board.is_complete]
-    self.assertEqual(len(incomplete), 3)
+    self.assertEqual(len(incomplete), 0)
     waterproof = next(board for board in catalog if board.kind == "방수" and board.thickness == 9.5)
     self.assertTrue(waterproof.is_complete)
     self.assertEqual(waterproof.missing_fields, ())
     self.assertAlmostEqual(waterproof.E_GPa or 0.0, 4.72)
     self.assertAlmostEqual(waterproof.Fy or 0.0, (waterproof.Fu or 0.0) * BOARD_YIELD_RATIO_BY_BOARD[("방수", 9.5)][0])
     self.assertEqual(waterproof.yield_ratio_source, "준용: 일반 9.5")
-    unlisted = next(board for board in catalog if board.kind == "차음" and board.thickness == 15.0)
-    self.assertAlmostEqual(unlisted.yield_ratio, BOARD_YIELD_RATIO_FROM_FRACTURE)
-    self.assertEqual(unlisted.yield_ratio_source, "기본값")
+    keys = {(board.kind, board.thickness) for board in catalog}
+    for key in (("차음", 9.5), ("차음", 15.0), ("전방수", 15.0)):
+      self.assertNotIn(key, keys)
 
   def test_board_yield_ratio_by_kind_and_thickness(self) -> None:
     # B-3: 시험 보드는 실측 Py/Pu, 미시험 보드는 유사 보드 준용값으로 Fy = Fu × 항복비
@@ -130,7 +130,8 @@ class SqliteRepositoryTest(unittest.TestCase):
     seed_e = {
       (item["kind"], float(item["thickness"])): item["E_GPa"] for item in seed["items"] if item.get("E_GPa") is not None
     }
-    self.assertEqual(seed_e, BOARD_ELASTIC_MODULUS_GPA)
+    excluded = {("차음", 9.5), ("차음", 15.0), ("전방수", 15.0)}
+    self.assertEqual(seed_e, {k: v for k, v in BOARD_ELASTIC_MODULUS_GPA.items() if k not in excluded})
 
   def test_high_strength_12_5_elastic_modulus_corrected_thickness(self) -> None:
     # 2026-10-24: 휨시험 시트 1~4 두께 15 → 12.5 mm 정정 후 평균 6.06 GPa(종전 3.49)
