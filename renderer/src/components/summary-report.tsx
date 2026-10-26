@@ -3,7 +3,7 @@ import { governingHeight, heightReview } from "@/lib/height-review";
 import type { CalculationReportData, ReportBoardSlot } from "./calculation-report";
 import { boardColor, displayStudGroup, findStudAsset } from "@/lib/visual-assets";
 import type { StudSection } from "@/lib/api";
-import { resultScopeDisclaimer } from "@/lib/result-notice";
+import { productScopeNotice, resultScopeDisclaimer } from "@/lib/result-notice";
 
 const n=(v: number|null|undefined,d=3)=>v==null?"-":v.toLocaleString("ko-KR",{maximumFractionDigits:d});
 const unit=(v:number|null|undefined,u:string)=>v==null?"-":`${n(v)} ${u}`;
@@ -97,6 +97,6 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
       ["단면2차모멘트",unit(data.stud.Ix,"mm⁴"),"단면계수",unit(data.stud.Sx,"mm³")],
     ]}/>
     <Heading>석고보드 고정 나사못 배치</Heading><table className="summary-table screw-table"><thead><tr><th>적용 위치</th><th>나사못 개수</th><th>간격</th></tr></thead><tbody>{[1,2,3].map((p)=><tr key={p}><td>{p}P {p<=count?(p===count?"(마감)":"(내측)"):""}</td><td>{p<=count?`${screws[p-1]}개`:"미적용"}</td><td>{p<=count?`${pitch[p-1]} mm`:"-"}</td></tr>)}{r.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<tr><td>2면 고정 보드</td><td>{n(r.intermediate.fixed_rear_board_screw_count)}개</td><td>{n(r.intermediate.fixed_rear_board_screw_pitch_mm)} mm</td></tr>}</tbody></table>
-    <footer><p className="summary-scope-disclaimer">{resultScopeDisclaimer}</p>프로그램 결과는 입력조건 및 적용 기준에 따른 설계 참고자료입니다.<br/>실제 시공 전에는 현장 조건과 검토 기준을 구조전문가와 확인하시기 바랍니다.</footer>
+    <footer><p className="summary-scope-disclaimer">{resultScopeDisclaimer}</p><p className="summary-scope-disclaimer">{productScopeNotice}</p>프로그램 결과는 입력조건 및 적용 기준에 따른 설계 참고자료입니다.<br/>실제 시공 전에는 현장 조건과 검토 기준을 구조전문가와 확인하시기 바랍니다.</footer>
   </article>;
 }

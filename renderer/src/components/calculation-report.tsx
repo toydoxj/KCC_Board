@@ -139,7 +139,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
       </header>
 
       <section className="mt-4">
-        <ResultNotices notices={data.result.notices ?? []} />
+        <ResultNotices notices={data.result.notices ?? []} showProductScope />
       </section>
 
       <section className={`mt-5 grid gap-3 md:grid-cols-2 ${isHeightSearchMode&&isSeismic?"report-overview-anchor-height":""}`}>
