@@ -78,7 +78,8 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
           <Metric label="η" value={result.eta} suffix="" />
           <Metric label="I_eff(raw)" value={result.intermediate.I_eff_raw_mm4 ?? result.I_eff_mm4} suffix="mm⁴" />
           <Metric label="I_eff 보정" value={result.intermediate.I_eff_correction_factor ?? 1} suffix="" />
-          <Metric label="피스 활용도 u/u_ref" value={intermediateValue(result, "screw_utilization_ratio")} suffix="" />
+          <Metric label="M_L / M*" value={intermediateValue(result, "moment_utilization_ratio")} suffix="" />
+          <Metric label="하중 수준 u/u_ref" value={intermediateValue(result, "screw_utilization_ratio")} suffix="" />
           <Metric label="강성 하중보정" value={intermediateValue(result, "stiffness_load_factor")} suffix="" />
           <Metric label="I_eff" value={result.I_eff_mm4} suffix="mm⁴" />
         </div>
@@ -117,7 +118,8 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
         <Metric label="η" value={result.eta} suffix="" />
         <Metric label="I_eff(raw)" value={result.intermediate.I_eff_raw_mm4 ?? result.I_eff_mm4} suffix="mm⁴" />
         <Metric label="I_eff 보정" value={result.intermediate.I_eff_correction_factor ?? 1} suffix="" />
-          <Metric label="피스 활용도 u/u_ref" value={intermediateValue(result, "screw_utilization_ratio")} suffix="" />
+          <Metric label="M_L / M*" value={intermediateValue(result, "moment_utilization_ratio")} suffix="" />
+          <Metric label="하중 수준 u/u_ref" value={intermediateValue(result, "screw_utilization_ratio")} suffix="" />
           <Metric label="강성 하중보정" value={intermediateValue(result, "stiffness_load_factor")} suffix="" />
         <Metric label="I_eff" value={result.I_eff_mm4} suffix="mm⁴" />
       </div>

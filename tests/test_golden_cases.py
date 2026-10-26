@@ -339,9 +339,13 @@ class GoldenCaseTest(unittest.TestCase):
 
     self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.79)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
+    # v0.7.4: L = 7,500 mm에서 M_L 0.791 > M* 0.732이므로 하중 수준 보정 k_L < 1이 함께 곱해진다
+    self.assertLess(result.intermediate["stiffness_load_factor"], 1.0)
     self.assertAlmostEqual(
       result.I_eff_mm4,
-      result.intermediate["I_eff_raw_mm4"] * result.intermediate["I_eff_correction_factor"],
+      result.intermediate["I_eff_raw_mm4"]
+      * result.intermediate["I_eff_correction_factor"]
+      * result.intermediate["stiffness_load_factor"],
     )
 
     central_request = replace(

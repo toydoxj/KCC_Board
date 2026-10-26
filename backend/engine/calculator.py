@@ -38,6 +38,7 @@ from backend.engine.constants import (
   STIFFNESS_CURVE_EXPONENT_BY_TYPE,
   STIFFNESS_CURVE_EXPONENT_C_BUTT_JOINT,
   STIFFNESS_REF_SCREW_PITCH_MM,
+  STIFFNESS_REF_MOMENT_KNM_BY_TYPE,
   STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE,
   STIFFNESS_TYPE_C,
   STIFFNESS_TYPE_C_CENTRAL_JOINT,
@@ -184,7 +185,8 @@ def _calculate_wall_check_once(
   )
   # 하한: 부분합성 강성은 스터드 단독 강성(자체 도심 기준) 이상
   I_eff_lower_bound = section.stud_assembly.self_inertia_mm4
-  utilization_ratio, curve_exponent, stiffness_load_factor = _stiffness_load_factor(request, section, group, method)
+  stiffness_load = _stiffness_load_factor(request, section, group, method)
+  stiffness_load_factor = stiffness_load.load_factor
   I_eff = max(I_eff_raw * I_eff_correction_factor * stiffness_load_factor, I_eff_lower_bound)
   stud_assembly = section.stud_assembly
   S_stud_composite, c_stud_composite = _stud_section_modulus(stud_result, stud_assembly, composite=True)
@@ -260,9 +262,15 @@ def _calculate_wall_check_once(
       "I_eff_raw_mm4": I_eff_raw,
       "I_eff_correction_factor": I_eff_correction_factor,
       "I_eff_lower_bound_mm4": I_eff_lower_bound,
-      "screw_utilization_ratio": utilization_ratio,
+      "screw_utilization_ratio": stiffness_load.utilization_ratio,
+      "service_moment_kNm": stiffness_load.service_moment_kNm,
+      "reference_moment_kNm": stiffness_load.reference_moment_kNm,
+      "moment_utilization_ratio": stiffness_load.moment_utilization_ratio,
+      "shear_utilization_ratio": stiffness_load.shear_utilization_ratio,
+      # 1.0 = 모멘트 기준 지배, 0.0 = 피스력 기준 지배 (intermediate는 숫자만 허용)
+      "stiffness_load_basis_moment": 1.0 if stiffness_load.moment_governs else 0.0,
       "screw_stud_side_shear_N": _screw_stud_side_shear_N(_stud_thickness_mm(section), request.bolt.diameter, stud_steel.Fu),
-      "stiffness_curve_exponent_m": curve_exponent,
+      "stiffness_curve_exponent_m": stiffness_load.curve_exponent,
       "stiffness_load_factor": stiffness_load_factor,
       "I_eff_lower_bound_governs": 1.0
       if I_eff_raw * I_eff_correction_factor * stiffness_load_factor < I_eff_lower_bound
@@ -644,20 +652,36 @@ def _stiffness_curve_exponent(group: str, method: str, has_rear_board: bool = Tr
   return STIFFNESS_CURVE_EXPONENT_BY_TYPE[calibration_type]
 
 
+@dataclass(frozen=True)
+class _StiffnessLoad:
+  utilization_ratio: float
+  curve_exponent: float
+  load_factor: float
+  service_moment_kNm: float
+  reference_moment_kNm: float
+  moment_utilization_ratio: float
+  shear_utilization_ratio: float
+  moment_governs: bool
+
+
 def _stiffness_load_factor(
   request: WallCheckRequest,
   section: _Section,
   group: str,
   method: str,
-) -> tuple[float, float, float]:
-  """피스 활용도 기준 단방향 강성 보정계수 min[1, (u/u_ref)^(1−m)].
+) -> _StiffnessLoad:
+  """하중 수준 기준 단방향 강성 보정계수 k_L = min[1, (u/u_ref)^(1−m)] (v0.7.4, 심사의견 E-3·E-8).
 
-  u/u_ref = (V_d / V_ref) × (p / p_ref)_max
-  - V_d: 처짐 검토 하중(활하중)에 의한 스터드 1개당 지점 전단력 = q·s·L/2
-  - V_ref: 형식별 R 보정점(허용처짐 상태)의 시험 피스 전단력 V* = P*·a/L
+  u/u_ref = max(M_L / M*, V_d / V*) × (p / p_ref)_max
+  - M_L: 처짐 검토 하중(활하중)에 의한 최대모멘트 = q·s·L²/8
+  - M*: 형식별 기준 모멘트(실측 할선강성비가 적용 R과 같아지는 모멘트)
+  - V_d: 스터드 1개당 지점 전단력 = q·s·L/2, V*: 형식별 R 보정점의 시험 피스 전단력
   - p/p_ref: 층별 피스 간격 / 시험 피스 간격(피스 1개당 전단력 ∝ 간격)
-  피스력이 보정점 수준 이하(u ≤ u_ref)이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
+  두 기준 중 불리한(큰) 활용도를 쓴다. u ≤ u_ref이면 1.0(현행 R 유지), 초과 시에만 강성을 저감한다.
   """
+  has_rear_board = bool(request.rear_boards)
+  service_moment_kNm = request.live_load_kN_m2 * (request.spacing_mm / 1000.0) * (request.span_mm / 1000.0) ** 2 / 8.0
+  reference_moment_kNm = STIFFNESS_REF_MOMENT_KNM_BY_TYPE[_require_calibration_type(group, method, has_rear_board)]
   support_shear_N = request.live_load_kN_m2 * 1e-3 * request.spacing_mm * request.span_mm / 2.0
   pitch_ratio = max(
     (
@@ -667,12 +691,23 @@ def _stiffness_load_factor(
     ),
     default=1.0,
   )
-  reference_shear_N = _stiffness_reference_shear_N(group, method, has_rear_board=bool(request.rear_boards))
-  utilization_ratio = support_shear_N / reference_shear_N * pitch_ratio
-  exponent = _stiffness_curve_exponent(group, method, has_rear_board=bool(request.rear_boards))
-  if utilization_ratio <= 1.0:
-    return utilization_ratio, exponent, 1.0
-  return utilization_ratio, exponent, utilization_ratio ** (1.0 - exponent)
+  reference_shear_N = _stiffness_reference_shear_N(group, method, has_rear_board=has_rear_board)
+  moment_ratio = service_moment_kNm / reference_moment_kNm
+  shear_ratio = support_shear_N / reference_shear_N
+  moment_governs = moment_ratio > shear_ratio
+  utilization_ratio = max(moment_ratio, shear_ratio) * pitch_ratio
+  exponent = _stiffness_curve_exponent(group, method, has_rear_board=has_rear_board)
+  load_factor = 1.0 if utilization_ratio <= 1.0 else utilization_ratio ** (1.0 - exponent)
+  return _StiffnessLoad(
+    utilization_ratio=utilization_ratio,
+    curve_exponent=exponent,
+    load_factor=load_factor,
+    service_moment_kNm=service_moment_kNm,
+    reference_moment_kNm=reference_moment_kNm,
+    moment_utilization_ratio=moment_ratio,
+    shear_utilization_ratio=shear_ratio,
+    moment_governs=moment_governs,
+  )
 
 
 def _parse_stud_type(stud: StudInput) -> tuple[str, str]:

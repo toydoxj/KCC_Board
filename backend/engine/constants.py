@@ -139,6 +139,22 @@ STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE: dict[str, float] = {
   STIFFNESS_TYPE_RV: 711.9,
   STIFFNESS_TYPE_MP: 691.0,
 }
+# 하중 수준 보정 모멘트 기준 M* (kN·m, v0.7.4, 심사의견 E-3·E-8): u/u_ref = max(M_L/M*, V_d/V*) × 피치비
+# M* = 실측 M–δ 곡선(ch4)의 할선강성비 I_test(M)/Ieff,raw(2,400)가 적용 R과 같아지는 모멘트.
+# 시험 범위에서 R 아래로 내려가지 않으면 시험 최대모멘트(외삽 금지). 같은 형식은 최솟값, 소수 셋째 자리 버림.
+# 산정 도구: backend/tools/r_calibration.py (--check로 대조)
+STIFFNESS_REF_MOMENT_KNM_BY_TYPE: dict[str, float] = {
+  STIFFNESS_TYPE_C_CENTRAL_JOINT: 1.126,
+  STIFFNESS_TYPE_C_FRONT_ONLY: 1.692,
+  STIFFNESS_TYPE_C: 1.690,
+  STIFFNESS_TYPE_CH: 0.732,
+  STIFFNESS_TYPE_T_SILENT: 0.732,
+  STIFFNESS_TYPE_R: 0.731,
+  STIFFNESS_TYPE_I: 1.690,
+  STIFFNESS_TYPE_HR: 1.647,
+  STIFFNESS_TYPE_RV: 0.663,
+  STIFFNESS_TYPE_MP: 0.672,
+}
 # 시험 피스 간격(엔진 bolt.pitch 순서: 3번 외측 / 2번 중간 / 1번 내측, mm) — u/u_ref에 피치비로 반영
 # 엑셀 VAR. C32:C34 = [1P 600, 2P 300, 3P 300], 1P = 내측(스터드 인접)
 STIFFNESS_REF_SCREW_PITCH_MM = (300.0, 300.0, 600.0)
