@@ -108,6 +108,7 @@ export interface WallCheckPayload {
   omega: number;
   anchor_capacity_kN: number;
   anchor_spacing_mm: number;
+  screw_pull_through_nominal_N?: number;
 }
 
 export interface LayerResult {
@@ -138,13 +139,13 @@ export interface WallCheckResult {
   deflection_verdict: string;
   stress_verdict: string;
   screw_tension_verdict: string;
+  notices: string[];
   max_height_mm: number;
   anchor_max_height_mm: number;
   max_height_increment_mm: number;
   anchor_spacing_increment_mm: number;
   layers: LayerResult[];
   intermediate: Record<string, number>;
-  notices: string[];
 }
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -159,9 +160,10 @@ export async function fetchCatalog(): Promise<MaterialCatalog> {
   return { boards, studs, studMethods, bolts };
 }
 
-export async function checkWall(payload: WallCheckPayload): Promise<WallCheckResult> {
+export async function checkWall(payload: WallCheckPayload, signal?: AbortSignal): Promise<WallCheckResult> {
   return request<WallCheckResult>("/api/check", {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
     },

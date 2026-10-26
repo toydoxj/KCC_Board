@@ -647,14 +647,15 @@ class GoldenCaseTest(unittest.TestCase):
     ) + 295.0 * result.intermediate["stud_Se_composite_mm3"] * 1e-6
     self.assertAlmostEqual(result.intermediate["Mn_composite_kNm"], expected_mn)
 
-  def test_i_stud_rejects_non_fire_rated_25mm_rear_board(self) -> None:
+  def test_i_stud_rejects_unregistered_rear_board_material(self) -> None:
     request = replace(
       request_from_golden_case(dict(self.cases[0])),
       rear_boards=(BoardLayer("일반", 25.0),),
       stud=StudInput(stud_type="I-STUD", spec="I-STUD 102-08", method="기본"),
     )
 
-    with self.assertRaisesRegex(ValueError, "방화 25T"):
+    # 자유선택은 등록된 물성 범위 내에서만 허용한다. 일반 25T는 DB에 없다.
+    with self.assertRaisesRegex(ValueError, "등록되지 않은 석고보드"):
       _build_section(request, self.repository)
 
   def test_r_stud_uses_12mm_clear_gap_between_1p_board_and_stud(self) -> None:

@@ -31,7 +31,7 @@ npm run dist
 
 `npm run dist`는 FastAPI 백엔드를 `renderer/backend-dist/kcc-board-api/kcc-board-api.exe`로 먼저 패키징한 뒤,
 Next 정적 파일과 Electron 설치 파일을 생성합니다. 빌드 결과는 `renderer/dist`에 생성됩니다.
-현재 버전의 Windows 설치 파일명은 `KCC Board Setup 0.7.2.exe`입니다.
+현재 버전의 Windows 설치 파일명은 `KCC Board Setup 0.7.3.exe`입니다.
 
 ## 개발 실행
 

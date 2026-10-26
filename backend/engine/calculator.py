@@ -13,6 +13,7 @@ from backend.engine.constants import (
   ASD_COMBINED_SEISMIC_FACTOR,
   ASD_SEISMIC_FACTOR,
   BOARD_ORDER_LABELS,
+  BILATERAL_SINGLE_PLY_SCREW_PITCH_MM,
   BOLT_SHEAR_TO_YIELD_RATIO,
   DEFAULT_ANCHOR_CAPACITY_KN,
   DEFAULT_ANCHOR_SPACING_MM,
@@ -66,8 +67,6 @@ MAX_HEIGHT_SEARCH_LIMIT_MM = 30000
 CENTRAL_JOINT_STUD_GAP_MM = 25.0
 CH_STUD_REAR_BOARD_THICKNESS_MM = 25.0
 CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM = 12.5
-I_STUD_REAR_BOARD_KIND = "방화"
-I_STUD_REAR_BOARD_THICKNESS_MM = 25.0
 R_STUD_BOARD_STUD_CLEAR_GAP_MM = 12.0
 # 한쪽 면만 검토하는 C-STUD 공법명(stud_method.json, 공백 제거 비교)
 C_STUD_ONE_SIDE_FINISH_METHOD = "일면마감"
@@ -95,6 +94,8 @@ class _Layer:
   # 피스 간격·개수 고정값(CH·I-STUD 고정 후면 보드). None이면 bolt 입력(층 순서별)을 따른다.
   connection_pitch_mm: float | None = None
   connection_count: float | None = None
+  # 비대칭 단독 1P의 마감행 간격 기준. 개수는 connection_count로 별도 지정 가능.
+  connection_order: int | None = None
 
 
 @dataclass(frozen=True)
@@ -276,6 +277,10 @@ def _calculate_wall_check_once(
       "Fp_kN": fp,
       "reaction_live_kN_per_m": reaction.live_kN_per_m,
       "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
+      **({
+        "fixed_rear_board_screw_pitch_mm": FIXED_REAR_BOARD_SCREW_PITCH_MM,
+        "fixed_rear_board_screw_count": FIXED_REAR_BOARD_SCREW_COUNT,
+      } if _fixed_rear_board_for_group(group) is not None else {}),
       **_reaction_intermediate(request, reaction),
       **screw_tension,
     },
@@ -355,6 +360,8 @@ def request_from_golden_case(case: dict[str, object]) -> WallCheckRequest:
 
 def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Section:
   group, method = _parse_stud_type(request.stud)
+  if _is_i_stud_group(group) and "".join(method.split()) == "일면마감":
+    raise ValueError("I-STUD 일면마감은 지원하지 않습니다. 후면 보드 1장을 포함한 기본 형식을 사용하십시오.")
   stud = repo.get_stud(group, request.stud.spec)
   _stud_steel(stud)
   stud_assembly = _stud_assembly(stud, method)
@@ -393,6 +400,24 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
   for board in front_boards:
     layer, y_cursor = _board_layer(board, y_cursor, request, repo)
     layers.append(layer)
+
+  active_count = max(len(rear_boards), len(front_boards))
+  layers = [
+    # 2026-10-26 승인: 2P/3P+1P의 단독 1P는 마감층 간격만 따르고,
+    # 개수는 원래 1P 값을 유지한다(UI 기본 1개). 반대 방향에도 동일 적용.
+    replace(
+      layer,
+      connection_order=active_count,
+      connection_count=_count_for_order(request.bolt.count, layer.order)
+      if active_count in (2, 3) else layer.connection_count,
+    )
+    if layer.layer_type == "board"
+    and layer.connection_pitch_mm is None
+    and ((index < len(rear_boards) and len(rear_boards) == 1)
+         or (index > len(rear_boards) and len(front_boards) == 1))
+    else layer
+    for index, layer in enumerate(layers)
+  ]
 
   return _Section(
     layers=tuple(layers),
@@ -635,7 +660,7 @@ def _stiffness_load_factor(
   support_shear_N = request.live_load_kN_m2 * 1e-3 * request.spacing_mm * request.span_mm / 2.0
   pitch_ratio = max(
     (
-      _layer_pitch_count(layer, request.bolt)[0] / _pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, layer.order)
+      _layer_pitch_count(layer, request.bolt)[0] / _pitch_for_order(STIFFNESS_REF_SCREW_PITCH_MM, layer.connection_order or layer.order)
       for layer in section.layers
       if layer.layer_type == "board"
     ),
@@ -658,13 +683,14 @@ def _parse_stud_type(stud: StudInput) -> tuple[str, str]:
   return group, method
 
 
-def _fixed_rear_board_for_group(group: str) -> tuple[str | None, float] | None:
+def _fixed_rear_board_for_group(group: str) -> tuple[str | None, float | None] | None:
   if _is_ch_stud_group(group):
     if "개량형" in group:
       return (None, CH_STUD_IMPROVED_REAR_BOARD_THICKNESS_MM)
     return (None, CH_STUD_REAR_BOARD_THICKNESS_MM)
   if _is_i_stud_group(group):
-    return (I_STUD_REAR_BOARD_KIND, I_STUD_REAR_BOARD_THICKNESS_MM)
+    # 후면 한 장 끼움 구성은 유지하되 종류·두께는 사용자 선택 물성을 적용한다.
+    return (None, None)
   return None
 
 
@@ -683,9 +709,13 @@ def _is_r_stud_group(group: str) -> bool:
 def _validate_fixed_rear_boards(
   group: str,
   rear_boards: tuple[BoardLayer, ...],
-  fixed_rear_board: tuple[str | None, float],
+  fixed_rear_board: tuple[str | None, float | None],
 ) -> None:
   required_kind, required_thickness_mm = fixed_rear_board
+  if required_thickness_mm is None:
+    if len(rear_boards) != 1:
+      raise ValueError(f"{group}는 선택한 종류·두께의 후면 석고보드 1장이 필요합니다.")
+    return
   required_label = (
     f"{required_kind} {required_thickness_mm:g}T"
     if required_kind is not None
@@ -826,8 +856,9 @@ def _gypsum_screw_design_shear_N(board_thickness_mm: float) -> float:
 
 
 def _layer_pitch_count(layer: _Layer, bolt: BoltInput) -> tuple[float, float]:
-  pitch = layer.connection_pitch_mm if layer.connection_pitch_mm is not None else _pitch_for_order(bolt.pitch, layer.order)
-  count = layer.connection_count if layer.connection_count is not None else _count_for_order(bolt.count, layer.order)
+  order = layer.connection_order or layer.order
+  pitch = layer.connection_pitch_mm if layer.connection_pitch_mm is not None else _pitch_for_order(bolt.pitch, order)
+  count = layer.connection_count if layer.connection_count is not None else _count_for_order(bolt.count, order)
   return pitch, count
 
 
@@ -899,9 +930,14 @@ def bolt_values_from_ply_order(ply_values: tuple[float, ...]) -> tuple[float, ..
 def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   """표준 외 피스 간격 경고(판정 불변). CH·I-STUD 고정 후면 보드(간격 고정)는 제외한다."""
   # _pitch_for_order와 같은 기준으로 order를 1~3에 정규화한 뒤 중복 제거(order ≥ 3은 모두 외측 피치)
+  stud_index = next(i for i, layer in enumerate(section.layers) if layer.layer_type == "stud")
+  bilateral_single_ply = (
+    sum(layer.layer_type == "board" for layer in section.layers[:stud_index]) == 1
+    and sum(layer.layer_type == "board" for layer in section.layers[stud_index + 1:]) == 1
+  )
   orders = sorted(
     {
-      min(max(layer.order, 1), 3)
+      min(max(layer.connection_order or layer.order, 1), 3)
       for layer in section.layers
       if layer.layer_type == "board" and layer.connection_pitch_mm is None
     }
@@ -909,7 +945,11 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   notices: list[str] = []
   for order in orders:
     pitch = _pitch_for_order(bolt.pitch, order)
-    standard = _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
+    standard = (
+      BILATERAL_SINGLE_PLY_SCREW_PITCH_MM
+      if bilateral_single_ply and order == 1
+      else _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
+    )
     if math.isclose(pitch, standard):
       continue
     label = BOARD_ORDER_LABELS[order]

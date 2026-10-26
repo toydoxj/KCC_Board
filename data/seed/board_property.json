@@ -1,6 +1,6 @@
 {
   "_source": "계산_SHEET_260528_.xlsx / Property_Gymsumboard",
-  "_note": "E_GPa: 사용자 제공 표 기준(추후 *10^3 -> N/mm^2). Fy/Fu: N/mm^2. Fu는 파괴응력 검토 표 기준이며 Fy = Fu × 항복비(종류·두께별 Py/Pu, backend/engine/constants.py BOARD_YIELD_RATIO_BY_BOARD — 시험 또는 유사 보드 준용, 미등재 0.6). mass: kg/m^2",
+  "_note": "E_GPa: 사용자 제공 표 기준(추후 *10^3 -> N/mm^2). Fy/Fu: N/mm^2. Fu는 파괴응력 검토 표 기준이며 Fy = Fu × 항복비(종류·두께별 Py/Pu, backend/engine/constants.py BOARD_YIELD_RATIO_BY_BOARD — 시험 또는 유사 보드 준용, 미등재 0.6). mass: kg/m^2 2026-10-26: 차음 9.5T·15T, 전방수 15T는 카탈로그에서 제외함.",
   "items": [
     {
       "kind": "일반",
@@ -116,27 +116,11 @@
     },
     {
       "kind": "차음",
-      "thickness": 9.5,
-      "mass_kg_m2": null,
-      "Fy": 10.238227146814406,
-      "Fu": 15.51246537396122,
-      "E_GPa": 3.63
-    },
-    {
-      "kind": "차음",
       "thickness": 12.5,
       "mass_kg_m2": 10.5,
       "Fy": 7.953791999999998,
       "Fu": 12.051199999999996,
       "E_GPa": 3.1
-    },
-    {
-      "kind": "차음",
-      "thickness": 15.0,
-      "mass_kg_m2": 12.5,
-      "Fy": null,
-      "Fu": null,
-      "E_GPa": null
     },
     {
       "kind": "고강도일반",
@@ -161,14 +145,6 @@
       "Fy": 7.190399999999998,
       "Fu": 14.380799999999995,
       "E_GPa": 5.0
-    },
-    {
-      "kind": "전방수",
-      "thickness": 15.0,
-      "mass_kg_m2": null,
-      "Fy": 4.816933333333333,
-      "Fu": 12.35111111111111,
-      "E_GPa": 2.05
     },
     {
       "kind": "고강도전방수",

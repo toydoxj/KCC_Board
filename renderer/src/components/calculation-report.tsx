@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 import type { LayerResult, WallCheckResult } from "@/lib/api";
+import { governingHeight, heightReview } from "@/lib/height-review";
+import { displayStudGroup } from "@/lib/visual-assets";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 import { ResultNotices } from "@/components/result-notices";
 
@@ -93,18 +95,23 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   const deflectionOk = data.result.deflection_verdict === "O.K";
   const screwTensionOk = data.result.screw_tension_verdict === "O.K";
   const isSeismic = data.result.design_case !== "non_seismic";
+  const runnerOk = heightReview(data.result,data.calculationMode,data.geometry.spanMm).anchorOk;
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
   const strengthCheckModeLabel = strengthCheckModeLabels[data.result.strength_check_mode] ?? data.result.strength_check_mode;
   const isStudOnlyStrengthCheck = data.result.strength_check_mode === "stud_only";
+  const activePlyCount = Math.max(
+    data.frontBoards.filter(board => board.thickness !== null && board.thickness > 0).length,
+    data.rearBoards.filter(board => board.thickness !== null && board.thickness > 0).length,
+  );
   const heightLabel =
     data.calculationMode === "heightCheck"
       ? "검토 높이"
       : data.calculationMode === "anchorHeight"
-        ? "앵커 산정 기준높이"
+        ? "런너 고정못 산정 기준높이"
         : "산정 높이";
   const isHeightSearchMode = data.calculationMode === "maxHeight" || data.calculationMode === "anchorHeight";
-  const heightSearchLabel = data.calculationMode === "anchorHeight" ? "앵커 기준 최대높이" : "최대 가능 높이";
-  const heightSearchValue = data.calculationMode === "anchorHeight" ? data.result.anchor_max_height_mm : data.result.max_height_mm;
+  const heightSearchLabel = data.calculationMode === "anchorHeight" ? "런너 고정못 기준 최대높이" : "최대 가능 높이";
+  const heightSearchValue = governingHeight(data.result);
   const reactionFormula =
     data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7E, 0.75L + 0.75(0.7E))";
   const mnTerms = nominalMomentTerms(data);
@@ -118,6 +125,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   return (
     <article className={`report-document bg-white text-slate-950 ${className}`}>
       <header className="border-b-2 border-slate-950 pb-4">
+        <div className="document-version">V1.0</div>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-normal">석고보드 건식벽체 구조검토 계산서</h1>
@@ -134,7 +142,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <ResultNotices notices={data.result.notices ?? []} />
       </section>
 
-      <section className="mt-5 grid gap-3 md:grid-cols-2">
+      <section className={`mt-5 grid gap-3 md:grid-cols-2 ${isHeightSearchMode&&isSeismic?"report-overview-anchor-height":""}`}>
         <ReportBlock title="판정 요약">
           {isHeightSearchMode ? (
             <>
@@ -144,9 +152,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                   {formatNumber(heightSearchValue)} mm
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <div data-verdict-group="detail" className={`mt-3 grid gap-2 ${isSeismic?"grid-cols-2":"grid-cols-3"}`}>
                 <Verdict label="산정 응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="산정 처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
+                {isSeismic&&<Verdict label="런너 고정못" ok={runnerOk} value={runnerOk?"O.K":"N.G"}/>}
                 <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
@@ -159,9 +168,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             </>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-2">
+              <div data-verdict-group="detail" className={`grid gap-2 ${isSeismic?"grid-cols-2":"grid-cols-3"}`}>
                 <Verdict label="응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
+                {isSeismic&&<Verdict label="런너 고정못" ok={runnerOk} value={runnerOk?"O.K":"N.G"}/>}
                 <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
@@ -179,7 +189,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
 
         <ReportBlock title="검토 조건">
           <div className="grid gap-1 text-sm">
-            <KeyValue label="스터드" value={`${data.stud.group} / ${data.stud.method} / ${data.stud.spec}`} />
+            <KeyValue label="스터드" value={`${displayStudGroup(data.stud.group)} / ${data.stud.method} / ${data.stud.spec}`} />
             <KeyValue label="스터드 간격" value={`${formatNumber(data.geometry.spacingMm)} mm`} />
             <KeyValue label={heightLabel} value={`${formatNumber(data.geometry.spanMm)} mm`} />
             <KeyValue label="검토 CASE" value={data.loads.designCaseLabel} />
@@ -187,13 +197,12 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="활하중" value={`${formatNumber(data.loads.liveLoadKnM2)} kN/m²`} />
             <KeyValue label="연직하중" value={`${formatNumber(data.loads.verticalLoadKnM)} kN/m`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
-            {isSeismic ? <KeyValue label="앵커 성능" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
-            {isSeismic ? <KeyValue label="앵커 간격" value={`${formatNumber(data.geometry.anchorSpacingMm)} mm`} /> : null}
-            <KeyValue label="런너 기준" value="런너는 0.8T 이상 전부 적용 가능" />
+            {isSeismic ? <KeyValue label="런너 고정못 성능" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="런너 고정못 간격" value={`${formatNumber(data.geometry.anchorSpacingMm)} mm`} /> : null}
             {isHeightSearchMode ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
             ) : null}
-            <KeyValue label="지진 입력" value={`${data.loads.seismicSiteClass}, S=${formatNumber(data.loads.seismicS)}, Ip=${formatNumber(data.loads.seismicIp)}`} />
+            {isSeismic&&<KeyValue label="지진 입력" value={`${data.loads.seismicSiteClass}, S=${formatNumber(data.loads.seismicS)}, Ip=${formatNumber(data.loads.seismicIp)}`} />}
           </div>
         </ReportBlock>
       </section>
@@ -241,9 +250,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               </tr>
             </thead>
             <tbody>
-              <BoltRow label="3번(외측)" count={data.bolts.outerCount} pitch={data.bolts.outerPitch} />
-              <BoltRow label="2번(중간)" count={data.bolts.middleCount} pitch={data.bolts.middlePitch} />
-              <BoltRow label="1번(내측)" count={data.bolts.innerCount} pitch={data.bolts.innerPitch} />
+              <BoltRow label="3번(외측)" count={data.bolts.outerCount} pitch={data.bolts.outerPitch} applicable={activePlyCount >= 3} />
+              <BoltRow label="2번(중간)" count={data.bolts.middleCount} pitch={data.bolts.middlePitch} applicable={activePlyCount >= 2} />
+              <BoltRow label="1번(내측)" count={data.bolts.innerCount} pitch={data.bolts.innerPitch} applicable={activePlyCount >= 1} />
+              {data.result.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<BoltRow label="2면 고정 보드" count={data.result.intermediate.fixed_rear_board_screw_count} pitch={data.result.intermediate.fixed_rear_board_screw_pitch_mm} />}
             </tbody>
           </table>
         </ReportBlock>
@@ -305,7 +315,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <KeyValue label="최대 가능 높이" value={`${formatNumber(data.result.max_height_mm)} mm`} />
             ) : null}
             {data.calculationMode === "anchorHeight" ? (
-              <KeyValue label="앵커 기준 최대높이" value={`${formatNumber(data.result.anchor_max_height_mm)} mm`} />
+              <KeyValue label="런너 고정못 기준 최대높이" value={`${formatNumber(data.result.anchor_max_height_mm)} mm`} />
             ) : null}
             <KeyValue label="Mn(적용)" value={`${formatNumber(data.result.Mn_kNm)} kN·m`} />
             <KeyValue label="Mn(부분합성)" value={`${formatNumber(data.result.intermediate.Mn_composite_kNm ?? data.result.Mn_kNm)} kN·m`} />
@@ -348,7 +358,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <div>Rh,L = (L × H × B) / 2 / B</div>
               <div>Rh,E = (Fp / 2 × 2) / B</div>
               <div>{reactionFormula}</div>
-              <div>허용 앵커 간격 = 앵커 성능 / Rh × 1000</div>
+              <div>허용 런너 고정못 간격 = 런너 고정못 성능 / Rh × 1000</div>
             </div>
             <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
               <KeyValue
@@ -368,23 +378,23 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 value={`${formatNumber(data.result.intermediate.reaction_required_kN_per_m ?? 0)} kN/m`}
               />
               <KeyValue
-                label="앵커 성능"
+                label="런너 고정못 성능"
                 value={`${formatNumber(data.result.intermediate.anchor_capacity_kN ?? 0)} kN/개`}
               />
               <KeyValue
-                label="검토 앵커 간격"
+                label="검토 런너 고정못 간격"
                 value={`${formatNumber(data.result.intermediate.anchor_spacing_mm ?? 0)} mm`}
               />
               <KeyValue
-                label="허용 앵커 간격"
+                label="허용 런너 고정못 간격"
                 value={`${formatNumber(data.result.intermediate.anchor_allowable_spacing_mm ?? 0)} mm`}
               />
               <KeyValue
-                label="앵커 저항"
+                label="런너 고정못 저항"
                 value={`${formatNumber(data.result.intermediate.anchor_capacity_kN_per_m ?? 0)} kN/m`}
               />
               <KeyValue
-                label="앵커 사용률"
+                label="런너 고정못 사용률"
                 value={formatNumber(data.result.intermediate.anchor_utilization ?? 0)}
               />
             </div>
@@ -455,6 +465,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="풀아웃 사용률" value={formatNumber(data.result.intermediate.screw_pullout_utilization ?? Number.NaN)} />
             <KeyValue label="풀스루 허용" value={`${formatNumber(data.result.intermediate.screw_pull_through_allowable_N ?? Number.NaN)} N/개`} />
             <KeyValue label="풀스루 사용률" value={formatNumber(data.result.intermediate.screw_pull_through_utilization ?? Number.NaN)} />
+            <KeyValue label="피스 인장 사용률" value={formatNumber(data.result.intermediate.screw_tension_utilization ?? Number.NaN)} />
           </div>
         </ReportBlock>
       </section>
@@ -498,7 +509,7 @@ function ReportBlock({ title, children }: { title: string; children: ReactNode }
 
 function Verdict({ label, ok, value }: { label: string; ok: boolean; value: string }) {
   return (
-    <div className={ok ? "rounded-md border border-emerald-700 bg-emerald-50 p-3" : "rounded-md border border-red-700 bg-red-50 p-3"}>
+    <div data-verdict={label} className={ok ? "rounded-md border border-emerald-700 bg-emerald-50 p-3" : "rounded-md border border-red-700 bg-red-50 p-3"}>
       <div className="text-xs font-medium text-slate-600">{label}</div>
       <div className={ok ? "mt-1 text-xl font-bold text-emerald-800" : "mt-1 text-xl font-bold text-red-800"}>
         {value}
@@ -519,12 +530,12 @@ function KeyValue({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BoltRow({ label, count, pitch }: { label: string; count: number; pitch: number }) {
+function BoltRow({ label, count, pitch, applicable = true }: { label: string; count: number; pitch: number; applicable?: boolean }) {
   return (
-    <tr>
+    <tr data-bolt-placement={label} data-applicable={applicable}>
       <TableCell>{label}</TableCell>
-      <TableCell>{formatNumber(count)}개</TableCell>
-      <TableCell>{formatNumber(pitch)} mm</TableCell>
+      <TableCell>{applicable ? `${formatNumber(count)}개` : "미적용"}</TableCell>
+      <TableCell>{applicable ? `${formatNumber(pitch)} mm` : "미적용"}</TableCell>
     </tr>
   );
 }

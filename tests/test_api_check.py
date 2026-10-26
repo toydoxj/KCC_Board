@@ -39,11 +39,11 @@ class ApiCheckTest(unittest.TestCase):
     self.assertEqual(boards.status_code, 200)
     boards_body = boards.json()
     self.assertTrue(boards_body["success"])
-    self.assertEqual(len(boards_body["data"]), 22)
+    self.assertEqual(len(boards_body["data"]), 19)
     complete_boards = [board for board in boards_body["data"] if board["is_complete"]]
     incomplete_boards = [board for board in boards_body["data"] if not board["is_complete"]]
     self.assertEqual(len(complete_boards), 19)
-    self.assertEqual(len(incomplete_boards), 3)
+    self.assertEqual(len(incomplete_boards), 0)
     waterproof = next(board for board in boards_body["data"] if board["kind"] == "방수" and board["thickness"] == 9.5)
     self.assertTrue(waterproof["is_complete"])
     self.assertAlmostEqual(float(waterproof["E_GPa"]), 4.72)
