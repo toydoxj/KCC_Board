@@ -166,9 +166,9 @@ function ReactionMetrics({ result }: { result: WallCheckResult }) {
   return (
     <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
       <Metric label="반력 L" value={intermediateValue(result, "reaction_L_kN_per_m")} suffix="kN/m" />
-      <Metric label="반력 0.7E" value={intermediateValue(result, "reaction_0_7E_kN_per_m")} suffix="kN/m" />
+      <Metric label="반력 0.7Ω0E" value={intermediateValue(result, "reaction_0_7E_kN_per_m")} suffix="kN/m" />
       <Metric
-        label="반력 0.75L+0.75(0.7E)"
+        label="반력 0.75L+0.75(0.7Ω0E)"
         value={intermediateValue(result, "reaction_0_75L_0_525E_kN_per_m")}
         suffix="kN/m"
       />

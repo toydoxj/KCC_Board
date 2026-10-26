@@ -113,7 +113,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   const heightSearchLabel = data.calculationMode === "anchorHeight" ? "런너 고정못 기준 최대높이" : "최대 가능 높이";
   const heightSearchValue = governingHeight(data.result);
   const reactionFormula =
-    data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7E, 0.75L + 0.75(0.7E))";
+    data.result.design_case === "non_seismic" ? "Rh = L" : "Rh = max(L, 0.7Ω0E, 0.75L + 0.75(0.7Ω0E))";
   const mnTerms = nominalMomentTerms(data);
   const boardMoment = mnTerms
     .filter((term) => term.type === "board")
@@ -356,7 +356,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
           <ReportBlock title="반력 산정">
             <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
               <div>Rh,L = (L × H × B) / 2 / B</div>
-              <div>Rh,E = (Fp / 2 × 2) / B</div>
+              <div>Rh,E = (Fp / 2 × 2) / B, 런너 고정못 반력에만 과강도계수 Ω0 = {formatNumber(data.result.intermediate.anchor_seismic_overstrength_factor ?? Number.NaN)} 적용</div>
               <div>{reactionFormula}</div>
               <div>허용 런너 고정못 간격 = 런너 고정못 성능 / Rh × 1000</div>
             </div>
@@ -366,11 +366,11 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 value={`${formatNumber(data.result.intermediate.reaction_L_kN_per_m ?? 0)} kN/m`}
               />
               <KeyValue
-                label="반력 0.7E"
+                label="반력 0.7Ω0E"
                 value={`${formatNumber(data.result.intermediate.reaction_0_7E_kN_per_m ?? Number.NaN)} kN/m`}
               />
               <KeyValue
-                label="반력 0.75L+0.75(0.7E)"
+                label="반력 0.75L+0.75(0.7Ω0E)"
                 value={`${formatNumber(data.result.intermediate.reaction_0_75L_0_525E_kN_per_m ?? Number.NaN)} kN/m`}
               />
               <KeyValue

@@ -391,11 +391,16 @@ class GoldenCaseTest(unittest.TestCase):
     spacing_m = request.spacing_mm / 1000.0
     span_m = request.span_mm / 1000.0
     expected_live = request.live_load_kN_m2 * span_m * spacing_m / 2.0 / spacing_m
-    expected_seismic = result.intermediate["Fp_kN"] / 2.0 * 2.0 / spacing_m
+    # 앵커 반력의 지진항에는 과강도계수 Ω0 = 2.0을 곱한다
+    expected_seismic = 2.0 * result.intermediate["Fp_kN"] / 2.0 * 2.0 / spacing_m
+    self.assertAlmostEqual(result.intermediate["anchor_seismic_overstrength_factor"], 2.0)
+    # 지진반력 원값(Ω0 미적용)은 그대로 유지한다
+    self.assertAlmostEqual(result.intermediate["reaction_seismic_kN_per_m"], expected_seismic / 2.0)
     expected_0_7E = 0.7 * expected_seismic
     expected_0_75L_0_525E = 0.75 * expected_live + 0.75 * 0.7 * expected_seismic
     expected_required = max(expected_live, expected_0_7E, expected_0_75L_0_525E)
-    expected_anchor_allowable_spacing = 200.0
+    # Ω0 적용 전 200 mm → 적용 후 150 mm (0.4 kN / 2.538 kN/m = 157.6 mm, 50 mm 내림)
+    expected_anchor_allowable_spacing = 150.0
     expected_anchor_capacity_per_m = request.anchor_capacity_kN / (request.anchor_spacing_mm / 1000.0)
     expected_anchor_utilization = expected_required / expected_anchor_capacity_per_m
 
@@ -418,7 +423,8 @@ class GoldenCaseTest(unittest.TestCase):
     )
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_capacity_kN"], 0.8)
     expected_stronger_spacing = math.floor(0.8 / expected_required * 1000.0 / 50.0) * 50.0
-    self.assertAlmostEqual(expected_stronger_spacing, 450.0)
+    # Ω0 적용 전 450 mm → 적용 후 300 mm
+    self.assertAlmostEqual(expected_stronger_spacing, 300.0)
     self.assertAlmostEqual(stronger_anchor_result.intermediate["anchor_allowable_spacing_mm"], expected_stronger_spacing)
 
   def test_screw_tension_pullout_and_pull_through(self) -> None:

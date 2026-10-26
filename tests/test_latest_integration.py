@@ -21,7 +21,20 @@ def test_unchanged_configurations_match_latest_github(case):
     result=calculate_wall_check(WallCheckRequest(**data),JsonSeedRepository(ROOT/'data/seed'))
     expected=case['expected']
     assert result.max_height_mm==expected['without_runner_mm']
-    assert result.anchor_max_height_mm==expected['with_runner_mm']
+    # 2026-10-26: 앵커 반력 지진항에 Ω0 적용 후 내진 앵커 기준 최대높이는 참조값(Ω0 적용 전)보다 낮다.
+    # 내진은 경계 검증: 최대높이에서 통과, +50 mm에서 실패해야 한다.
+    if case['design']=='seismic':
+        request=WallCheckRequest(**data)
+        height=result.anchor_max_height_mm
+        assert 0<height<expected['with_runner_mm']
+        def passes(h):
+            r=_calculate_wall_check_once(replace(request,span_mm=h),JsonSeedRepository(ROOT/'data/seed'))
+            return (r.stress_verdict==r.deflection_verdict==r.screw_tension_verdict=='O.K'
+                    and r.intermediate['anchor_utilization']<=1.0)
+        assert passes(height)
+        assert not passes(height+50.0)
+    else:
+        assert result.anchor_max_height_mm==expected['with_runner_mm']
     assert result.eta==pytest.approx(expected['eta_3000'])
     assert result.I_eff_mm4==pytest.approx(expected['Ieff_3000'])
     assert result.Mn_kNm==pytest.approx(expected['Mn_3000'])

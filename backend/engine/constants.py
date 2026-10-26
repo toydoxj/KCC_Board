@@ -55,6 +55,10 @@ ASD_COMBINED_SEISMIC_FACTOR = 0.75
 
 # 비구조요소 지진력 계수: Fp = 0.48 × SDS × Ip × W (= 0.4·ap·(1+2z/h)/Rp, ap=1.0, z/h=1, Rp=2.5)
 SEISMIC_FP_COEFFICIENT = 0.48
+# 앵커(런너 고정못) 반력의 지진항 E에만 곱하는 과강도계수 Ω0 (2026-10-26 사용자 결정).
+# 근거: ASCE 7-16 §13.4.2, Table 13.5-1 내부 칸막이(기타 벽체) Ω0p = 2.0 — 원문·KDS 대응 조항 확인 필요.
+# 스터드 응력·처짐·피스 검토에는 적용하지 않는다.
+ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR = 2.0
 
 # 피스 인장(면외 이탈) 검토 — AISI S100-16 J4.4
 SCREW_PULLOUT_COEFFICIENT = 0.85  # Eq. J4.4.1-1: Pnot = 0.85·tc·d·Fu2

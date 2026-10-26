@@ -12,6 +12,7 @@ from backend.engine.constants import (
   ASD_COMBINED_LIVE_FACTOR,
   ASD_COMBINED_SEISMIC_FACTOR,
   ASD_SEISMIC_FACTOR,
+  ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR,
   BOARD_ORDER_LABELS,
   BILATERAL_SINGLE_PLY_SCREW_PITCH_MM,
   BOLT_SHEAR_TO_YIELD_RATIO,
@@ -1118,9 +1119,11 @@ def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _React
   seismic_per_spacing = fp_kN / 2.0 * 2.0
   live_kN_per_m = live_per_spacing / spacing_m
   seismic_kN_per_m = seismic_per_spacing / spacing_m
+  # 앵커 반력의 지진항에만 과강도계수 Ω0 적용
+  anchor_seismic_kN_per_m = ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR * seismic_kN_per_m
   load_combination_L = live_kN_per_m
-  load_combination_0_7E = ASD_SEISMIC_FACTOR * seismic_kN_per_m
-  load_combination_0_75L_0_525E = _combined_live_seismic(live_kN_per_m, seismic_kN_per_m)
+  load_combination_0_7E = ASD_SEISMIC_FACTOR * anchor_seismic_kN_per_m
+  load_combination_0_75L_0_525E = _combined_live_seismic(live_kN_per_m, anchor_seismic_kN_per_m)
   if request.design_case == DESIGN_CASE_NON_SEISMIC:
     required = load_combination_L
   else:
@@ -1155,6 +1158,7 @@ def _reaction_intermediate(request: WallCheckRequest, reaction: _ReactionResult)
       {
         "reaction_0_7E_kN_per_m": reaction.load_combination_0_7E_kN_per_m,
         "reaction_0_75L_0_525E_kN_per_m": reaction.load_combination_0_75L_0_525E_kN_per_m,
+        "anchor_seismic_overstrength_factor": ANCHOR_SEISMIC_OVERSTRENGTH_FACTOR,
         "anchor_capacity_kN": reaction.anchor_capacity_kN,
         "anchor_spacing_mm": reaction.anchor_spacing_mm,
         "anchor_allowable_spacing_mm": reaction.anchor_allowable_spacing_mm,
