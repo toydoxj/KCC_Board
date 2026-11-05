@@ -31,7 +31,12 @@ from backend.engine.constants import (
   SCREW_STUD_BEARING_COEFFICIENT,
   SCREW_TENSION_OMEGA,
   SCREW_TILTING_COEFFICIENT,
-  SEISMIC_FP_COEFFICIENT,
+  SEISMIC_AP,
+  SEISMIC_FP_BASE_FACTOR,
+  SEISMIC_FP_HEIGHT_FACTOR,
+  SEISMIC_FP_MAX_COEFFICIENT,
+  SEISMIC_FP_MIN_COEFFICIENT,
+  SEISMIC_RP,
   STANDARD_SCREW_PITCH_MM,
   STEEL_DENSITY_KG_M3,
   EFFECTIVE_INERTIA_CORRECTION_BY_TYPE,
@@ -277,6 +282,7 @@ def _calculate_wall_check_once(
   _validate_strength_check_mode(request.strength_check_mode)
   _validate_anchor_spacing(request.anchor_spacing_mm)
   _validate_stud_spacing(request.spacing_mm)
+  _validate_z_over_h(request.seismic.z_over_h)
   _validate_pull_through(request.screw_pull_through_nominal_N)
   repo = repository
   section = _build_section(request, repo)
@@ -398,6 +404,7 @@ def _calculate_wall_check_once(
       "Fa": _seismic_fa(request),
       "Sds": sds,
       "Fp_kN": fp,
+      **_fp_intermediate(request),
       "reaction_live_kN_per_m": reaction.live_kN_per_m,
       "reaction_seismic_kN_per_m": reaction.seismic_kN_per_m,
       **({
@@ -1256,9 +1263,57 @@ def _seismic_moment_kNm(
   seismic_weight = sum(layer.mass_kN for layer in layers)
   fa = _seismic_fa(request)
   sds = request.seismic.S * 2.5 * 2.0 / 3.0 * fa
-  fp = SEISMIC_FP_COEFFICIENT * sds * request.seismic.Ip * seismic_weight
+  fp = _fp_coefficient(request.seismic.z_over_h).coefficient * sds * request.seismic.Ip * seismic_weight
   moment = 0.25 * fp * (request.span_mm / 1000.0)
   return moment, seismic_weight, sds, fp
+
+
+# seismic_fp_bound_applied 값: 0 = 상·하한 미적용, 1 = 하한 0.3, 2 = 상한 1.6
+FP_BOUND_NONE = 0
+FP_BOUND_LOWER = 1
+FP_BOUND_UPPER = 2
+FP_COEFFICIENT_DECIMALS = 12
+
+
+@dataclass(frozen=True)
+class _FpCoefficient:
+  coefficient: float
+  bound_applied: int
+
+
+def _fp_coefficient(z_over_h: float) -> _FpCoefficient:
+  """비구조요소 지진력 계수 Fp/(SDS·Ip·Wp) (2차 심사의견 D-2).
+
+  c = 0.4·ap·(1 + 2·z/h)/Rp, 0.3 ≤ c ≤ 1.6. z/h = 1.0 → 0.48, z/h < 0.4375 → 하한 0.3.
+  모멘트(Fp)·피스 인장 두 경로가 같은 계수를 쓰도록 이 함수만 경유한다.
+  """
+  _validate_z_over_h(z_over_h)
+  # 부동소수 오차 제거: z/h = 1.0에서 기존 상수 0.48과 비트 단위로 같아야 경계 판정(앵커 간격 등)이 바뀌지 않는다
+  raw = round(
+    SEISMIC_FP_BASE_FACTOR * SEISMIC_AP * (1.0 + SEISMIC_FP_HEIGHT_FACTOR * z_over_h) / SEISMIC_RP,
+    FP_COEFFICIENT_DECIMALS,
+  )
+  if raw < SEISMIC_FP_MIN_COEFFICIENT:
+    return _FpCoefficient(SEISMIC_FP_MIN_COEFFICIENT, FP_BOUND_LOWER)
+  if raw > SEISMIC_FP_MAX_COEFFICIENT:
+    return _FpCoefficient(SEISMIC_FP_MAX_COEFFICIENT, FP_BOUND_UPPER)
+  return _FpCoefficient(raw, FP_BOUND_NONE)
+
+
+def _validate_z_over_h(z_over_h: float) -> None:
+  if not math.isfinite(z_over_h) or z_over_h < 0.0 or z_over_h > 1.0:
+    raise ValueError("설치높이비 z/h는 0.0~1.0 범위여야 합니다.")
+
+
+def _fp_intermediate(request: WallCheckRequest) -> dict[str, float]:
+  fp = _fp_coefficient(request.seismic.z_over_h)
+  return {
+    "seismic_z_over_h": request.seismic.z_over_h,
+    "seismic_ap": SEISMIC_AP,
+    "seismic_rp": SEISMIC_RP,
+    "seismic_fp_coefficient": fp.coefficient,
+    "seismic_fp_bound_applied": float(fp.bound_applied),
+  }
 
 
 def _reaction_result_kN_per_m(request: WallCheckRequest, fp_kN: float) -> _ReactionResult:
@@ -1361,7 +1416,7 @@ def _screw_tension_result(
 
   - 요구 인장력 T = q × s × p_max [N/개] (피치당 피스 1개, 보수측)
     q: 면별 설계 횡압력(kN/m²) = L 또는 max(L, 0.7E, 0.75L + 0.75(0.7E)),
-       E = 0.48·SDS·Ip × (해당 면 보드 자중). 면의 전체 하중을 피스가 가장 성긴 층이 부담한다고 가정(보수측).
+       E = c·SDS·Ip × (해당 면 보드 자중), c = _fp_coefficient(z/h) (z/h = 1.0 → 0.48). 면의 전체 하중을 피스가 가장 성긴 층이 부담한다고 가정(보수측).
   - 풀아웃 Pnot = 0.85·tc·d·Fu2 (Eq. J4.4.1-1), tc = 스터드 두께, Ω = 3.0
   - 풀스루(석고보드) = 입력 공칭값 / Ω (AISI 강판식 J4.4.2는 석고보드에 적용 불가)
   벽 높이와 무관한 검토이다.
@@ -1377,6 +1432,7 @@ def _screw_tension_result(
   demand_N = 0.0
   governing_pressure = 0.0
   governing_spacing = 0.0
+  fp_coefficient = _fp_coefficient(request.seismic.z_over_h).coefficient
   for face in faces:
     if not face:
       continue
@@ -1385,7 +1441,7 @@ def _screw_tension_result(
       for layer in face
       if layer.board_property is not None
     )
-    seismic_kN_m2 = SEISMIC_FP_COEFFICIENT * sds * request.seismic.Ip * face_weight_kN_m2
+    seismic_kN_m2 = fp_coefficient * sds * request.seismic.Ip * face_weight_kN_m2
     live = request.live_load_kN_m2
     if request.design_case == DESIGN_CASE_NON_SEISMIC:
       pressure = live
@@ -1404,6 +1460,8 @@ def _screw_tension_result(
   pullout_utilization = demand_N / pullout_allowable
   pull_through_utilization = demand_N / pull_through_allowable
   return {
+    # 모멘트 경로(seismic_fp_coefficient)와 같은 값이어야 한다
+    "screw_tension_fp_coefficient": fp_coefficient,
     "screw_tension_pressure_kN_m2": governing_pressure,
     "screw_tension_spacing_mm": governing_spacing,
     "screw_tension_demand_N": demand_N,

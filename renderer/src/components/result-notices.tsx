@@ -1,7 +1,7 @@
 import { AlertTriangle, BadgeCheck, FlaskConical, Info } from "lucide-react";
 
 import type { WallCheckResult } from "@/lib/api";
-import { productScopeNotice, resultScopeDisclaimer, testedConfigurationStatus } from "@/lib/result-notice";
+import { productScopeNotice, resultScopeDisclaimer, supportScopeNotice, testedConfigurationStatus } from "@/lib/result-notice";
 
 interface ResultNoticesProps {
   notices: string[];
@@ -46,6 +46,8 @@ export function ResultNotices({ notices, showProductScope = false, result }: Res
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <span>
           {resultScopeDisclaimer}
+          <br />
+          {supportScopeNotice}
           {showProductScope ? (
             <>
               <br />

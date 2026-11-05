@@ -57,8 +57,16 @@ ASD_SEISMIC_FACTOR = 0.7
 ASD_COMBINED_LIVE_FACTOR = 0.75
 ASD_COMBINED_SEISMIC_FACTOR = 0.75
 
-# 비구조요소 지진력 계수: Fp = 0.48 × SDS × Ip × W (= 0.4·ap·(1+2z/h)/Rp, ap=1.0, z/h=1, Rp=2.5)
-SEISMIC_FP_COEFFICIENT = 0.48
+# 비구조요소 지진력 (2차 심사의견 D-2): Fp = 0.4·ap·SDS·Ip·Wp·(1 + 2·z/h)/Rp,
+# 0.3·SDS·Ip·Wp ≤ Fp ≤ 1.6·SDS·Ip·Wp. z/h = 1.0(기본, 최상층)이면 계수 0.48 — v0.7.4 이전과 같음.
+# KDS 41 17 00 18장 비구조요소 — 식·조항 번호 확인 필요(OI-02). ap·Rp 표 번호 확인 필요.
+SEISMIC_FP_BASE_FACTOR = 0.4
+SEISMIC_FP_HEIGHT_FACTOR = 2.0
+SEISMIC_AP = 1.0
+SEISMIC_RP = 2.5
+SEISMIC_FP_MIN_COEFFICIENT = 0.3
+SEISMIC_FP_MAX_COEFFICIENT = 1.6
+DEFAULT_SEISMIC_Z_OVER_H = 1.0
 # 앵커(런너 고정못) 반력의 지진항 E에만 곱하는 과강도계수 Ω0 (2026-10-26 사용자 결정).
 # 근거: ASCE 7-16 §13.4.2, Table 13.5-1 내부 칸막이(기타 벽체) Ω0p = 2.0 — 원문·KDS 대응 조항 확인 필요.
 # 스터드 응력·처짐·피스 검토에는 적용하지 않는다.

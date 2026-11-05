@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { governingHeight, heightReview } from "@/lib/height-review";
-import type { CalculationReportData, ReportBoardSlot } from "./calculation-report";
+import { fpBoundLabel, type CalculationReportData, type ReportBoardSlot } from "./calculation-report";
 import { boardColor, displayStudGroup, findStudAsset } from "@/lib/visual-assets";
 import type { StudSection } from "@/lib/api";
-import { productScopeNotice, resultScopeDisclaimer, testedConfigurationStatus } from "@/lib/result-notice";
+import { productScopeNotice, resultScopeDisclaimer, supportScopeNotice, testedConfigurationStatus } from "@/lib/result-notice";
 
 const n=(v: number|null|undefined,d=3)=>v==null?"-":v.toLocaleString("ko-KR",{maximumFractionDigits:d});
 const unit=(v:number|null|undefined,u:string)=>v==null?"-":`${n(v)} ${u}`;
@@ -72,7 +72,7 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
       ["스터드",`${displayStudGroup(data.stud.group)} / ${data.stud.method} / ${data.stud.spec}`,"스터드 간격",unit(g.spacingMm,"mm")],
       ["검토 구분",l.designCaseLabel,"강도 기준",r.strength_check_mode==="stud_only"?"스터드 단독":"부분합성"],
       ["활하중",unit(l.liveLoadKnM2,"kN/m²"),"연직하중",unit(l.verticalLoadKnM,"kN/m")],
-      [`처짐한계 (L/${g.deflectionLimitDenom})`,`${n(g.spanMm)} / ${n(g.deflectionLimitDenom)} = ${n(r.deflection_limit_mm,1)} mm`,seismic?"지진 입력":"",seismic?`${l.seismicSiteClass} / S ${l.seismicS} / Ip ${l.seismicIp}${l.s5BedrockDepthUnknown?" / 110%":""}`:null],
+      [`처짐한계 (L/${g.deflectionLimitDenom})`,`${n(g.spanMm)} / ${n(g.deflectionLimitDenom)} = ${n(r.deflection_limit_mm,1)} mm`,seismic?"지진 입력":"",seismic?`${l.seismicSiteClass} / S ${l.seismicS} / Ip ${l.seismicIp} / z/h ${l.seismicZOverH}${l.s5BedrockDepthUnknown?" / 110%":""}`:null],
       ...(seismic?[["런너 고정못 성능",unit(g.anchorCapacityKn,"kN/개"),"런너 고정못 간격",unit(g.anchorSpacingMm,"mm")] as Row]:[]),
     ]}/>
     <Heading>보드 구성</Heading><Assembly data={data}/>
@@ -85,7 +85,8 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
       ["Mn(적용)",unit(r.Mn_kNm,"kN·m"),"Mu",unit(r.Mu_kNm,"kN·m")],
       ["Mn(STUD)",unit(r.intermediate.Mn_stud_only_kNm,"kN·m"),seismic?"런너 고정못 사용률":"높이 산정 단위",seismic?n(r.intermediate.anchor_utilization,6):unit(r.max_height_increment_mm,"mm")],
       ["피스 인장력",unit(r.intermediate.screw_tension_demand_N,"N/개"),"피스 인장 사용률",n(r.intermediate.screw_tension_utilization,6)],
-      ...(seismic?[["지진모멘트",unit(r.seismic_moment_kNm,"kN·m"),"지진중량 Wp",unit(r.intermediate.seismic_weight_kN,"kN")] as Row]:[]),
+      ...(seismic?[["지진모멘트",unit(r.seismic_moment_kNm,"kN·m"),"지진중량 Wp",unit(r.intermediate.seismic_weight_kN,"kN")] as Row,
+        ["Fp 계수 (ap / Rp / z/h)",`${n(r.intermediate.seismic_fp_coefficient)} (${n(r.intermediate.seismic_ap)} / ${n(r.intermediate.seismic_rp)} / ${n(r.intermediate.seismic_z_over_h)})`,"Fp 상·하한",fpBoundLabel(r.intermediate.seismic_fp_bound_applied)] as Row]:[]),
     ]}/>
     <Heading>검토식</Heading><div className="summary-formula-grid">
       <div className="summary-formula-label">응력 검토</div><div className="summary-formula-body"><span className="math-expression">Ω × <Fraction top={<><i>M</i><sub>u</sub></>} bottom={<><i>M</i><sub>n</sub></>}/> ≤ 1.00</span></div>
@@ -99,6 +100,6 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
       ["단면2차모멘트",unit(data.stud.Ix,"mm⁴"),"단면계수",unit(data.stud.Sx,"mm³")],
     ]}/>
     <Heading>석고보드 고정 나사못 배치</Heading><table className="summary-table screw-table"><thead><tr><th>적용 위치</th><th>나사못 개수</th><th>간격</th></tr></thead><tbody>{[1,2,3].map((p)=><tr key={p}><td>{p}P {p<=count?(p===count?"(마감)":"(내측)"):""}</td><td>{p<=count?`${screws[p-1]}개`:"미적용"}</td><td>{p<=count?`${pitch[p-1]} mm`:"-"}</td></tr>)}{r.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<tr><td>2면 고정 보드</td><td>{n(r.intermediate.fixed_rear_board_screw_count)}개</td><td>{n(r.intermediate.fixed_rear_board_screw_pitch_mm)} mm</td></tr>}</tbody></table>
-    <footer><p className="summary-scope-disclaimer">{resultScopeDisclaimer}</p><p className="summary-scope-disclaimer">{productScopeNotice}</p>프로그램 결과는 입력조건 및 적용 기준에 따른 설계 참고자료입니다.<br/>실제 시공 전에는 현장 조건과 검토 기준을 구조전문가와 확인하시기 바랍니다.</footer>
+    <footer><p className="summary-scope-disclaimer">{resultScopeDisclaimer}</p><p className="summary-scope-disclaimer">{supportScopeNotice}</p><p className="summary-scope-disclaimer">{productScopeNotice}</p>프로그램 결과는 입력조건 및 적용 기준에 따른 설계 참고자료입니다.<br/>실제 시공 전에는 현장 조건과 검토 기준을 구조전문가와 확인하시기 바랍니다.</footer>
   </article>;
 }

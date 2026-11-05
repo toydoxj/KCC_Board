@@ -54,6 +54,7 @@ const step04Help = {
   siteClass: "단주기 지반증폭계수 Fa 자동 산정(KDS 41 17 00 표 4.2-1)",
   s5: "S5 지반에서 기반암 깊이 불분명 시 Fa 1.1배",
   ip: "1.0: 일반 비구조요소 / 1.5: 피난경로·위험물·중요도(특) 건축물",
+  zOverH: "z: 벽체 설치 층 높이, h: 건물 평균 지붕 높이. 모르면 1.0(최상층, 안전측)",
 } as const;
 
 // 비구조요소 지진력 산정식 요약. KDS 41 17 00 18장 Fp 식·상하한 조항 번호, ap·Rp 표 번호 출처 확인 필요(OI-02)
@@ -73,9 +74,11 @@ export function InputWorkspace(p: Props) {
   const method = values.studMethod ?? "기본";
 
 
-  function numberField(name: keyof CheckFormValues, label: string, step = "1", extra: {min?: number; max?: number; readOnly?: boolean; help?: string} = {}) {
-    const {help, ...inputExtra} = extra;
-    return <Field label={label} error={errors[name]?.message} help={help}><input className={inputClassName} type="number" step={step} {...register(name)} {...inputExtra} aria-label={label}/></Field>;
+  function numberField(name: keyof CheckFormValues, label: string, step = "1", extra: {min?: number; max?: number; readOnly?: boolean; help?: string; emptyAsNaN?: boolean} = {}) {
+    const {help, emptyAsNaN, ...inputExtra} = extra;
+    // emptyAsNaN: 빈 입력을 0이 아닌 NaN으로 넘겨 zod 검증 오류로 처리한다(빈 값이 0으로 바뀌면 결과가 달라지는 항목)
+    const registration = emptyAsNaN ? register(name, {setValueAs: (v: unknown) => (v === "" || v === null || v === undefined ? Number.NaN : Number(v))}) : register(name);
+    return <Field label={label} error={errors[name]?.message} help={help}><input className={inputClassName} type="number" step={step} {...registration} {...inputExtra} aria-label={label}/></Field>;
   }
 
   function preset(name:keyof CheckFormValues,label:string,options:number[],format:(v:number)=>string,step="any",extra: {min?:number;max?:number;disabled?:boolean;help?:string}={}) {
@@ -133,6 +136,7 @@ export function InputWorkspace(p: Props) {
         <Field label="지반등급" error={errors.seismicSiteClass?.message} help={step04Help.siteClass}><select className={inputClassName} {...register("seismicSiteClass")}>{p.siteClasses.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></Field>
         <div className="grid gap-1.5 text-sm"><span title={step04Help.s5}>S5 기반암 깊이 불분명</span><label className="checkbox-field"><input type="checkbox" disabled={values.seismicSiteClass!=="S5"} {...register("s5BedrockDepthUnknown")}/>110% 적용</label><span className="helper block">{step04Help.s5}</span></div>
         {numberField("seismicIp","중요도계수 (Ip)","0.1",{help:step04Help.ip})}
+        {numberField("seismicZOverH","설치높이비 z/h","any",{min:0,max:1,help:step04Help.zOverH,emptyAsNaN:true})}
       </div></div>}
     </Step>
     <div className="input-actions"><Button type="button" variant="secondary" onClick={()=>{setCustom({});p.onReset();}}><RotateCcw size={17}/>입력값 초기화</Button><Button type="submit" disabled={p.busy}><Calculator size={18}/>{p.busy?"계산 중…":p.submitLabel}</Button></div>

@@ -142,3 +142,62 @@ def test_central_joint_alias_matches_specimen_01() -> None:
   base = REQUESTS["requested_01_c_stud_central_joint"]
   request = replace(base, stud=replace(base.stud, method="중앙부연결"))
   assert calculate_wall_check(request, REPO).intermediate["matched_specimen_no"] == 1.0
+
+
+# ---------------------------------------------------------------- D-2 설치높이비 z/h
+def _seismic(request, z_over_h: float):
+  return replace(request, design_case="seismic", seismic=replace(request.seismic, z_over_h=z_over_h))
+
+
+def test_default_z_over_h_keeps_legacy_coefficient() -> None:
+  result = calculate_wall_check(_seismic(BASE, 1.0), REPO)
+  assert result.intermediate["seismic_fp_coefficient"] == pytest.approx(0.48)
+  assert result.intermediate["seismic_fp_bound_applied"] == 0.0
+  assert result.intermediate["seismic_z_over_h"] == 1.0
+
+
+@pytest.mark.parametrize(
+  ("z_over_h", "coefficient", "bound"),
+  [(1.0, 0.48, 0.0), (0.5, 0.32, 0.0), (0.4375, 0.30, 0.0), (0.25, 0.30, 1.0), (0.0, 0.30, 1.0)],
+)
+def test_fp_coefficient_and_lower_bound(z_over_h: float, coefficient: float, bound: float) -> None:
+  result = calculate_wall_check(_seismic(BASE, z_over_h), REPO)
+  assert result.intermediate["seismic_fp_coefficient"] == pytest.approx(coefficient)
+  assert result.intermediate["seismic_fp_bound_applied"] == bound
+
+
+@pytest.mark.parametrize("z_over_h", [1.0, 0.5, 0.0])
+def test_screw_tension_and_moment_paths_use_same_coefficient(z_over_h: float) -> None:
+  result = calculate_wall_check(_seismic(BASE, z_over_h), REPO)
+  inter = result.intermediate
+  assert inter["screw_tension_fp_coefficient"] == inter["seismic_fp_coefficient"]
+  sds_ip_w = inter["Sds"] * BASE.seismic.Ip * inter["seismic_weight_kN"]
+  assert inter["Fp_kN"] == pytest.approx(inter["seismic_fp_coefficient"] * sds_ip_w)
+
+
+def test_lower_z_over_h_reduces_fp_proportionally() -> None:
+  top = calculate_wall_check(_seismic(BASE, 1.0), REPO).intermediate["Fp_kN"]
+  middle = calculate_wall_check(_seismic(BASE, 0.5), REPO).intermediate["Fp_kN"]
+  assert middle == pytest.approx(top * 0.32 / 0.48)
+
+
+@pytest.mark.parametrize("z_over_h", [-0.1, 1.01])
+def test_z_over_h_out_of_range_is_rejected(z_over_h: float) -> None:
+  with pytest.raises(ValueError, match="z/h는 0.0~1.0"):
+    calculate_wall_check(_seismic(BASE, z_over_h), REPO)
+
+
+def test_api_accepts_z_over_h() -> None:
+  client = TestClient(create_app(REPO))
+  payload = asdict(_seismic(BASE, 0.5))
+  body = client.post("/api/check", json=payload).json()
+  assert body["success"] is True
+  assert body["data"]["intermediate"]["seismic_fp_coefficient"] == pytest.approx(0.32)
+
+
+
+def test_default_coefficient_is_bitwise_legacy_value() -> None:
+  # 경계 판정(앵커 허용간격 등)이 바뀌지 않도록 z/h = 1.0 계수는 0.48과 정확히 같아야 한다
+  result = calculate_wall_check(_seismic(BASE, 1.0), REPO)
+  assert result.intermediate["seismic_fp_coefficient"] == 0.48
+  assert result.intermediate["screw_tension_fp_coefficient"] == 0.48

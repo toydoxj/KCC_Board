@@ -58,6 +58,7 @@ export interface CalculationReportData {
     seismicSiteClass: string;
     s5BedrockDepthUnknown: boolean;
     seismicIp: number;
+    seismicZOverH: number;
   };
   bolts: {
     outerCount: number;
@@ -202,7 +203,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             {isHeightSearchMode ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
             ) : null}
-            {isSeismic&&<KeyValue label="지진 입력" value={`${data.loads.seismicSiteClass}, S=${formatNumber(data.loads.seismicS)}, Ip=${formatNumber(data.loads.seismicIp)}`} />}
+            {isSeismic&&<KeyValue label="지진 입력" value={`${data.loads.seismicSiteClass}, S=${formatNumber(data.loads.seismicS)}, Ip=${formatNumber(data.loads.seismicIp)}, z/h=${formatNumber(data.loads.seismicZOverH)}`} />}
           </div>
         </ReportBlock>
       </section>
@@ -329,6 +330,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="Mn(STUD)" value={`${formatNumber(data.result.intermediate.Mn_stud_only_kNm ?? data.result.Mn_kNm)} kN·m`} />
             {isSeismic ? <KeyValue label="지진모멘트" value={`${formatNumber(data.result.seismic_moment_kNm)} kN·m`} /> : null}
             {isSeismic ? <KeyValue label="지진중량 Wp" value={unitValue(data.result.intermediate.seismic_weight_kN, "kN")} /> : null}
+            {isSeismic ? <FpRows result={data.result} /> : null}
           </div>
         </ReportBlock>
       </section>
@@ -459,7 +461,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <ReportBlock title="피스 인장 검토 (AISI S100-16 J4.4)">
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
             <div>T = q × s × p_max (피치당 피스 1개, 면 하중 전체를 가장 성긴 층 피스가 부담 — 보수측)</div>
-            <div>q = {isSeismic ? "max(L, 0.7E, 0.75L+0.75(0.7E)), E = 0.48·SDS·Ip·W보드(면)" : "L"}</div>
+            <div>q = {isSeismic ? `max(L, 0.7E, 0.75L+0.75(0.7E)), E = ${formatNumber(data.result.intermediate.seismic_fp_coefficient ?? Number.NaN)}·SDS·Ip·W보드(면)` : "L"}</div>
             <div>풀아웃 Pnot = 0.85 × tc × d × Fu2 (Eq. J4.4.1-1), Ω = 3.0</div>
             <div>풀스루(석고보드) = 입력 공칭값 / Ω (기본 343 N — ASTM C1396 nail pull 참고값)</div>
           </div>
@@ -534,6 +536,26 @@ function KeyValue({ label, value }: { label: string; value: string }) {
       <span className="text-slate-600">{label}</span>
       <span className="font-semibold">{value}</span>
     </div>
+  );
+}
+
+// Fp 산정 행 (2차 심사의견 D-2): Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp, 0.3 ≤ 계수 ≤ 1.6
+export function fpBoundLabel(flag: number | undefined) {
+  if (flag === 1) return "하한 0.3 적용";
+  if (flag === 2) return "상한 1.6 적용";
+  return "미적용";
+}
+
+function FpRows({ result }: { result: WallCheckResult }) {
+  const i = result.intermediate;
+  return (
+    <>
+      <KeyValue label="ap / Rp" value={`${formatNumber(i.seismic_ap ?? Number.NaN)} / ${formatNumber(i.seismic_rp ?? Number.NaN)}`} />
+      <KeyValue label="설치높이비 z/h" value={formatNumber(i.seismic_z_over_h ?? Number.NaN)} />
+      <KeyValue label="Fp 계수 0.4·ap·(1+2z/h)/Rp" value={formatNumber(i.seismic_fp_coefficient ?? Number.NaN)} />
+      <KeyValue label="Fp 상·하한" value={fpBoundLabel(i.seismic_fp_bound_applied)} />
+      <KeyValue label="Fp = 계수·SDS·Ip·Wp" value={unitValue(i.Fp_kN, "kN")} />
+    </>
   );
 }
 

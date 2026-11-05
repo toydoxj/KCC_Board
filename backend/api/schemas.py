@@ -14,6 +14,7 @@ from backend.engine.constants import (
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
   DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N,
+  DEFAULT_SEISMIC_Z_OVER_H,
   GRAVITY,
   STANDARD_SCREW_COUNT,
 )
@@ -117,6 +118,8 @@ class SeismicPayload(ApiModel):
   site_class: Literal["S1", "S2", "S3", "S4", "S5"] = "S5"
   s5_bedrock_depth_unknown: bool = False
   Fa: float | None = Field(default=None, gt=0)
+  # 설치높이비 z/h (2차 심사의견 D-2). 범위(0.0~1.0)는 엔진이 검사하여 명시적 오류 문구를 반환한다
+  z_over_h: float = DEFAULT_SEISMIC_Z_OVER_H
 
   def to_engine(self) -> SeismicInput:
     if self.site_class not in SITE_CLASSES:
@@ -127,6 +130,7 @@ class SeismicPayload(ApiModel):
       site_class=self.site_class,
       s5_bedrock_depth_unknown=self.s5_bedrock_depth_unknown,
       Fa=self.Fa,
+      z_over_h=self.z_over_h,
     )
 
 

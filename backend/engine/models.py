@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass, field
 
-from backend.engine.constants import DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, STANDARD_SCREW_COUNT
+from backend.engine.constants import (
+  DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N,
+  DEFAULT_SEISMIC_Z_OVER_H,
+  STANDARD_SCREW_COUNT,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,8 @@ class SeismicInput:
   site_class: str = "S5"
   s5_bedrock_depth_unknown: bool = False
   Fa: float | None = None
+  # 설치높이비 z/h (2차 심사의견 D-2). 0.0~1.0, 기본 1.0(최상층, 안전측)
+  z_over_h: float = DEFAULT_SEISMIC_Z_OVER_H
 
 
 @dataclass(frozen=True)

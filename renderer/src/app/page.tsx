@@ -110,6 +110,13 @@ const formSchema = z.object({
   seismicSiteClass: z.enum(["S1", "S2", "S3", "S4", "S5"]),
   s5BedrockDepthUnknown: z.boolean(),
   seismicIp: z.coerce.number().positive(),
+  // 2차 심사의견 D-2: 설치높이비 z/h (엔진에서도 같은 범위 검사)
+  // 빈 입력을 0으로 바꾸면 Fp가 하한으로 낮아지므로 오류로 처리한다
+  // (입력 필드가 빈 값을 NaN으로 넘긴다: input-workspace emptyAsNaN)
+  seismicZOverH: z.coerce
+    .number({ invalid_type_error: "z/h를 입력하십시오. 모르면 1.0" })
+    .min(0, "z/h는 0 이상")
+    .max(1, "z/h는 1 이하"),
 });
 
 export type CheckFormValues = z.infer<typeof formSchema>;
@@ -160,6 +167,7 @@ const defaultValues: CheckFormValues = {
   seismicSiteClass: "S5",
   s5BedrockDepthUnknown: false,
   seismicIp: 1.5,
+  seismicZOverH: 1.0,
 };
 
 export default function Home() {
@@ -950,6 +958,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
       site_class: values.seismicSiteClass,
       s5_bedrock_depth_unknown: values.seismicSiteClass === "S5" && values.s5BedrockDepthUnknown,
       Ip: values.seismicIp,
+      z_over_h: values.seismicZOverH,
     },
     omega: hiddenOmega,
     anchor_capacity_kN: values.anchorCapacityKn,
@@ -1047,6 +1056,7 @@ function createReportData(
       seismicSiteClass: siteClassLabel,
       s5BedrockDepthUnknown: values.seismicSiteClass === "S5" && values.s5BedrockDepthUnknown,
       seismicIp: values.seismicIp,
+      seismicZOverH: values.seismicZOverH,
     },
     bolts: {
       outerCount: hiddenBoltCountOuter,

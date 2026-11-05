@@ -104,6 +104,8 @@ export interface WallCheckPayload {
     site_class: SiteClass;
     s5_bedrock_depth_unknown: boolean;
     Fa?: number;
+    // 설치높이비 z/h (2차 심사의견 D-2). 0.0~1.0, 기본 1.0
+    z_over_h?: number;
   };
   omega: number;
   anchor_capacity_kN: number;
