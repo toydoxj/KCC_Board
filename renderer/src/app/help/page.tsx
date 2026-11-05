@@ -6,9 +6,10 @@ import path from "node:path";
 import type { Metadata } from "next";
 
 import { renderMarkdown } from "@/components/markdown";
+import { APP_FULL_TITLE } from "@/lib/app-info";
 
 export const metadata: Metadata = {
-  title: "KCC Board 사용 매뉴얼",
+  title: `${APP_FULL_TITLE} 사용 매뉴얼`,
 };
 
 // next build·next dev는 renderer 폴더에서 실행한다

@@ -29,7 +29,7 @@ import {
   calculationModeLabels,
   type CalculationMode,
 } from "@/lib/calculation-mode";
-import { APP_VERSION } from "@/lib/app-info";
+import { APP_SHORT_NAME, APP_TITLE, APP_VERSION } from "@/lib/app-info";
 import { cn } from "@/lib/utils";
 import { useCheckStore } from "@/store/check-store";
 
@@ -594,8 +594,8 @@ export default function Home() {
       <div className="border-b border-border bg-white">
         <div className="mx-auto flex max-w-7xl flex-col items-start gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-normal">KCC Board 구조검토 프로그램</h1>
-            <p className="mt-1 text-sm text-muted-foreground">v{APP_VERSION}</p>
+            <h1 className="text-xl font-semibold tracking-normal">{APP_TITLE}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{APP_SHORT_NAME} v{APP_VERSION}</p>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
             <div className="shrink-0 whitespace-nowrap rounded-md border border-border px-3 py-2 text-sm font-medium">

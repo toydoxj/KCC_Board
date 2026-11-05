@@ -3,6 +3,7 @@ import { governingHeight, heightReview } from "@/lib/height-review";
 import { anchorSourceLabel, fpBoundLabel, type CalculationReportData, type ReportBoardSlot } from "./calculation-report";
 import { boardColor, displayStudGroup, findStudAsset } from "@/lib/visual-assets";
 import type { StudSection } from "@/lib/api";
+import { APP_FULL_TITLE } from "@/lib/app-info";
 import { productScopeNotice, resultScopeDisclaimer, supportScopeNotice, testedConfigurationStatus } from "@/lib/result-notice";
 
 const n=(v: number|null|undefined,d=3)=>v==null?"-":v.toLocaleString("ko-KR",{maximumFractionDigits:d});
@@ -62,6 +63,7 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
   const tested=testedConfigurationStatus(r);
   return <article className="summary-document">
     <div className="summary-brand-row"><img src="/kcc-logo.png" alt="KCC" width="60" height="28"/><span className="document-version">V1.0</span></div>
+    <p className="summary-program-title">{APP_FULL_TITLE}</p>
     <h1>석고보드 벽체 허용높이 검토 결과</h1>
     <Heading>1. 결과 요약</Heading>
     <div data-verdict-group="summary" className={`summary-cards ${seismic?"with-anchor":""}`}><div className="summary-height"><strong>{heightTitle}</strong><b>{n(height,0)} mm</b><small>{heightCheck&&<>최대 가능 높이 {n(review.maximumMm,0)} mm<br/></>}{criteria}</small></div>{verdict("응력",r.stress_verdict==="O.K")}{verdict("처짐",r.deflection_verdict==="O.K")}{seismic&&verdict("런너 고정못",review.anchorOk)}{verdict("피스 인장",r.screw_tension_verdict==="O.K")}</div>

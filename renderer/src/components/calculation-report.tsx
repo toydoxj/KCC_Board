@@ -5,6 +5,7 @@ import { governingHeight, heightReview } from "@/lib/height-review";
 import { displayStudGroup } from "@/lib/visual-assets";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 import { ResultNotices } from "@/components/result-notices";
+import { APP_FULL_TITLE } from "@/lib/app-info";
 
 export interface ReportBoardSlot {
   label: string;
@@ -131,6 +132,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <div className="document-version">V1.0</div>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
+            <p className="report-program-title text-xs font-semibold text-slate-600">{APP_FULL_TITLE}</p>
             <h1 className="text-2xl font-bold tracking-normal">석고보드 건식벽체 구조검토 계산서</h1>
             <p className="mt-1 text-sm text-slate-600">{calculationModeLabel} / 강도 기준: {strengthCheckModeLabel}</p>
           </div>

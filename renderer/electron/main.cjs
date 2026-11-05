@@ -4,6 +4,10 @@ const fs = require("node:fs");
 const { execFile, spawn, spawnSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 const tcp = require("node:net");
+const packageJson = require("../package.json");
+
+// 통일 제목(기술인증 신청명, 2차 심사의견 E-2·B-3). package.json programTitle 단일 기준
+const APP_FULL_TITLE = `${packageJson.programTitle} (KCC Board)`;
 
 const API_HOST = "127.0.0.1";
 // 백엔드 API 포트는 기동 시 OS가 할당한 빈 포트를 쓴다(2차 심사의견 E-3). 고정 포트 8000 충돌 방지
@@ -413,6 +417,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 760,
     show: false,
+    title: APP_FULL_TITLE,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -436,7 +441,7 @@ function openHelpWindow() {
   helpWindow = new BrowserWindow({
     width: 1200, height: 900, minWidth: 800, minHeight: 600,
     show: process.env.KCC_REVIEW_QA_HIDDEN !== "1",
-    title: "KCC Board 사용 매뉴얼",
+    title: `${APP_FULL_TITLE} 사용 매뉴얼`,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   helpWindow.setMenuBarVisibility(false);
@@ -447,10 +452,26 @@ function openHelpWindow() {
   });
 }
 
+function showAboutDialog() {
+  const owner = BrowserWindow.getFocusedWindow() ?? undefined;
+  dialog.showMessageBox(owner, {
+    type: "info",
+    title: "프로그램 정보",
+    message: APP_FULL_TITLE,
+    detail: `버전 ${packageJson.version}`,
+    buttons: ["확인"],
+    noLink: true,
+  });
+}
+
 function buildApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { role: "fileMenu" }, { role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" },
-    { role: "help", submenu: [{ label: "사용 매뉴얼", accelerator: "F1", click: openHelpWindow }] },
+    { role: "help", submenu: [
+      { label: "사용 매뉴얼", accelerator: "F1", click: openHelpWindow },
+      { type: "separator" },
+      { label: "프로그램 정보", click: showAboutDialog },
+    ] },
   ]));
 }
 

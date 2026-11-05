@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 
 import "./globals.css";
+import { APP_FULL_TITLE } from "@/lib/app-info";
 
 export const metadata: Metadata = {
-  title: "KCC Board",
-  description: "건식벽체 구조검토",
+  title: APP_FULL_TITLE,
+  description: APP_FULL_TITLE,
 };
 
 export default function RootLayout({
