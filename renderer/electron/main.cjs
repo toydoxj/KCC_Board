@@ -1,12 +1,14 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
-const { spawn } = require("node:child_process");
+const { execFile, spawn, spawnSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 const tcp = require("node:net");
 
 const API_HOST = "127.0.0.1";
-const API_PORT = "8000";
+// 백엔드 API 포트는 기동 시 OS가 할당한 빈 포트를 쓴다(2차 심사의견 E-3). 고정 포트 8000 충돌 방지
+let apiPort = null;
+const BACKEND_IMAGE_NAME = "kcc-board-api.exe";
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("use-gl", "swiftshader");
@@ -132,12 +134,10 @@ function startBackend() {
   const backendCommand = getBackendCommand(projectRoot);
 
   if (backendCommand.error) {
-    dialog.showErrorBox(
-      "백엔드 실행 파일을 찾을 수 없습니다",
-      backendCommand.error,
-    );
-    app.quit();
-    return;
+    // createWindow가 받아 "백엔드 시작 실패" 안내로 표시한다(재시도하지 않음)
+    const error = new Error(backendCommand.error);
+    error.fatal = true;
+    throw error;
   }
 
   appendBackendLog(`starting backend: ${backendCommand.command} ${backendCommand.args.join(" ")}`);
@@ -152,7 +152,9 @@ function startBackend() {
         KCC_BOARD_REPOSITORY: "json",
         KCC_BOARD_SEED_DIR: path.join(projectRoot, "data", "seed"),
         KCC_BOARD_API_HOST: API_HOST,
-        KCC_BOARD_API_PORT: API_PORT,
+        KCC_BOARD_API_PORT: String(apiPort),
+        // 백엔드가 부모 소멸(강제 종료 등)을 감지하여 스스로 종료하도록 PID를 전달한다
+        KCC_BOARD_PARENT_PID: String(process.pid),
       },
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -175,20 +177,118 @@ function startBackend() {
 }
 
 async function waitForBackend() {
-  const healthUrl = `http://${API_HOST}:${API_PORT}/api/health`;
+  const healthUrl = `${apiBaseUrl()}/api/health`;
 
   for (let attempt = 0; attempt < 60; attempt += 1) {
+    // 포트 바인드 실패 등으로 백엔드가 먼저 종료되면 기다리지 않고 재시도 단계로 넘긴다
+    if (!backendAlive()) {
+      const exited = new Error(`백엔드 프로세스가 종료되었습니다(포트 ${apiPort})`);
+      exited.backendExited = true;
+      throw exited;
+    }
     try {
       const response = await fetch(healthUrl);
       if (response.ok) {
         return;
       }
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      // 기동 중: 아래에서 대기 후 재확인
     }
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  throw new Error(`API 서버가 시작되지 않았습니다: ${healthUrl}\n로그 파일: ${getBackendLogPath()}`);
+  throw new Error(`API 서버가 응답하지 않습니다(${healthUrl})`);
+}
+
+// 빈 포트 확인과 백엔드 바인드 사이에 다른 프로세스가 포트를 선점할 수 있으므로 새 포트로 재시도한다
+const BACKEND_START_ATTEMPTS = 3;
+
+async function startBackendWithRetry() {
+  let lastError = null;
+  for (let attempt = 1; attempt <= BACKEND_START_ATTEMPTS; attempt += 1) {
+    if (apiPort === null) apiPort = await findFreePort();
+    appendBackendLog(`api port: ${apiPort} (attempt ${attempt})`);
+    if (!backendAlive()) startBackend();
+    try {
+      await waitForBackend();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof Error) || !error.backendExited) throw error;
+      appendBackendLog(`backend exited during start, retrying with a new port: ${error.message}`);
+      apiPort = null;
+    }
+  }
+  throw lastError;
+}
+
+function apiBaseUrl() {
+  return `http://${API_HOST}:${apiPort}`;
+}
+
+// OS가 할당한 빈 포트를 얻는다(listen(0) 후 즉시 닫음)
+function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const probe = tcp.createServer();
+    probe.once("error", reject);
+    probe.listen(0, API_HOST, () => {
+      const address = probe.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      probe.close(() => (port ? resolve(port) : reject(new Error("빈 포트를 할당받지 못했습니다."))));
+    });
+  });
+}
+
+function backendStartFailureMessage(cause) {
+  return `백엔드 시작 실패: ${cause}. 작업 관리자에서 '${BACKEND_IMAGE_NAME}'를 종료한 뒤 다시 실행하십시오. 문제가 지속되면 로그 파일을 확인하십시오: ${getBackendLogPath()}`;
+}
+
+function runWindowsCommand(command, args) {
+  return new Promise((resolve) => {
+    execFile(command, args, { windowsHide: true }, (error, stdout) => resolve({ error, stdout: String(stdout ?? "") }));
+  });
+}
+
+// 이전 실행의 백엔드 잔존 프로세스 감지·정리 (Windows 설치본)
+async function handleLeftoverBackend() {
+  // 이번 실행의 백엔드가 이미 떠 있으면(창 재생성 등) 검사하지 않는다
+  if (process.platform !== "win32" || !app.isPackaged || backendAlive()) return;
+  const { stdout } = await runWindowsCommand("tasklist", ["/FI", `IMAGENAME eq ${BACKEND_IMAGE_NAME}`, "/NH", "/FO", "CSV"]);
+  if (!stdout.toLowerCase().includes(BACKEND_IMAGE_NAME)) return;
+  const choice = await dialog.showMessageBox({
+    type: "warning",
+    title: "잔존 백엔드 프로세스",
+    message: `이전 실행의 백엔드 프로세스(${BACKEND_IMAGE_NAME})가 남아 있습니다. 종료 후 다시 시작할까요?`,
+    buttons: ["확인", "취소"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (choice.response !== 0) {
+    appendBackendLog("leftover backend kept by user");
+    return;
+  }
+  const { error } = await runWindowsCommand("taskkill", ["/IM", BACKEND_IMAGE_NAME, "/T", "/F"]);
+  appendBackendLog(`leftover backend killed: ${error ? error.message : "ok"}`);
+}
+
+function backendAlive() {
+  return backendProcess !== null && backendProcess.exitCode === null && backendProcess.signalCode === null;
+}
+
+// 백엔드 프로세스 트리 종료. Windows는 taskkill /T /F, 그 외는 SIGTERM
+function stopBackend(reason) {
+  if (!backendAlive()) return;
+  const pid = backendProcess.pid;
+  appendBackendLog(`stopping backend (${reason}): pid=${pid}`);
+  if (process.platform === "win32") {
+    const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true });
+    if (result.error || result.status !== 0) {
+      appendBackendLog(`taskkill failed: ${result.error ? result.error.message : String(result.stderr ?? "")}`);
+    }
+  } else {
+    backendProcess.kill("SIGTERM");
+  }
 }
 
 function safePdfName(value) {
@@ -222,6 +322,14 @@ async function waitForPrintableDocument(webContents) {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     return true;
   })()`);
+}
+
+function registerApiBaseUrlHandler() {
+  ipcMain.removeHandler("get-api-base-url");
+  ipcMain.handle("get-api-base-url", () => {
+    if (apiPort === null) throw new Error("백엔드 포트가 아직 할당되지 않았습니다.");
+    return apiBaseUrl();
+  });
 }
 
 function registerPdfHandler() {
@@ -288,15 +396,13 @@ function registerPdfHandler() {
 
 async function createWindow() {
   try {
-    await new Promise((resolve, reject) => {
-      const probe = tcp.createServer();
-      probe.once("error", () => reject(new Error(`API 포트 ${API_PORT}가 사용 중입니다. 실행 중인 KCC Board를 종료한 뒤 다시 실행하세요.`)));
-      probe.listen(Number(API_PORT), API_HOST, () => probe.close(resolve));
-    });
-    startBackend();
-    await waitForBackend();
+    await handleLeftoverBackend();
+    await startBackendWithRetry();
   } catch (error) {
-    dialog.showErrorBox("API 시작 실패", error instanceof Error ? error.message : String(error));
+    const cause = error instanceof Error ? error.message : String(error);
+    appendBackendLog(`backend start failed: ${cause}`);
+    stopBackend("start failure");
+    dialog.showErrorBox("백엔드 시작 실패", backendStartFailureMessage(cause));
     app.quit();
     return;
   }
@@ -350,6 +456,7 @@ function buildApplicationMenu() {
 
 if (isPrimaryInstance) app.whenReady().then(() => {
   registerRendererProtocol();
+  registerApiBaseUrlHandler();
   registerPdfHandler();
   buildApplicationMenu();
   return createWindow();
@@ -368,8 +475,10 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
-  if (backendProcess) {
-    backendProcess.kill();
-    backendProcess = null;
-  }
+  stopBackend("before-quit");
+});
+
+// before-quit 이후에도 백엔드가 살아 있으면 한 번 더 종료한다
+app.on("will-quit", () => {
+  stopBackend("will-quit");
 });

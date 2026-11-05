@@ -154,7 +154,23 @@ export interface WallCheckResult {
   tested_configuration_mismatch_fields?: string[];
 }
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+// 브라우저 개발 모드 기본 주소. Electron에서는 메인 프로세스가 할당한 동적 포트를 preload로 조회한다(2차 심사의견 E-3)
+const fallbackApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+let apiBaseUrlPromise: Promise<string> | null = null;
+
+export function getApiBaseUrl(): Promise<string> {
+  if (apiBaseUrlPromise === null) {
+    const lookup = typeof window !== "undefined" ? window.kccBoard?.getApiBaseUrl : undefined;
+    apiBaseUrlPromise = lookup
+      ? lookup().catch((error: unknown) => {
+          // 실패한 조회는 캐시하지 않고 다음 요청에서 다시 조회한다
+          apiBaseUrlPromise = null;
+          throw new Error(`API 주소를 조회하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
+        })
+      : Promise.resolve(fallbackApiBaseUrl);
+  }
+  return apiBaseUrlPromise;
+}
 
 export async function fetchCatalog(): Promise<MaterialCatalog> {
   const [boards, studs, studMethods, bolts] = await Promise.all([
@@ -178,6 +194,7 @@ export async function checkWall(payload: WallCheckPayload, signal?: AbortSignal)
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const apiBaseUrl = await getApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}${path}`, init);
   const envelope = (await response.json()) as ApiEnvelope<T>;
   if (!envelope.success) {

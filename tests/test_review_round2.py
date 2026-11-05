@@ -217,3 +217,50 @@ def test_api_accepts_anchor_capacity_source(source: str | None) -> None:
   client = TestClient(create_app(REPO))
   payload = asdict(replace(BASE, anchor_capacity_source=source))
   assert client.post("/api/check", json=payload).json()["success"] is True
+
+
+
+# ---------------------------------------------------------------- E-3 부모 프로세스 감시
+def test_process_alive_detects_running_and_finished_processes() -> None:
+  import os
+  import subprocess
+  import sys
+
+  from backend.electron_api import process_alive
+
+  assert process_alive(os.getpid()) is True
+  child = subprocess.Popen([sys.executable, "-c", "pass"])
+  child.wait()
+  assert process_alive(child.pid) is False
+
+
+def test_parent_watchdog_env_handling() -> None:
+  from backend.electron_api import start_parent_watchdog
+
+  assert start_parent_watchdog({}) is None
+  with pytest.raises(ValueError, match="KCC_BOARD_PARENT_PID"):
+    start_parent_watchdog({"KCC_BOARD_PARENT_PID": "abc"})
+
+
+def test_backend_exits_when_parent_disappears(tmp_path: Path) -> None:
+  import subprocess
+  import sys
+
+  # 부모 역할 프로세스를 띄웠다가 종료하면, 감시 스레드가 자식(백엔드 역할)을 종료해야 한다
+  parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+  script = "; ".join(
+    [
+      "import time",
+      "from backend.electron_api import start_parent_watchdog",
+      f"start_parent_watchdog({{'KCC_BOARD_PARENT_PID': '{parent.pid}'}})",
+      "time.sleep(30)",
+    ]
+  )
+  child = subprocess.Popen([sys.executable, "-c", script], cwd=ROOT)
+  try:
+    parent.kill()
+    parent.wait()
+    assert child.wait(timeout=10) == 0
+  finally:
+    if child.poll() is None:
+      child.kill()
