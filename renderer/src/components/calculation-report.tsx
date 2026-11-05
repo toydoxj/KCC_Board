@@ -49,6 +49,8 @@ export interface CalculationReportData {
     deflectionLimitDenom: number;
     anchorSpacingMm: number;
     anchorCapacityKn: number;
+    // 빈 문자열이면 계산서에 "—" 표시
+    anchorCapacitySource: string;
   };
   loads: {
     designCaseLabel: string;
@@ -198,7 +200,9 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="활하중" value={`${formatNumber(data.loads.liveLoadKnM2)} kN/m²`} />
             <KeyValue label="연직하중" value={`${formatNumber(data.loads.verticalLoadKnM)} kN/m`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
-            {isSeismic ? <KeyValue label="런너 고정못 성능" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="런너 고정못 허용내력" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="고정못 허용내력 출처" value={anchorSourceLabel(data.geometry.anchorCapacitySource)} /> : null}
+            {isSeismic ? <p className="py-1 text-xs text-slate-600">고정못 허용내력은 입력값 기준이며, 제품 성능의 검증은 본 프로그램 범위 외임</p> : null}
             {isSeismic ? <KeyValue label="런너 고정못 간격" value={`${formatNumber(data.geometry.anchorSpacingMm)} mm`} /> : null}
             {isHeightSearchMode ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
@@ -367,7 +371,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <div>Rh,L = (L × H × B) / 2 / B</div>
               <div>Rh,E = (Fp / 2 × 2) / B, 런너 고정못 반력에만 과강도계수 Ω0 = {formatNumber(data.result.intermediate.anchor_seismic_overstrength_factor ?? Number.NaN)} 적용</div>
               <div>{reactionFormula}</div>
-              <div>허용 런너 고정못 간격 = 런너 고정못 성능 / Rh × 1000</div>
+              <div>허용 런너 고정못 간격 = 런너 고정못 허용내력 / Rh × 1000</div>
             </div>
             <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
               <KeyValue
@@ -387,7 +391,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 value={`${formatNumber(data.result.intermediate.reaction_required_kN_per_m ?? 0)} kN/m`}
               />
               <KeyValue
-                label="런너 고정못 성능"
+                label="런너 고정못 허용내력"
                 value={`${formatNumber(data.result.intermediate.anchor_capacity_kN ?? 0)} kN/개`}
               />
               <KeyValue
@@ -557,6 +561,11 @@ function FpRows({ result }: { result: WallCheckResult }) {
       <KeyValue label="Fp = 계수·SDS·Ip·Wp" value={unitValue(i.Fp_kN, "kN")} />
     </>
   );
+}
+
+// 고정못 허용내력 출처 표기. 미입력이면 "—"
+export function anchorSourceLabel(source: string | undefined) {
+  return source && source.trim() ? source.trim() : "—";
 }
 
 function BoltRow({ label, count, pitch, applicable = true }: { label: string; count: number; pitch: number; applicable?: boolean }) {

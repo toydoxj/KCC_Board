@@ -98,6 +98,8 @@ const formSchema = z.object({
   spanMm: z.coerce.number().positive(),
   deflectionLimitDenom: z.coerce.number().int().positive(),
   anchorCapacityKn: z.coerce.number().positive(),
+  // 2차 심사의견 D-1: 런너 고정못 허용내력 출처(선택, 계산서 표기 전용)
+  anchorCapacitySource: z.string().max(200, "출처는 200자 이하"),
   anchorSpacingMm: z.coerce
     .number()
     .min(anchorSpacingMinMm)
@@ -159,6 +161,7 @@ const defaultValues: CheckFormValues = {
   spanMm: 7500,
   deflectionLimitDenom: 240,
   anchorCapacityKn: 0.4,
+  anchorCapacitySource: "",
   anchorSpacingMm: 450,
   boltPitchOuter: 300,
   boltPitchMiddle: 300,
@@ -962,6 +965,7 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
     },
     omega: hiddenOmega,
     anchor_capacity_kN: values.anchorCapacityKn,
+    anchor_capacity_source: values.anchorCapacitySource.trim() || undefined,
     anchor_spacing_mm: values.anchorSpacingMm,
   };
 }
@@ -1047,6 +1051,7 @@ function createReportData(
       deflectionLimitDenom: values.deflectionLimitDenom,
       anchorSpacingMm: values.anchorSpacingMm,
       anchorCapacityKn: values.anchorCapacityKn,
+      anchorCapacitySource: values.anchorCapacitySource.trim(),
     },
     loads: {
       designCaseLabel,

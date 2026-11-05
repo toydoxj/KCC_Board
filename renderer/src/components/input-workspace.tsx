@@ -60,6 +60,9 @@ const step04Help = {
 // 비구조요소 지진력 산정식 요약. KDS 41 17 00 18장 Fp 식·상하한 조항 번호, ap·Rp 표 번호 출처 확인 필요(OI-02)
 const seismicFormulaSummary = "Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp (ap = 1.0, Rp = 2.5), 0.3·SDS·Ip·Wp ≤ Fp ≤ 1.6·SDS·Ip·Wp";
 
+// 런너 고정못 허용내력 입력 안내 (2차 심사의견 D-1)
+const anchorCapacityHelp = "매입깊이·모재(콘크리트) 강도·직경 조건이 반영된 제조사 시험성적서의 허용내력을 입력합니다. 프리셋 0.4/0.2 kN은 예시값입니다.";
+
 function Step({number, title, description, children}: {number: string; title: string; description: string; children: ReactNode}) {
   return <section className="input-step"><div className="step-heading"><span className="step-number">{number}</span><h2>{title}</h2><span className="required-mark">필수 *</span></div><p className="step-description">{description}</p>{children}</section>;
 }
@@ -127,7 +130,7 @@ export function InputWorkspace(p: Props) {
       <div className="field-grid three">{preset("boltPitchInner","1P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900})}{preset("boltPitchMiddle","2P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900,disabled:maxPly<2})}{preset("boltPitchOuter","3P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900,disabled:maxPly<3})}</div>
       <p className="helper">사용자 정의 나사못 간격은 100~900 mm 범위에서 입력할 수 있습니다.</p>
       <p className="helper">{maxPly===2 ? `2P+1P 구성의 단독 1P 면에는 2P 마감층 피치(${values.boltPitchMiddle ?? 300} mm)가 적용됩니다. 3P 입력은 사용하지 않습니다.` : maxPly>=3 ? "단독 1P 면에는 3P 마감층 피치가 적용됩니다. 기존 v0.6.3 적용 방식입니다." : "1P 구성은 1P 피치를 사용합니다. 2P·3P 입력은 사용하지 않습니다."}</p>
-      {seismic&&<div className="runner-section"><div className="subheading"><h3>런너 고정못</h3></div><div className="field-grid two">{preset("anchorCapacityKn","런너 고정못 성능 (kN/개)",[0.4,0.2],v=>`${v} kN/개`)}<Field label="런너 고정못 간격 (mm)" error={errors.anchorSpacingMm?.message}><select aria-label="런너 고정못 간격 (mm)" className={inputClassName} {...register("anchorSpacingMm")}>{Array.from({length:10},(_,i)=>150+i*50).map(v=><option key={v} value={v}>{v} mm</option>)}</select></Field></div><p className="helper">고정못 간격은 150~600 mm, 50 mm 단위</p></div>}
+      {seismic&&<div className="runner-section"><div className="subheading"><h3>런너 고정못</h3></div><div className="field-grid two">{preset("anchorCapacityKn","런너 고정못 허용내력 (제조사 설계값, kN/개)",[0.4,0.2],v=>`${v} kN/개`,"any",{help:anchorCapacityHelp})}<Field label="런너 고정못 간격 (mm)" error={errors.anchorSpacingMm?.message}><select aria-label="런너 고정못 간격 (mm)" className={inputClassName} {...register("anchorSpacingMm")}>{Array.from({length:10},(_,i)=>150+i*50).map(v=><option key={v} value={v}>{v} mm</option>)}</select></Field></div><p className="helper">고정못 간격은 150~600 mm, 50 mm 단위</p><div className="field-grid two"><Field label="허용내력 출처(제조사·제품명)" error={errors.anchorCapacitySource?.message} help="선택 입력. 계산에는 쓰지 않고 계산서에만 표기합니다."><input className={inputClassName} type="text" maxLength={200} placeholder="예: 제조사 / 제품명 / 시험성적서 번호" {...register("anchorCapacitySource")} aria-label="허용내력 출처(제조사·제품명)"/></Field></div></div>}
     </Step>
     <Step number="04" title="설계하중 및 처짐한계 조건" description="높이, 활하중, 처짐한계와 연직하중을 입력해 주세요.">
       <div className="field-grid four">{values.calculationMode==="heightCheck"?numberField("spanMm","현장 높이 (mm)","1",{help:step04Help.span}):<Field label="산정 높이" help={step04Help.span}><input className={inputClassName+" bg-slate-100 text-slate-500 cursor-not-allowed"} aria-label="산정 높이" value="자동산정" readOnly disabled/></Field>}{preset("liveLoadKnM2","활하중 (kN/m²)",[0.25,0.36,0.48],v=>`${v} kN/m²`,"any",{help:step04Help.liveLoad})}{preset("deflectionLimitDenom","처짐한계",[240,300,360],v=>`L/${v}`,"1",{help:step04Help.deflection})}{numberField("verticalLoadKnM","연직하중 (kN/m)","0.01",{min:0,help:step04Help.verticalLoad})}</div>

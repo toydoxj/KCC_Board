@@ -175,7 +175,7 @@ function ReactionMetrics({ result }: { result: WallCheckResult }) {
         suffix="kN/m"
       />
       <Metric label="필요 반력" value={intermediateValue(result, "reaction_required_kN_per_m")} suffix="kN/m" />
-      <Metric label="런너 고정못 성능" value={intermediateValue(result, "anchor_capacity_kN")} suffix="kN/개" />
+      <Metric label="런너 고정못 허용내력" value={intermediateValue(result, "anchor_capacity_kN")} suffix="kN/개" />
       <Metric label="검토 런너 고정못 간격" value={intermediateValue(result, "anchor_spacing_mm")} suffix="mm" />
       <Metric label="허용 런너 고정못 간격" value={intermediateValue(result, "anchor_allowable_spacing_mm")} suffix="mm" />
       <Metric label="런너 고정못 저항" value={intermediateValue(result, "anchor_capacity_kN_per_m")} suffix="kN/m" />

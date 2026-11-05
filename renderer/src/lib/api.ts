@@ -111,6 +111,8 @@ export interface WallCheckPayload {
   anchor_capacity_kN: number;
   anchor_spacing_mm: number;
   screw_pull_through_nominal_N?: number;
+  // 런너 고정못 허용내력 출처(제조사·제품명). 계산에 미사용, 계산서 표기 전용(2차 심사의견 D-1)
+  anchor_capacity_source?: string;
 }
 
 export interface LayerResult {

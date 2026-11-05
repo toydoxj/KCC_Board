@@ -201,3 +201,19 @@ def test_default_coefficient_is_bitwise_legacy_value() -> None:
   result = calculate_wall_check(_seismic(BASE, 1.0), REPO)
   assert result.intermediate["seismic_fp_coefficient"] == 0.48
   assert result.intermediate["screw_tension_fp_coefficient"] == 0.48
+
+
+
+# ---------------------------------------------------------------- D-1 런너 고정못 허용내력 출처
+def test_anchor_capacity_source_does_not_change_results() -> None:
+  plain = calculate_wall_check(BASE, REPO)
+  sourced = calculate_wall_check(replace(BASE, anchor_capacity_source="제조사 A / 제품 B"), REPO)
+  assert sourced.intermediate == plain.intermediate
+  assert sourced.anchor_max_height_mm == plain.anchor_max_height_mm
+
+
+@pytest.mark.parametrize("source", [None, "제조사 A / 제품 B"])
+def test_api_accepts_anchor_capacity_source(source: str | None) -> None:
+  client = TestClient(create_app(REPO))
+  payload = asdict(replace(BASE, anchor_capacity_source=source))
+  assert client.post("/api/check", json=payload).json()["success"] is True

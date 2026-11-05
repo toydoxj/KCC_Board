@@ -62,6 +62,8 @@ class WallCheckRequest:
   omega: float = 1.5
   anchor_capacity_kN: float = 0.4
   anchor_spacing_mm: float = 450.0
+  # 런너 고정못 허용내력 출처(제조사·제품명). 계산에 미사용, 계산서 표기 전용(2차 심사의견 D-1)
+  anchor_capacity_source: str | None = None
   # 석고보드 풀스루 공칭강도(N/개) — 시험값 확보 전 입력값
   screw_pull_through_nominal_N: float = DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N
 

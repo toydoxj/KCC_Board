@@ -156,6 +156,8 @@ class WallCheckRequestPayload(ApiModel):
     le=ANCHOR_SPACING_MAX_MM,
   )
   screw_pull_through_nominal_N: float = Field(default=DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, gt=0)
+  # 런너 고정못 허용내력 출처(2차 심사의견 D-1). 계산에 미사용, 계산서 표기 전용
+  anchor_capacity_source: str | None = Field(default=None, max_length=200)
 
   @field_validator("anchor_spacing_mm")
   @classmethod
@@ -187,6 +189,7 @@ class WallCheckRequestPayload(ApiModel):
       anchor_capacity_kN=self.anchor_capacity_kN,
       anchor_spacing_mm=self.anchor_spacing_mm,
       screw_pull_through_nominal_N=self.screw_pull_through_nominal_N,
+      anchor_capacity_source=self.anchor_capacity_source,
     )
 
 
