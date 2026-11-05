@@ -43,6 +43,22 @@ const modes: {value: CalculationMode; label: string; detail: string}[] = [
   {value: "heightCheck", label: "현장 높이 검토", detail: "현장 계획 높이의 적합성 확인"},
 ];
 
+// Step 04 설계하중·처짐한계 참고설명 (2차 심사의견 B-2). helper와 라벨 title 툴팁에 같은 문구를 쓴다
+const step04Help = {
+  span: "상·하부 런너 지지점 간 순높이(바닥~슬래브 하부). 부분높이·개구부 벽체는 적용 범위 외",
+  // 0.36·0.48 kN/m² 프리셋 출처 확인 필요
+  liveLoad: "0.25 kN/m²: KDS 41 12 00 (3.7.2) 내벽 횡하중 최소값(높이 1.8 m 이상 내벽). 0.36·0.48 kN/m²: 상향 적용 시 선택값",
+  deflection: "L/240: 석고보드 마감 일반 한계(기본값). L/300·L/360: 타일·석재 등 취성 마감 또는 발주처 요구 시",
+  verticalLoad: "벽체 상부에 작용하는 연직하중(kN/m). 비내력 칸막이벽은 통상 0",
+  seismicS: "지진구역 I: 0.22, 지진구역 II: 0.14 (KDS 41 17 00)",
+  siteClass: "단주기 지반증폭계수 Fa 자동 산정(KDS 41 17 00 표 4.2-1)",
+  s5: "S5 지반에서 기반암 깊이 불분명 시 Fa 1.1배",
+  ip: "1.0: 일반 비구조요소 / 1.5: 피난경로·위험물·중요도(특) 건축물",
+} as const;
+
+// 비구조요소 지진력 산정식 요약. KDS 41 17 00 18장 Fp 식·상하한 조항 번호, ap·Rp 표 번호 출처 확인 필요(OI-02)
+const seismicFormulaSummary = "Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp (ap = 1.0, Rp = 2.5), 0.3·SDS·Ip·Wp ≤ Fp ≤ 1.6·SDS·Ip·Wp";
+
 function Step({number, title, description, children}: {number: string; title: string; description: string; children: ReactNode}) {
   return <section className="input-step"><div className="step-heading"><span className="step-number">{number}</span><h2>{title}</h2><span className="required-mark">필수 *</span></div><p className="step-description">{description}</p>{children}</section>;
 }
@@ -57,15 +73,16 @@ export function InputWorkspace(p: Props) {
   const method = values.studMethod ?? "기본";
 
 
-  function numberField(name: keyof CheckFormValues, label: string, step = "1", extra: {min?: number; max?: number; readOnly?: boolean} = {}) {
-    return <Field label={label} error={errors[name]?.message}><input className={inputClassName} type="number" step={step} {...register(name)} {...extra} aria-label={label}/></Field>;
+  function numberField(name: keyof CheckFormValues, label: string, step = "1", extra: {min?: number; max?: number; readOnly?: boolean; help?: string} = {}) {
+    const {help, ...inputExtra} = extra;
+    return <Field label={label} error={errors[name]?.message} help={help}><input className={inputClassName} type="number" step={step} {...register(name)} {...inputExtra} aria-label={label}/></Field>;
   }
 
-  function preset(name:keyof CheckFormValues,label:string,options:number[],format:(v:number)=>string,step="any",extra: {min?:number;max?:number;disabled?:boolean}={}) {
+  function preset(name:keyof CheckFormValues,label:string,options:number[],format:(v:number)=>string,step="any",extra: {min?:number;max?:number;disabled?:boolean;help?:string}={}) {
     const value=Number(values[name]);
     const customKey=name==="boltPitchInner"?`${name}:${p.frontCount===1&&p.rearCount===1?"single":"multi"}`:name;
     const isCustom=custom[customKey]||!options.includes(value);
-    return <div className="preset-field"><label htmlFor={name+"-select"}>{label}</label>
+    return <div className="preset-field"><label htmlFor={name+"-select"} title={extra.help}>{label}</label>
       <input type="hidden" {...register(name)}/>
       <select id={name+"-select"} aria-label={label} className={inputClassName} value={extra.disabled?"not-applicable":isCustom?"custom":String(value)} disabled={extra.disabled} onChange={e=>{
         setCustom(c=>({...c,[customKey]:e.target.value==="custom"}));
@@ -73,6 +90,7 @@ export function InputWorkspace(p: Props) {
       }}>{extra.disabled?<option value="not-applicable">미적용</option>:<>{options.map(v=><option key={v} value={v}>{format(v)}</option>)}<option value="custom">사용자 정의</option></>}</select>
       {!extra.disabled&&isCustom&&<input type="number" step={step} min={extra.min??(step==="1"?1:undefined)} max={extra.max} className={inputClassName} aria-label={label+" 사용자 정의"} value={values[name] as number??""} onChange={e=>p.setValue(name,e.target.value===""?"":Number(e.target.value),{shouldDirty:true,shouldValidate:true})}/>}
       {!extra.disabled&&errors[name]?.message&&<span className="text-xs text-destructive">{errors[name]?.message}</span>}
+      {extra.help&&<p className="helper">{extra.help}</p>}
     </div>;
   }
 
@@ -109,12 +127,12 @@ export function InputWorkspace(p: Props) {
       {seismic&&<div className="runner-section"><div className="subheading"><h3>런너 고정못</h3></div><div className="field-grid two">{preset("anchorCapacityKn","런너 고정못 성능 (kN/개)",[0.4,0.2],v=>`${v} kN/개`)}<Field label="런너 고정못 간격 (mm)" error={errors.anchorSpacingMm?.message}><select aria-label="런너 고정못 간격 (mm)" className={inputClassName} {...register("anchorSpacingMm")}>{Array.from({length:10},(_,i)=>150+i*50).map(v=><option key={v} value={v}>{v} mm</option>)}</select></Field></div><p className="helper">고정못 간격은 150~600 mm, 50 mm 단위</p></div>}
     </Step>
     <Step number="04" title="설계하중 및 처짐한계 조건" description="높이, 활하중, 처짐한계와 연직하중을 입력해 주세요.">
-      <div className="field-grid four">{values.calculationMode==="heightCheck"?numberField("spanMm","현장 높이 (mm)"):<Field label="산정 높이"><input className={inputClassName+" bg-slate-100 text-slate-500 cursor-not-allowed"} aria-label="산정 높이" value="자동산정" readOnly disabled/></Field>}{preset("liveLoadKnM2","활하중 (kN/m²)",[0.25,0.36,0.48],v=>`${v} kN/m²`)}{preset("deflectionLimitDenom","처짐한계",[240,300,360],v=>`L/${v}`,"1")}{numberField("verticalLoadKnM","연직하중 (kN/m)","0.01",{min:0})}</div>
-      {seismic&&<div className="seismic-section"><div className="subheading"><h3>지진하중 조건</h3></div><div className="field-grid four">
-        {numberField("seismicS","지역계수 (S)","0.01")}
-        <Field label="지반등급" error={errors.seismicSiteClass?.message}><select className={inputClassName} {...register("seismicSiteClass")}>{p.siteClasses.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></Field>
-        <div className="grid gap-1.5 text-sm"><span>S5 기반암 깊이 불분명</span><label className="checkbox-field"><input type="checkbox" disabled={values.seismicSiteClass!=="S5"} {...register("s5BedrockDepthUnknown")}/>110% 적용</label></div>
-        {numberField("seismicIp","중요도계수 (Ip)","0.1")}
+      <div className="field-grid four">{values.calculationMode==="heightCheck"?numberField("spanMm","현장 높이 (mm)","1",{help:step04Help.span}):<Field label="산정 높이" help={step04Help.span}><input className={inputClassName+" bg-slate-100 text-slate-500 cursor-not-allowed"} aria-label="산정 높이" value="자동산정" readOnly disabled/></Field>}{preset("liveLoadKnM2","활하중 (kN/m²)",[0.25,0.36,0.48],v=>`${v} kN/m²`,"any",{help:step04Help.liveLoad})}{preset("deflectionLimitDenom","처짐한계",[240,300,360],v=>`L/${v}`,"1",{help:step04Help.deflection})}{numberField("verticalLoadKnM","연직하중 (kN/m)","0.01",{min:0,help:step04Help.verticalLoad})}</div>
+      {seismic&&<div className="seismic-section"><div className="subheading"><h3>지진하중 조건</h3></div><p className="helper seismic-formula">{seismicFormulaSummary}</p><div className="field-grid four">
+        {numberField("seismicS","지역계수 (S)","0.01",{help:step04Help.seismicS})}
+        <Field label="지반등급" error={errors.seismicSiteClass?.message} help={step04Help.siteClass}><select className={inputClassName} {...register("seismicSiteClass")}>{p.siteClasses.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></Field>
+        <div className="grid gap-1.5 text-sm"><span title={step04Help.s5}>S5 기반암 깊이 불분명</span><label className="checkbox-field"><input type="checkbox" disabled={values.seismicSiteClass!=="S5"} {...register("s5BedrockDepthUnknown")}/>110% 적용</label><span className="helper block">{step04Help.s5}</span></div>
+        {numberField("seismicIp","중요도계수 (Ip)","0.1",{help:step04Help.ip})}
       </div></div>}
     </Step>
     <div className="input-actions"><Button type="button" variant="secondary" onClick={()=>{setCustom({});p.onReset();}}><RotateCcw size={17}/>입력값 초기화</Button><Button type="submit" disabled={p.busy}><Calculator size={18}/>{p.busy?"계산 중…":p.submitLabel}</Button></div>
