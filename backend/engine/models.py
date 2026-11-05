@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass, field
 
-from backend.engine.constants import DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, STANDARD_SCREW_COUNT
+from backend.engine.constants import (
+  DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N,
+  DEFAULT_SEISMIC_Z_OVER_H,
+  STANDARD_SCREW_COUNT,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,8 @@ class SeismicInput:
   site_class: str = "S5"
   s5_bedrock_depth_unknown: bool = False
   Fa: float | None = None
+  # 설치높이비 z/h (2차 심사의견 D-2). 0.0~1.0, 기본 1.0(최상층, 안전측)
+  z_over_h: float = DEFAULT_SEISMIC_Z_OVER_H
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,8 @@ class WallCheckRequest:
   omega: float = 1.5
   anchor_capacity_kN: float = 0.4
   anchor_spacing_mm: float = 450.0
+  # 런너 고정못 허용내력 출처(제조사·제품명). 계산에 미사용, 계산서 표기 전용(2차 심사의견 D-1)
+  anchor_capacity_source: str | None = None
   # 석고보드 풀스루 공칭강도(N/개) — 시험값 확보 전 입력값
   screw_pull_through_nominal_N: float = DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N
 
@@ -99,3 +107,5 @@ class WallCheckResult:
   intermediate: dict[str, float] = field(default_factory=dict)
   # 판정에 영향하지 않는 입력 경고(표준 외 피스 간격 등)
   notices: tuple[str, ...] = field(default_factory=tuple)
+  # 시험 시편 구성 대조(2차 심사의견 A-1·F-2): 가장 가까운 시편과 다른 항목 키. 일치하면 빈 값
+  tested_configuration_mismatch_fields: tuple[str, ...] = field(default_factory=tuple)

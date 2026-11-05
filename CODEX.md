@@ -9,7 +9,7 @@
 
 ## 2. 기술 스택 / 아키텍처
 - **Electron 데스크톱 앱**: Shell=Electron(main/preload), Renderer=Next.js, Local Backend=FastAPI 사이드카.
-- Renderer ↔ Backend 는 localhost HTTP(JSON, 127.0.0.1 임의포트). 파일 저장 등 OS 연동은 Electron IPC(preload + contextIsolation) 경유.
+- Renderer ↔ Backend 는 localhost HTTP(JSON, 127.0.0.1 임의포트 — OS 할당 동적 포트, §9 동적 포트). 파일 저장 등 OS 연동은 Electron IPC(preload + contextIsolation) 경유.
 - FastAPI 사이드카는 Electron main이 spawn·관리. 배포 시 PyInstaller 번들 또는 프로세스 spawn.
 - 계산엔진은 **UI/Electron 비종속 순수함수 파이프라인**으로 분리한다. (DY_MIDAS_PROJECT의 Electron+Next.js+FastAPI / pure functions + Repository/DI + 테스트 우선 패턴과 동일)
 - 최적화 모듈은 계산엔진을 **재사용**하며 로직을 중복 구현하지 않는다.
@@ -52,6 +52,8 @@ repo/
 - `stud_steel.json`(심사의견 B-8): 스터드 강재 Fy·Fu. 기본 강재는 정확히 1개(`is_default`). 현재 1종 `legacy_stud_295_400`(KS D 3030 SGMH295Y, Fy 295·Fu 400, status '확정' — 2026-10-21 사용자 확정. 식별자는 안정 키로 유지). `stud_section.json` 항목의 선택 필드 `steel_grade`가 없으면 기본 강재, 미등록 식별자는 오류. 각 규격의 `Se_basis_Fy_MPa`(Se 산정 Fy)가 연결 강재 Fy와 다르면 계산 차단 — Fy 변경 시 Se 재산정 필수.
 - SQLite schema 7: `stud_steel` 테이블, `stud_section.steel_grade`·`Se_basis_Fy_MPa` 열. 구 DB(schema 6 이하)는 `SqliteRepository(db, seed_dir)`가 트랜잭션으로 이관하나 Se 기준이 없어 계산은 `init_db` 재실행 후 가능.
 - `bolt_material.json`, `stud_method.json`.
+- 시험 구성 대조(2차 심사의견 A-1·F-2): KCC 11종 시험 시편 구성의 단일 출처는 `stud_method.json`의 `tested_configurations`(시편 번호·스터드 형식·규격·시공방식·간격·전·후면 보드, 시험 높이 `tested_height_mm` 2,400). R 보정 시편 입력(`tests/golden/requested_shape_cases.json`)과 일치해야 한다(`tests/test_review_round2.py` 검사). 엔진 `_tested_configuration_match`는 판정에 영향하지 않으며, 결과 intermediate `tested_configuration_match`·`matched_specimen_no`와 응답 `tested_configuration_mismatch_fields`(문자열 목록)를 반환한다.
+- SQLite schema 8: `specimen_configuration` 테이블. 구 DB(schema 7 이하)는 seed 경로가 있으면 이관 시 채우고, 없으면 명시적 오류(롤백).
 - DB 조회는 **그룹+단면명 키** 사용(엑셀 VLOOKUP 인덱스 의존 제거). 미스 시 **명시적 예외**(silent #N/A 금지).
 
 ## 7. 검증 규칙 (필수)
@@ -71,7 +73,8 @@ repo/
 ## 9. 출처 표기 의무 (Open Issues)
 KDS/AISC 인용 시 기준명+조항번호를 코드 주석·계산서에 명시한다. 미확정 항목은 "확인 필요" 표기.
 - OI-01 부분합성 √η (AISC 360 / KDS 41 30 30 — 확인 필요)
-- OI-02 지진력 Sds 2.5·Fp 0.48 (KDS 41 17 00 — 확인 필요)
+- OI-02 지진력 Sds 2.5·Fp (KDS 41 17 00 — 확인 필요). Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp, ap 1.0·Rp 2.5, 계수 상·하한 0.3·1.6(2차 심사의견 D-2). 설치높이비 z/h는 선택 입력(기본 1.0 → 계수 0.48, 종전과 같음). 모멘트·피스 인장 경로는 `_fp_coefficient`만 경유한다. 18장 식·조항 번호, ap·Rp 표 번호 확인 필요
+- 동적 포트(2차 심사의견 E-3): Electron main이 OS 할당 빈 포트로 백엔드를 띄우고 preload `getApiBaseUrl`로 렌더러에 전달한다. 백엔드는 `KCC_BOARD_PARENT_PID` 감시로 부모 소멸 시 종료한다. 고정 포트 8000은 브라우저 개발 모드 기본값으로만 남는다
 - OI-08 박판 유효폭 (KDS 41 30 30 — 반영 여부 확인 필요)
 
 ## 10. 코드 스타일 / 금지사항

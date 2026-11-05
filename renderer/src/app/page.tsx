@@ -29,7 +29,7 @@ import {
   calculationModeLabels,
   type CalculationMode,
 } from "@/lib/calculation-mode";
-import { APP_VERSION } from "@/lib/app-info";
+import { APP_SHORT_NAME, APP_TITLE, APP_VERSION } from "@/lib/app-info";
 import { cn } from "@/lib/utils";
 import { useCheckStore } from "@/store/check-store";
 
@@ -93,10 +93,13 @@ const formSchema = z.object({
   studSpec: z.string().min(1),
   liveLoadKnM2: z.coerce.number().positive(),
   verticalLoadKnM: z.coerce.number().min(0),
-  spacingMm: z.coerce.number().positive(),
+  // 2차 심사의견 F-1: 사용자 정의 스터드 간격 150~600 mm (엔진에서도 같은 범위 검사)
+  spacingMm: z.coerce.number().min(150, "스터드 간격은 150 mm 이상").max(600, "스터드 간격은 600 mm 이하"),
   spanMm: z.coerce.number().positive(),
   deflectionLimitDenom: z.coerce.number().int().positive(),
   anchorCapacityKn: z.coerce.number().positive(),
+  // 2차 심사의견 D-1: 런너 고정못 허용내력 출처(선택, 계산서 표기 전용)
+  anchorCapacitySource: z.string().max(200, "출처는 200자 이하"),
   anchorSpacingMm: z.coerce
     .number()
     .min(anchorSpacingMinMm)
@@ -109,6 +112,13 @@ const formSchema = z.object({
   seismicSiteClass: z.enum(["S1", "S2", "S3", "S4", "S5"]),
   s5BedrockDepthUnknown: z.boolean(),
   seismicIp: z.coerce.number().positive(),
+  // 2차 심사의견 D-2: 설치높이비 z/h (엔진에서도 같은 범위 검사)
+  // 빈 입력을 0으로 바꾸면 Fp가 하한으로 낮아지므로 오류로 처리한다
+  // (입력 필드가 빈 값을 NaN으로 넘긴다: input-workspace emptyAsNaN)
+  seismicZOverH: z.coerce
+    .number({ invalid_type_error: "z/h를 입력하십시오. 모르면 1.0" })
+    .min(0, "z/h는 0 이상")
+    .max(1, "z/h는 1 이하"),
 });
 
 export type CheckFormValues = z.infer<typeof formSchema>;
@@ -151,6 +161,7 @@ const defaultValues: CheckFormValues = {
   spanMm: 7500,
   deflectionLimitDenom: 240,
   anchorCapacityKn: 0.4,
+  anchorCapacitySource: "",
   anchorSpacingMm: 450,
   boltPitchOuter: 300,
   boltPitchMiddle: 300,
@@ -159,6 +170,7 @@ const defaultValues: CheckFormValues = {
   seismicSiteClass: "S5",
   s5BedrockDepthUnknown: false,
   seismicIp: 1.5,
+  seismicZOverH: 1.0,
 };
 
 export default function Home() {
@@ -582,8 +594,8 @@ export default function Home() {
       <div className="border-b border-border bg-white">
         <div className="mx-auto flex max-w-7xl flex-col items-start gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-normal">KCC Board 구조검토 프로그램</h1>
-            <p className="mt-1 text-sm text-muted-foreground">v{APP_VERSION}</p>
+            <h1 className="text-xl font-semibold tracking-normal">{APP_TITLE}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{APP_SHORT_NAME} v{APP_VERSION}</p>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
             <div className="shrink-0 whitespace-nowrap rounded-md border border-border px-3 py-2 text-sm font-medium">
@@ -949,9 +961,11 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
       site_class: values.seismicSiteClass,
       s5_bedrock_depth_unknown: values.seismicSiteClass === "S5" && values.s5BedrockDepthUnknown,
       Ip: values.seismicIp,
+      z_over_h: values.seismicZOverH,
     },
     omega: hiddenOmega,
     anchor_capacity_kN: values.anchorCapacityKn,
+    anchor_capacity_source: values.anchorCapacitySource.trim() || undefined,
     anchor_spacing_mm: values.anchorSpacingMm,
   };
 }
@@ -1037,6 +1051,7 @@ function createReportData(
       deflectionLimitDenom: values.deflectionLimitDenom,
       anchorSpacingMm: values.anchorSpacingMm,
       anchorCapacityKn: values.anchorCapacityKn,
+      anchorCapacitySource: values.anchorCapacitySource.trim(),
     },
     loads: {
       designCaseLabel,
@@ -1046,6 +1061,7 @@ function createReportData(
       seismicSiteClass: siteClassLabel,
       s5BedrockDepthUnknown: values.seismicSiteClass === "S5" && values.s5BedrockDepthUnknown,
       seismicIp: values.seismicIp,
+      seismicZOverH: values.seismicZOverH,
     },
     bolts: {
       outerCount: hiddenBoltCountOuter,

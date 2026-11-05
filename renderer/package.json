@@ -1,6 +1,7 @@
 {
   "name": "kcc-board-renderer",
-  "version": "0.7.4",
+  "version": "0.8.0",
+  "programTitle": "경량철골 스터드와 석고보드의 부분합성을 고려한 칸막이벽체 허용높이 산정 프로그램",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {

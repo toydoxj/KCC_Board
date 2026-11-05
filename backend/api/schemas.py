@@ -14,6 +14,7 @@ from backend.engine.constants import (
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
   DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N,
+  DEFAULT_SEISMIC_Z_OVER_H,
   GRAVITY,
   STANDARD_SCREW_COUNT,
 )
@@ -117,6 +118,8 @@ class SeismicPayload(ApiModel):
   site_class: Literal["S1", "S2", "S3", "S4", "S5"] = "S5"
   s5_bedrock_depth_unknown: bool = False
   Fa: float | None = Field(default=None, gt=0)
+  # 설치높이비 z/h (2차 심사의견 D-2). 범위(0.0~1.0)는 엔진이 검사하여 명시적 오류 문구를 반환한다
+  z_over_h: float = DEFAULT_SEISMIC_Z_OVER_H
 
   def to_engine(self) -> SeismicInput:
     if self.site_class not in SITE_CLASSES:
@@ -127,6 +130,7 @@ class SeismicPayload(ApiModel):
       site_class=self.site_class,
       s5_bedrock_depth_unknown=self.s5_bedrock_depth_unknown,
       Fa=self.Fa,
+      z_over_h=self.z_over_h,
     )
 
 
@@ -152,6 +156,8 @@ class WallCheckRequestPayload(ApiModel):
     le=ANCHOR_SPACING_MAX_MM,
   )
   screw_pull_through_nominal_N: float = Field(default=DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, gt=0)
+  # 런너 고정못 허용내력 출처(2차 심사의견 D-1). 계산에 미사용, 계산서 표기 전용
+  anchor_capacity_source: str | None = Field(default=None, max_length=200)
 
   @field_validator("anchor_spacing_mm")
   @classmethod
@@ -183,6 +189,7 @@ class WallCheckRequestPayload(ApiModel):
       anchor_capacity_kN=self.anchor_capacity_kN,
       anchor_spacing_mm=self.anchor_spacing_mm,
       screw_pull_through_nominal_N=self.screw_pull_through_nominal_N,
+      anchor_capacity_source=self.anchor_capacity_source,
     )
 
 
@@ -235,6 +242,8 @@ class WallCheckResultData(ApiModel):
   layers: list[LayerResultData]
   intermediate: dict[str, float]
   notices: list[str]
+  # 시험 시편 구성과 다른 항목 키(2차 심사의견 A-1·F-2). intermediate는 숫자만 허용하므로 별도 키로 둔다
+  tested_configuration_mismatch_fields: list[str]
 
   @classmethod
   def from_engine(cls, result: WallCheckResult) -> "WallCheckResultData":
@@ -261,6 +270,7 @@ class WallCheckResultData(ApiModel):
       layers=[LayerResultData.from_engine(layer) for layer in result.layers],
       intermediate=result.intermediate,
       notices=list(result.notices),
+      tested_configuration_mismatch_fields=list(result.tested_configuration_mismatch_fields),
     )
 
 

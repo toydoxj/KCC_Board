@@ -5,6 +5,7 @@ import { governingHeight, heightReview } from "@/lib/height-review";
 import { displayStudGroup } from "@/lib/visual-assets";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 import { ResultNotices } from "@/components/result-notices";
+import { APP_FULL_TITLE } from "@/lib/app-info";
 
 export interface ReportBoardSlot {
   label: string;
@@ -49,6 +50,8 @@ export interface CalculationReportData {
     deflectionLimitDenom: number;
     anchorSpacingMm: number;
     anchorCapacityKn: number;
+    // 빈 문자열이면 계산서에 "—" 표시
+    anchorCapacitySource: string;
   };
   loads: {
     designCaseLabel: string;
@@ -58,6 +61,7 @@ export interface CalculationReportData {
     seismicSiteClass: string;
     s5BedrockDepthUnknown: boolean;
     seismicIp: number;
+    seismicZOverH: number;
   };
   bolts: {
     outerCount: number;
@@ -128,6 +132,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <div className="document-version">V1.0</div>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
+            <p className="report-program-title text-xs font-semibold text-slate-600">{APP_FULL_TITLE}</p>
             <h1 className="text-2xl font-bold tracking-normal">석고보드 건식벽체 구조검토 계산서</h1>
             <p className="mt-1 text-sm text-slate-600">{calculationModeLabel} / 강도 기준: {strengthCheckModeLabel}</p>
           </div>
@@ -139,7 +144,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
       </header>
 
       <section className="mt-4">
-        <ResultNotices notices={data.result.notices ?? []} showProductScope />
+        <ResultNotices notices={data.result.notices ?? []} showProductScope result={data.result} />
       </section>
 
       <section className={`mt-5 grid gap-3 md:grid-cols-2 ${isHeightSearchMode&&isSeismic?"report-overview-anchor-height":""}`}>
@@ -197,12 +202,14 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="활하중" value={`${formatNumber(data.loads.liveLoadKnM2)} kN/m²`} />
             <KeyValue label="연직하중" value={`${formatNumber(data.loads.verticalLoadKnM)} kN/m`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
-            {isSeismic ? <KeyValue label="런너 고정못 성능" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="런너 고정못 허용내력" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="고정못 허용내력 출처" value={anchorSourceLabel(data.geometry.anchorCapacitySource)} /> : null}
+            {isSeismic ? <p className="py-1 text-xs text-slate-600">고정못 허용내력은 입력값 기준이며, 제품 성능의 검증은 본 프로그램 범위 외임</p> : null}
             {isSeismic ? <KeyValue label="런너 고정못 간격" value={`${formatNumber(data.geometry.anchorSpacingMm)} mm`} /> : null}
             {isHeightSearchMode ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
             ) : null}
-            {isSeismic&&<KeyValue label="지진 입력" value={`${data.loads.seismicSiteClass}, S=${formatNumber(data.loads.seismicS)}, Ip=${formatNumber(data.loads.seismicIp)}`} />}
+            {isSeismic&&<KeyValue label="지진 입력" value={`${data.loads.seismicSiteClass}, S=${formatNumber(data.loads.seismicS)}, Ip=${formatNumber(data.loads.seismicIp)}, z/h=${formatNumber(data.loads.seismicZOverH)}`} />}
           </div>
         </ReportBlock>
       </section>
@@ -329,6 +336,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="Mn(STUD)" value={`${formatNumber(data.result.intermediate.Mn_stud_only_kNm ?? data.result.Mn_kNm)} kN·m`} />
             {isSeismic ? <KeyValue label="지진모멘트" value={`${formatNumber(data.result.seismic_moment_kNm)} kN·m`} /> : null}
             {isSeismic ? <KeyValue label="지진중량 Wp" value={unitValue(data.result.intermediate.seismic_weight_kN, "kN")} /> : null}
+            {isSeismic ? <FpRows result={data.result} /> : null}
           </div>
         </ReportBlock>
       </section>
@@ -365,7 +373,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <div>Rh,L = (L × H × B) / 2 / B</div>
               <div>Rh,E = (Fp / 2 × 2) / B, 런너 고정못 반력에만 과강도계수 Ω0 = {formatNumber(data.result.intermediate.anchor_seismic_overstrength_factor ?? Number.NaN)} 적용</div>
               <div>{reactionFormula}</div>
-              <div>허용 런너 고정못 간격 = 런너 고정못 성능 / Rh × 1000</div>
+              <div>허용 런너 고정못 간격 = 런너 고정못 허용내력 / Rh × 1000</div>
             </div>
             <div className="grid gap-1 text-sm md:grid-cols-2 md:gap-x-6">
               <KeyValue
@@ -385,7 +393,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 value={`${formatNumber(data.result.intermediate.reaction_required_kN_per_m ?? 0)} kN/m`}
               />
               <KeyValue
-                label="런너 고정못 성능"
+                label="런너 고정못 허용내력"
                 value={`${formatNumber(data.result.intermediate.anchor_capacity_kN ?? 0)} kN/개`}
               />
               <KeyValue
@@ -459,7 +467,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <ReportBlock title="피스 인장 검토 (AISI S100-16 J4.4)">
           <div className="mb-3 grid gap-1 rounded-md bg-slate-50 p-3 text-sm">
             <div>T = q × s × p_max (피치당 피스 1개, 면 하중 전체를 가장 성긴 층 피스가 부담 — 보수측)</div>
-            <div>q = {isSeismic ? "max(L, 0.7E, 0.75L+0.75(0.7E)), E = 0.48·SDS·Ip·W보드(면)" : "L"}</div>
+            <div>q = {isSeismic ? `max(L, 0.7E, 0.75L+0.75(0.7E)), E = ${formatNumber(data.result.intermediate.seismic_fp_coefficient ?? Number.NaN)}·SDS·Ip·W보드(면)` : "L"}</div>
             <div>풀아웃 Pnot = 0.85 × tc × d × Fu2 (Eq. J4.4.1-1), Ω = 3.0</div>
             <div>풀스루(석고보드) = 입력 공칭값 / Ω (기본 343 N — ASTM C1396 nail pull 참고값)</div>
           </div>
@@ -535,6 +543,31 @@ function KeyValue({ label, value }: { label: string; value: string }) {
       <span className="font-semibold">{value}</span>
     </div>
   );
+}
+
+// Fp 산정 행 (2차 심사의견 D-2): Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp, 0.3 ≤ 계수 ≤ 1.6
+export function fpBoundLabel(flag: number | undefined) {
+  if (flag === 1) return "하한 0.3 적용";
+  if (flag === 2) return "상한 1.6 적용";
+  return "미적용";
+}
+
+function FpRows({ result }: { result: WallCheckResult }) {
+  const i = result.intermediate;
+  return (
+    <>
+      <KeyValue label="ap / Rp" value={`${formatNumber(i.seismic_ap ?? Number.NaN)} / ${formatNumber(i.seismic_rp ?? Number.NaN)}`} />
+      <KeyValue label="설치높이비 z/h" value={formatNumber(i.seismic_z_over_h ?? Number.NaN)} />
+      <KeyValue label="Fp 계수 0.4·ap·(1+2z/h)/Rp" value={formatNumber(i.seismic_fp_coefficient ?? Number.NaN)} />
+      <KeyValue label="Fp 상·하한" value={fpBoundLabel(i.seismic_fp_bound_applied)} />
+      <KeyValue label="Fp = 계수·SDS·Ip·Wp" value={unitValue(i.Fp_kN, "kN")} />
+    </>
+  );
+}
+
+// 고정못 허용내력 출처 표기. 미입력이면 "—"
+export function anchorSourceLabel(source: string | undefined) {
+  return source && source.trim() ? source.trim() : "—";
 }
 
 function BoltRow({ label, count, pitch, applicable = true }: { label: string; count: number; pitch: number; applicable?: boolean }) {

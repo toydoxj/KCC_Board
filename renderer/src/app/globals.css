@@ -219,6 +219,10 @@ select {
 .screw-tension-formula .math-comparison { line-height:1.15em; margin-top:calc(1.7em - 0.575em - 0.5px); }
 .summary-notices { font-size:6.3pt; line-height:1.4; margin-top:4px; }
 .summary-notices { color:#805718; }
+.summary-program-title { font-size:7pt; font-weight:600; color:#475569; margin:0 0 2px; }
+.summary-tested-config { font-size:6.8pt; line-height:1.4; margin-top:4px; font-weight:600; }
+.summary-tested-config[data-tested-configuration="match"] { color:#065f46; }
+.summary-tested-config[data-tested-configuration="mismatch"] { color:#9a3412; }
 .math-expression { display:inline-flex; align-items:center; gap:3px; white-space:nowrap; font-family:"Times New Roman",serif; font-size:11pt; }
 .math-expression sub.math-korean { font-family:"Malgun Gothic",sans-serif; font-size:7pt; font-style:normal; }
 .math-fraction { display:inline-flex; flex-direction:column; text-align:center; vertical-align:middle; line-height:1.15; }
