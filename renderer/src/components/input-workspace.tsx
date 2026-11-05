@@ -91,7 +91,7 @@ export function InputWorkspace(p: Props) {
         <div className="stud-select-field"><div className="field-head"><label htmlFor="stud-group">스터드 타입</label><button type="button" onClick={()=>setGallery("types")}>스터드 타입 보기 +</button></div><select id="stud-group" aria-label="스터드 타입" className={inputClassName} {...register("studGroup")} onChange={p.onStudGroupChange}>{p.groups.map(o=><option key={o.value} value={o.value}>{displayStudGroup(o.label)}</option>)}</select></div>
         <div className="stud-select-field"><div className="field-head"><label htmlFor="stud-method">시공방식</label><button type="button" onClick={()=>setGallery("methods")}>시공방식 보기 +</button></div><select id="stud-method" aria-label="시공방식" className={inputClassName} {...register("studMethod")}>{p.methods.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
         <div><Field label="스터드 규격" error={errors.studSpec?.message}><select className={inputClassName} {...register("studSpec")}>{p.specs.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></Field><dl className="stud-dimensions"><div><dt>길이 :</dt><dd>{p.stud?.H??"-"} mm</dd></div><div><dt>폭 :</dt><dd>{p.stud?.B??"-"} mm</dd></div><div><dt>두께 :</dt><dd>{p.stud?.t??"-"} mm</dd></div></dl></div>
-        {preset("spacingMm","스터드 간격 (mm)",[300,450,600],v=>`${v} mm`)}
+        <div>{preset("spacingMm","스터드 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:150,max:600})}<p className="helper">사용자 정의 스터드 간격은 150~600 mm 범위에서 입력할 수 있습니다. 시험 검증 간격은 300·450·600 mm입니다.</p></div>
       </div>
       <div className="board-and-preview">
         <div className="board-inputs"><h3>석고보드 타입 및 두께</h3><p className="helper">1P는 스터드에 가장 가까운 보드입니다.</p>

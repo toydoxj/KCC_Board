@@ -93,7 +93,8 @@ const formSchema = z.object({
   studSpec: z.string().min(1),
   liveLoadKnM2: z.coerce.number().positive(),
   verticalLoadKnM: z.coerce.number().min(0),
-  spacingMm: z.coerce.number().positive(),
+  // 2차 심사의견 F-1: 사용자 정의 스터드 간격 150~600 mm (엔진에서도 같은 범위 검사)
+  spacingMm: z.coerce.number().min(150, "스터드 간격은 150 mm 이상").max(600, "스터드 간격은 600 mm 이하"),
   spanMm: z.coerce.number().positive(),
   deflectionLimitDenom: z.coerce.number().int().positive(),
   anchorCapacityKn: z.coerce.number().positive(),

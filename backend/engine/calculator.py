@@ -51,6 +51,8 @@ from backend.engine.constants import (
   STIFFNESS_TYPE_RV,
   STIFFNESS_TYPE_T_SILENT,
   STUD_ELASTIC_MODULUS,
+  STUD_SPACING_MAX_MM,
+  STUD_SPACING_MIN_MM,
 )
 from backend.engine.models import (
   BoardLayer,
@@ -163,6 +165,7 @@ def _calculate_wall_check_once(
   _validate_design_case(request.design_case)
   _validate_strength_check_mode(request.strength_check_mode)
   _validate_anchor_spacing(request.anchor_spacing_mm)
+  _validate_stud_spacing(request.spacing_mm)
   _validate_pull_through(request.screw_pull_through_nominal_N)
   repo = repository
   section = _build_section(request, repo)
@@ -1307,6 +1310,14 @@ def _screw_tension_result(
 def _validate_pull_through(value_N: float) -> None:
   if not math.isfinite(value_N) or value_N <= 0.0:
     raise ValueError("석고보드 풀스루 공칭강도는 0보다 커야 합니다.")
+
+
+def _validate_stud_spacing(spacing_mm: float) -> None:
+  """스터드 간격 입력 범위 검사 (2차 심사의견 F-1)."""
+  if not math.isfinite(spacing_mm) or spacing_mm < STUD_SPACING_MIN_MM or spacing_mm > STUD_SPACING_MAX_MM:
+    raise ValueError(
+      f"스터드 간격은 {STUD_SPACING_MIN_MM:g}~{STUD_SPACING_MAX_MM:g} mm 범위여야 합니다.",
+    )
 
 
 def _validate_anchor_spacing(anchor_spacing_mm: float) -> None:
