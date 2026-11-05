@@ -42,3 +42,103 @@ def test_stud_spacing_out_of_range_api_error_envelope(spacing_mm: float) -> None
   assert body["success"] is False
   assert body["error"]["code"] == "CALCULATION_ERROR"
   assert "150~600 mm" in body["error"]["message"]
+
+
+# ---------------------------------------------------------------- A-1·F-2 시험 구성 대조
+SPECIMEN_NO = {specimen_id: int(specimen_id.split("_")[1]) for specimen_id in REQUESTS}
+
+
+@pytest.mark.parametrize("specimen_id", sorted(REQUESTS))
+def test_specimen_configuration_matches_its_specimen(specimen_id: str) -> None:
+  result = calculate_wall_check(REQUESTS[specimen_id], REPO)
+  assert result.intermediate["tested_configuration_match"] == 1.0
+  assert result.intermediate["matched_specimen_no"] == SPECIMEN_NO[specimen_id]
+  assert result.tested_configuration_mismatch_fields == ()
+
+
+@pytest.mark.parametrize("design_case", ["seismic", "non_seismic"])
+def test_board_thickness_change_is_mismatch(design_case: str) -> None:
+  boards = tuple(replace(board, thickness=15.0) for board in BASE.front_boards)
+  result = calculate_wall_check(replace(BASE, front_boards=boards, design_case=design_case), REPO)
+  assert result.intermediate["tested_configuration_match"] == 0.0
+  assert result.intermediate["matched_specimen_no"] == 0.0
+  assert result.intermediate["closest_specimen_no"] == 4.0
+  assert "board_thickness" in result.tested_configuration_mismatch_fields
+  assert "board_kind" not in result.tested_configuration_mismatch_fields
+
+
+def test_spacing_and_layer_changes_are_listed() -> None:
+  result = calculate_wall_check(replace(BASE, spacing_mm=300.0, rear_boards=BASE.rear_boards[:1]), REPO)
+  assert set(result.tested_configuration_mismatch_fields) == {"spacing", "board_layers"}
+
+
+def test_one_side_specimen_matches_basic_without_rear_boards() -> None:
+  result = calculate_wall_check(replace(BASE, rear_boards=()), REPO)
+  assert result.intermediate["matched_specimen_no"] == 2.0
+
+
+def test_seed_specimens_follow_golden_specimen_inputs() -> None:
+  # 시험 구성 정의(stud_method.json)와 R 보정 시편 입력(requested_shape_cases.json)이 어긋나지 않아야 한다
+  specimens = {specimen.specimen_id: specimen for specimen in REPO.list_specimen_configurations()}
+  assert set(specimens) == set(REQUESTS)
+  for specimen_id, request in REQUESTS.items():
+    specimen = specimens[specimen_id]
+    assert specimen.stud_type == request.stud.stud_type
+    assert specimen.stud_spec == request.stud.spec
+    assert specimen.spacing_mm == request.spacing_mm
+    assert specimen.front_boards == tuple((b.kind, b.thickness) for b in request.front_boards)
+    assert specimen.rear_boards == tuple((b.kind, b.thickness) for b in request.rear_boards)
+    assert specimen.test_height_mm == 2400.0
+
+
+def test_api_returns_mismatch_fields() -> None:
+  client = TestClient(create_app(REPO))
+  payload = asdict(replace(BASE, spacing_mm=300.0))
+  body = client.post("/api/check", json=payload).json()
+  assert body["success"] is True
+  assert body["data"]["tested_configuration_mismatch_fields"] == ["spacing"]
+  assert body["data"]["intermediate"]["closest_specimen_no"] == 4.0
+
+
+def test_sqlite_repository_lists_specimens_and_migrates(tmp_path: Path) -> None:
+  import sqlite3
+
+  from backend.engine.repository import SqliteRepository, initialize_sqlite_from_seed
+
+  db = tmp_path / "materials.sqlite3"
+  initialize_sqlite_from_seed(db, ROOT / "data/seed")
+  assert len(SqliteRepository(db, ROOT / "data/seed").list_specimen_configurations()) == 11
+  # schema 7 DB(시편 테이블 없음) → seed 경로가 있으면 이관 시 채운다
+  with sqlite3.connect(db) as connection:
+    connection.execute("DROP TABLE specimen_configuration")
+  migrated = SqliteRepository(db, ROOT / "data/seed").list_specimen_configurations()
+  assert migrated == REPO.list_specimen_configurations()
+
+
+def test_sqlite_old_db_without_seed_dir_fails_explicitly(tmp_path: Path) -> None:
+  import sqlite3
+
+  from backend.engine.repository import RepositoryLookupError, SqliteRepository, initialize_sqlite_from_seed
+
+  db = tmp_path / "materials.sqlite3"
+  initialize_sqlite_from_seed(db, ROOT / "data/seed")
+  with sqlite3.connect(db) as connection:
+    connection.execute("DROP TABLE specimen_configuration")
+    connection.execute("UPDATE metadata SET value = '7' WHERE key = 'schema_version'")
+  with pytest.raises(RepositoryLookupError, match="시험 시편 구성"):
+    SqliteRepository(db)
+  with sqlite3.connect(db) as connection:
+    # 롤백: schema 버전이 올라가지 않아야 한다
+    assert connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0] == "7"
+
+
+@pytest.mark.parametrize("method", [None, "", " 기본 "])
+def test_c_stud_missing_method_means_basic(method: str | None) -> None:
+  request = replace(BASE, stud=replace(BASE.stud, method=method))
+  assert calculate_wall_check(request, REPO).intermediate["matched_specimen_no"] == 4.0
+
+
+def test_central_joint_alias_matches_specimen_01() -> None:
+  base = REQUESTS["requested_01_c_stud_central_joint"]
+  request = replace(base, stud=replace(base.stud, method="중앙부연결"))
+  assert calculate_wall_check(request, REPO).intermediate["matched_specimen_no"] == 1.0

@@ -63,7 +63,14 @@ from backend.engine.models import (
   WallCheckRequest,
   WallCheckResult,
 )
-from backend.engine.repository import BoardProperty, JsonSeedRepository, MaterialRepository, StudSection, StudSteel
+from backend.engine.repository import (
+  BoardProperty,
+  JsonSeedRepository,
+  MaterialRepository,
+  SpecimenConfiguration,
+  StudSection,
+  StudSteel,
+)
 from backend.engine.seismic import calculate_fa
 
 MAX_HEIGHT_INCREMENT_MM = 50
@@ -149,13 +156,117 @@ def calculate_wall_check(
   result = _calculate_wall_check_once(request, repo)
   max_height = _maximum_allowable_height_mm(request, repo)
   anchor_max_height = _maximum_anchor_allowable_height_mm(request, repo)
+  match = _tested_configuration_match(request, repo)
   return replace(
     result,
     max_height_mm=max_height,
     anchor_max_height_mm=anchor_max_height,
     max_height_increment_mm=float(MAX_HEIGHT_INCREMENT_MM),
     anchor_spacing_increment_mm=float(ANCHOR_SPACING_INCREMENT_MM),
+    intermediate={
+      **result.intermediate,
+      "tested_configuration_match": 1.0 if match.matched else 0.0,
+      # 일치 시 시편 번호, 불일치 시 0
+      "matched_specimen_no": float(match.specimen.specimen_no) if match.matched else 0.0,
+      # 차이 항목의 비교 기준 시편(가장 가까운 시편)
+      "closest_specimen_no": float(match.specimen.specimen_no),
+      "tested_height_mm": match.specimen.test_height_mm,
+    },
+    tested_configuration_mismatch_fields=match.mismatch_fields,
   )
+
+
+# 시험 구성 대조 항목 키 (렌더러에서 한글로 표기)
+TESTED_FIELD_STUD_TYPE = "stud_type"
+TESTED_FIELD_STUD_SPEC = "stud_spec"
+TESTED_FIELD_STUD_METHOD = "stud_method"
+TESTED_FIELD_BOARD_KIND = "board_kind"
+TESTED_FIELD_BOARD_THICKNESS = "board_thickness"
+TESTED_FIELD_BOARD_LAYERS = "board_layers"
+TESTED_FIELD_SPACING = "spacing"
+
+
+@dataclass(frozen=True)
+class _SpecimenMatch:
+  specimen: SpecimenConfiguration
+  mismatch_fields: tuple[str, ...]
+
+  @property
+  def matched(self) -> bool:
+    return not self.mismatch_fields
+
+
+def _tested_configuration_match(request: WallCheckRequest, repo: MaterialRepository) -> _SpecimenMatch:
+  """입력 구성을 KCC 시험 시편 구성과 대조한다(2차 심사의견 A-1·F-2). 판정에는 영향하지 않는다.
+
+  비교: 스터드 형식·규격·시공방식(C-STUD만), 전·후면 보드 종류·두께·겹수, 스터드 간격.
+  가장 가까운 시편(형식 → 규격 → 차이 항목 수 → 시편 번호 순)을 기준으로 차이 항목을 반환한다.
+  """
+  specimens = repo.list_specimen_configurations()
+  candidates = [(_specimen_mismatch_fields(request, specimen), specimen) for specimen in specimens]
+  fields, specimen = min(
+    candidates,
+    key=lambda item: (
+      TESTED_FIELD_STUD_TYPE in item[0],
+      TESTED_FIELD_STUD_SPEC in item[0],
+      len(item[0]),
+      item[1].specimen_no,
+    ),
+  )
+  return _SpecimenMatch(specimen=specimen, mismatch_fields=fields)
+
+
+def _specimen_mismatch_fields(request: WallCheckRequest, specimen: SpecimenConfiguration) -> tuple[str, ...]:
+  group, _ = _parse_stud_type(request.stud)
+  mismatches: list[str] = []
+  if group != specimen.stud_type:
+    mismatches.append(TESTED_FIELD_STUD_TYPE)
+  if request.stud.spec != specimen.stud_spec:
+    mismatches.append(TESTED_FIELD_STUD_SPEC)
+  # 시공방식은 C-STUD에만 의미가 있다(그 외 형식은 단일 방식)
+  if _is_c_stud_group(group) and _canonical_c_stud_method(request.stud.method) != _canonical_c_stud_method(
+    specimen.method,
+  ):
+    mismatches.append(TESTED_FIELD_STUD_METHOD)
+  board_fields: set[str] = set()
+  for boards, tested in ((request.front_boards, specimen.front_boards), (request.rear_boards, specimen.rear_boards)):
+    board_fields.update(_board_mismatch_fields(boards, tested))
+  mismatches.extend(
+    key
+    for key in (TESTED_FIELD_BOARD_KIND, TESTED_FIELD_BOARD_THICKNESS, TESTED_FIELD_BOARD_LAYERS)
+    if key in board_fields
+  )
+  if not math.isclose(request.spacing_mm, specimen.spacing_mm, rel_tol=0.0, abs_tol=1e-6):
+    mismatches.append(TESTED_FIELD_SPACING)
+  return tuple(mismatches)
+
+
+def _board_mismatch_fields(
+  boards: tuple[BoardLayer, ...],
+  tested: tuple[tuple[str, float], ...],
+) -> set[str]:
+  """한 면의 보드 구성 비교. 층 순서와 무관하게 종류·두께 다중집합으로 비교한다."""
+  fields: set[str] = set()
+  if len(boards) != len(tested):
+    fields.add(TESTED_FIELD_BOARD_LAYERS)
+  if sorted(board.kind for board in boards) != sorted(kind for kind, _ in tested):
+    if len(boards) == len(tested) or {board.kind for board in boards} != {kind for kind, _ in tested}:
+      fields.add(TESTED_FIELD_BOARD_KIND)
+  if sorted(float(board.thickness) for board in boards) != sorted(thickness for _, thickness in tested):
+    if len(boards) == len(tested) or {float(board.thickness) for board in boards} != {t for _, t in tested}:
+      fields.add(TESTED_FIELD_BOARD_THICKNESS)
+  return fields
+
+
+def _canonical_c_stud_method(method: str | None) -> str:
+  """C-STUD 시공방식 대조용 표준명. 미입력은 기본, 엔진이 같은 공법으로 보는 별칭은 하나로 묶는다."""
+  if method is None or not method.strip():
+    return "기본"
+  if _is_central_joint_method(method):
+    return "중앙부이음"
+  if "맞댐" in method:
+    return "맞댐이음"
+  return "".join(method.split())
 
 
 def _calculate_wall_check_once(

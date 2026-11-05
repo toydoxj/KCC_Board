@@ -41,5 +41,308 @@
       "stud_type": "MP-STUD",
       "method": null
     }
+  ],
+  "_tested_configurations_note": "KCC 11종 시험 시편 구성(2차 심사의견 A-1·F-2). 시험 높이 2.4 m. 보정계수 R(constants.EFFECTIVE_INERTIA_CORRECTION_BY_TYPE) 산정 시편과 같다. 입력은 tests/golden/requested_shape_cases.json 시편 입력과 일치해야 한다(tests/test_review_round2.py 검사).",
+  "tested_height_mm": 2400.0,
+  "tested_configurations": [
+    {
+      "specimen_no": 1,
+      "specimen_id": "requested_01_c_stud_central_joint",
+      "stud_type": "C-STUD",
+      "stud_spec": "50S-45-08",
+      "method": "중앙부 이음",
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 2,
+      "specimen_id": "requested_02_c_stud_basic_front_only",
+      "stud_type": "C-STUD",
+      "stud_spec": "50S-45-08",
+      "method": "기본",
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": []
+    },
+    {
+      "specimen_no": 3,
+      "specimen_id": "requested_03_c_stud_butt_joint",
+      "stud_type": "C-STUD",
+      "stud_spec": "50S-45-08",
+      "method": "맞댐이음",
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 4,
+      "specimen_id": "requested_04_c_stud_basic",
+      "stud_type": "C-STUD",
+      "stud_spec": "50S-45-08",
+      "method": "기본",
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 5,
+      "specimen_id": "requested_05_ch_stud_75",
+      "stud_type": "CH-STUD",
+      "stud_spec": "75CHS-08",
+      "method": null,
+      "spacing_mm": 600.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 15.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 15.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 15.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 25.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 6,
+      "specimen_id": "requested_06_hr_stud_124",
+      "stud_type": "HR-STUD",
+      "stud_spec": "HR-124",
+      "method": null,
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 7,
+      "specimen_id": "requested_07_mp_stud_74",
+      "stud_type": "MP-STUD",
+      "stud_spec": "MP-74",
+      "method": null,
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 8,
+      "specimen_id": "requested_08_rv_stud_74",
+      "stud_type": "RV-STUD",
+      "stud_spec": "RV-74",
+      "method": null,
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 9,
+      "specimen_id": "requested_09_t_silent_stud_74",
+      "stud_type": "T.silent-STUD",
+      "stud_spec": "19TH-A-74x45x10x0.5",
+      "method": null,
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 10,
+      "specimen_id": "requested_10_r_stud_75",
+      "stud_type": "R-STUD",
+      "stud_spec": "75S-45-08",
+      "method": null,
+      "spacing_mm": 450.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 19.0
+        }
+      ]
+    },
+    {
+      "specimen_no": 11,
+      "specimen_id": "requested_11_i_stud_75",
+      "stud_type": "I-STUD",
+      "stud_spec": "I-STUD 75-06",
+      "method": null,
+      "spacing_mm": 600.0,
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 15.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 15.0
+        },
+        {
+          "kind": "방화",
+          "thickness": 15.0
+        }
+      ],
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 25.0
+        }
+      ]
+    }
   ]
 }

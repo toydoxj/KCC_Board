@@ -235,6 +235,8 @@ class WallCheckResultData(ApiModel):
   layers: list[LayerResultData]
   intermediate: dict[str, float]
   notices: list[str]
+  # 시험 시편 구성과 다른 항목 키(2차 심사의견 A-1·F-2). intermediate는 숫자만 허용하므로 별도 키로 둔다
+  tested_configuration_mismatch_fields: list[str]
 
   @classmethod
   def from_engine(cls, result: WallCheckResult) -> "WallCheckResultData":
@@ -261,6 +263,7 @@ class WallCheckResultData(ApiModel):
       layers=[LayerResultData.from_engine(layer) for layer in result.layers],
       intermediate=result.intermediate,
       notices=list(result.notices),
+      tested_configuration_mismatch_fields=list(result.tested_configuration_mismatch_fields),
     )
 
 

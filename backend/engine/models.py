@@ -99,3 +99,5 @@ class WallCheckResult:
   intermediate: dict[str, float] = field(default_factory=dict)
   # 판정에 영향하지 않는 입력 경고(표준 외 피스 간격 등)
   notices: tuple[str, ...] = field(default_factory=tuple)
+  # 시험 시편 구성 대조(2차 심사의견 A-1·F-2): 가장 가까운 시편과 다른 항목 키. 일치하면 빈 값
+  tested_configuration_mismatch_fields: tuple[str, ...] = field(default_factory=tuple)

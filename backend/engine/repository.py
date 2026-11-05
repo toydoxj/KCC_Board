@@ -66,8 +66,10 @@ class BoardCatalogItem:
   yield_ratio_source: str = "기본값"
 
 
-SCHEMA_VERSION = "7"
+SCHEMA_VERSION = "8"
 STUD_STEEL_SEED_FILE = "stud_steel.json"
+# 시험 시편 구성은 stud_method.json의 tested_configurations에 등재한다(2차 심사의견 A-1·F-2)
+STUD_METHOD_SEED_FILE = "stud_method.json"
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,21 @@ class StudMethod:
 
 
 @dataclass(frozen=True)
+class SpecimenConfiguration:
+  """KCC 시험 시편 구성(시험 높이 test_height_mm). 보드는 (종류, 두께) 목록, 스터드측 → 바깥쪽."""
+
+  specimen_no: int
+  specimen_id: str
+  stud_type: str
+  stud_spec: str
+  method: str | None
+  spacing_mm: float
+  front_boards: tuple[tuple[str, float], ...]
+  rear_boards: tuple[tuple[str, float], ...]
+  test_height_mm: float
+
+
+@dataclass(frozen=True)
 class BoltMaterial:
   material: str
   Fu: float
@@ -147,6 +164,9 @@ class MaterialRepository(Protocol):
   def list_stud_methods(self) -> tuple[StudMethod, ...]:
     """스터드별 시공방식 목록을 조회한다."""
 
+  def list_specimen_configurations(self) -> tuple[SpecimenConfiguration, ...]:
+    """KCC 시험 시편 구성 목록을 조회한다(시험 구성 대조용)."""
+
   def list_bolt_materials(self) -> tuple[BoltMaterial, ...]:
     """볼트 재질 목록을 조회한다."""
 
@@ -162,6 +182,7 @@ class JsonSeedRepository:
     self._steels = _stud_steels_from_items(self._read_items(STUD_STEEL_SEED_FILE))
     self._studs = self._load_studs()
     self._stud_methods = self._load_stud_methods()
+    self._specimens = _specimen_configurations_from_seed(self.seed_dir)
     self._bolts = self._load_bolts()
 
   def get_board(self, kind: str, thickness: float) -> BoardProperty:
@@ -195,6 +216,9 @@ class JsonSeedRepository:
 
   def list_stud_methods(self) -> tuple[StudMethod, ...]:
     return self._stud_methods
+
+  def list_specimen_configurations(self) -> tuple[SpecimenConfiguration, ...]:
+    return self._specimens
 
   def list_bolt_materials(self) -> tuple[BoltMaterial, ...]:
     return tuple(sorted(self._bolts.values(), key=lambda bolt: bolt.material))
@@ -374,6 +398,16 @@ class SqliteRepository:
       for row in rows
     )
 
+  def list_specimen_configurations(self) -> tuple[SpecimenConfiguration, ...]:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      if not _table_columns(connection, "specimen_configuration"):
+        rows: list[tuple[str]] = []
+      else:
+        rows = connection.execute("SELECT payload FROM specimen_configuration ORDER BY specimen_no").fetchall()
+    if not rows:
+      raise RepositoryLookupError("자재 DB에 시험 시편 구성이 없습니다. init_db를 다시 실행하십시오.")
+    return tuple(_specimen_from_mapping(cast(Mapping[str, object], json.loads(row[0]))) for row in rows)
+
   def list_bolt_materials(self) -> tuple[BoltMaterial, ...]:
     with closing(sqlite3.connect(self.db_path)) as connection:
       connection.row_factory = sqlite3.Row
@@ -443,6 +477,7 @@ class SqliteRepository:
     )
     if stud_columns:
       _migrate_stud_steel(connection, self.seed_dir)
+    _migrate_specimen_configuration(connection, self.seed_dir)
     connection.execute(
       "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
       ("schema_version", SCHEMA_VERSION),
@@ -476,7 +511,9 @@ def _read_seed_items(seed_dir: Path, filename: str) -> Sequence[Mapping[str, obj
 
 
 def _drop_tables(connection: sqlite3.Connection) -> None:
-  for table in ["stud_method", "bolt_material", "stud_section", "stud_steel", "board_property", "metadata"]:
+  for table in [
+    "specimen_configuration", "stud_method", "bolt_material", "stud_section", "stud_steel", "board_property", "metadata",
+  ]:
     connection.execute(f"DROP TABLE IF EXISTS {table}")
 
 
@@ -533,7 +570,9 @@ def _create_tables(connection: sqlite3.Connection) -> None:
       stud_type TEXT NOT NULL,
       method TEXT
     );
-    """
+"""
+    + _SPECIMEN_TABLE_SQL
+    + ";"
   )
 
 
@@ -603,8 +642,91 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
     [(str(item["stud_type"]), None if item.get("method") is None else str(item["method"])) for item in method_items],
   )
 
+  connection.execute("DELETE FROM specimen_configuration")
+  _insert_specimen_configurations(connection, _specimen_configurations_from_seed(seed_dir))
+
   connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", SCHEMA_VERSION))
   connection.commit()
+
+
+_SPECIMEN_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS specimen_configuration (
+      specimen_no INTEGER PRIMARY KEY,
+      payload TEXT NOT NULL
+    )
+"""
+
+
+def _specimen_configurations_from_seed(seed_dir: Path) -> tuple[SpecimenConfiguration, ...]:
+  path = seed_dir / STUD_METHOD_SEED_FILE
+  with path.open(encoding="utf-8") as file:
+    data = cast(Mapping[str, object], json.load(file))
+  raw = data.get("tested_configurations")
+  if not isinstance(raw, list) or not raw:
+    raise RepositoryLookupError(f"{STUD_METHOD_SEED_FILE}에 시험 시편 구성(tested_configurations)이 없습니다.")
+  height = float(cast(float, data["tested_height_mm"]))
+  return tuple(
+    _specimen_from_mapping({**cast(Mapping[str, object], item), "test_height_mm": height}) for item in raw
+  )
+
+
+def _specimen_from_mapping(item: Mapping[str, object]) -> SpecimenConfiguration:
+  def boards(key: str) -> tuple[tuple[str, float], ...]:
+    return tuple(
+      (str(board["kind"]), float(cast(float, board["thickness"])))
+      for board in cast(Sequence[Mapping[str, object]], item[key])
+    )
+
+  return SpecimenConfiguration(
+    specimen_no=int(cast(int, item["specimen_no"])),
+    specimen_id=str(item["specimen_id"]),
+    stud_type=str(item["stud_type"]),
+    stud_spec=str(item["stud_spec"]),
+    method=None if item.get("method") is None else str(item["method"]),
+    spacing_mm=float(cast(float, item["spacing_mm"])),
+    front_boards=boards("front_boards"),
+    rear_boards=boards("rear_boards"),
+    test_height_mm=float(cast(float, item["test_height_mm"])),
+  )
+
+
+def _specimen_to_mapping(specimen: SpecimenConfiguration) -> dict[str, object]:
+  return {
+    "specimen_no": specimen.specimen_no,
+    "specimen_id": specimen.specimen_id,
+    "stud_type": specimen.stud_type,
+    "stud_spec": specimen.stud_spec,
+    "method": specimen.method,
+    "spacing_mm": specimen.spacing_mm,
+    "front_boards": [{"kind": kind, "thickness": thickness} for kind, thickness in specimen.front_boards],
+    "rear_boards": [{"kind": kind, "thickness": thickness} for kind, thickness in specimen.rear_boards],
+    "test_height_mm": specimen.test_height_mm,
+  }
+
+
+def _insert_specimen_configurations(
+  connection: sqlite3.Connection,
+  specimens: Iterable[SpecimenConfiguration],
+) -> None:
+  connection.executemany(
+    "INSERT INTO specimen_configuration (specimen_no, payload) VALUES (?, ?)",
+    [(specimen.specimen_no, json.dumps(_specimen_to_mapping(specimen), ensure_ascii=False)) for specimen in specimens],
+  )
+
+
+def _migrate_specimen_configuration(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
+  """schema 7 이하 DB에 시험 시편 구성 테이블을 추가한다(2차 심사의견 A-1).
+
+  seed 경로가 없으면 채울 수 없으므로 명시적 오류로 중단한다(트랜잭션 롤백, schema 버전 유지).
+  """
+  connection.execute(_SPECIMEN_TABLE_SQL)
+  if connection.execute("SELECT COUNT(*) FROM specimen_configuration").fetchone()[0] > 0:
+    return
+  if seed_dir is None:
+    raise RepositoryLookupError(
+      "구 자재 DB에 시험 시편 구성(specimen_configuration)이 없습니다. seed 경로를 지정하거나 init_db를 다시 실행하십시오."
+    )
+  _insert_specimen_configurations(connection, _specimen_configurations_from_seed(seed_dir))
 
 
 _STUD_STEEL_TABLE_SQL = """

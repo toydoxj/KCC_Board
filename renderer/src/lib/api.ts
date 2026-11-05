@@ -146,6 +146,8 @@ export interface WallCheckResult {
   anchor_spacing_increment_mm: number;
   layers: LayerResult[];
   intermediate: Record<string, number>;
+  // 시험 시편 구성과 다른 항목 키(2차 심사의견 A-1). 일치하면 빈 배열
+  tested_configuration_mismatch_fields?: string[];
 }
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
