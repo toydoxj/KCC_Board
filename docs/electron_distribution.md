@@ -55,7 +55,7 @@ npm run electron
 - 종료: `before-quit`·`will-quit`에서 Windows는 `taskkill /PID {pid} /T /F`로 프로세스 트리를 종료한다.
 - 강제 종료 대응: 백엔드는 `KCC_BOARD_PARENT_PID`의 부모 핸들을 감시하다가 부모가 사라지면 스스로 종료한다.
 - 잔존 프로세스: 설치본 기동 시 `kcc-board-api.exe`가 남아 있으면 확인 대화상자를 띄우고, 확인 시 `taskkill /IM kcc-board-api.exe /T /F` 후 시작한다.
-- 로그: `%APPDATA%\kcc-board-rendererackend-electron.log` (할당 포트 `api port: …` 기록).
+- 로그: `%APPDATA%\kcc-board-renderer\backend-electron.log` (할당 포트 `api port: …` 기록).
 - 알려진 제한: 잔존 정리는 이름(`/IM`) 기준이므로 같은 PC의 다른 계정에서 실행 중인 KCC Board 백엔드도 종료될 수 있다.
 
 ### 검증 기록 (2026-11-05, v0.8.0, Windows 11, `renderer/dist/win-unpacked`)
