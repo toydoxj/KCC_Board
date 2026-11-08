@@ -543,7 +543,7 @@ export default function Home() {
         : [{ value: thicknessValue(options.fixedThickness), label: `${options.fixedThickness}T`, disabled: false }];
 
     return (
-      <div className="grid gap-1.5">
+      <div key={kindField} className="grid gap-1.5">
         <div className="text-sm font-medium text-foreground">{label}</div>
         <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-2">
           <select
