@@ -24,6 +24,8 @@ from backend.engine.constants import (
   FIXED_REAR_BOARD_SCREW_COUNT,
   FIXED_REAR_BOARD_SCREW_PITCH_MM,
   GRAVITY,
+  ONE_SIDED_SINGLE_PLY_SCREW_COUNT,
+  ONE_SIDED_SINGLE_PLY_SCREW_PITCH_MM,
   GYPSUM_SCREW_STRENGTH_DIVISOR,
   GYPSUM_SCREW_ULTIMATE_SHEAR_N,
   SCREW_PULLOUT_COEFFICIENT,
@@ -532,6 +534,8 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
     layers.append(layer)
 
   active_count = max(len(rear_boards), len(front_boards))
+  # 2026-11-08 사용자 결정: 일면마감 1P 단독 구성(한 면만 보드 1장)은 피치당 피스 2개로 본다(간격은 입력값, 표준 300 mm).
+  one_sided_single_ply = _is_one_sided_single_ply(len(rear_boards), len(front_boards))
   layers = [
     # 2026-10-26 승인: 2P/3P+1P의 단독 1P는 마감층 간격만 따르고,
     # 개수는 원래 1P 값을 유지한다(UI 기본 1개). 반대 방향에도 동일 적용.
@@ -539,7 +543,9 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
       layer,
       connection_order=active_count,
       connection_count=_count_for_order(request.bolt.count, layer.order)
-      if active_count in (2, 3) else layer.connection_count,
+      if active_count in (2, 3)
+      else ONE_SIDED_SINGLE_PLY_SCREW_COUNT if one_sided_single_ply
+      else layer.connection_count,
     )
     if layer.layer_type == "board"
     and layer.connection_pitch_mm is None
@@ -1088,10 +1094,10 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   """표준 외 피스 간격 경고(판정 불변). CH·I-STUD 고정 후면 보드(간격 고정)는 제외한다."""
   # _pitch_for_order와 같은 기준으로 order를 1~3에 정규화한 뒤 중복 제거(order ≥ 3은 모두 외측 피치)
   stud_index = next(i for i, layer in enumerate(section.layers) if layer.layer_type == "stud")
-  bilateral_single_ply = (
-    sum(layer.layer_type == "board" for layer in section.layers[:stud_index]) == 1
-    and sum(layer.layer_type == "board" for layer in section.layers[stud_index + 1:]) == 1
-  )
+  rear_count = sum(layer.layer_type == "board" for layer in section.layers[:stud_index])
+  front_count = sum(layer.layer_type == "board" for layer in section.layers[stud_index + 1:])
+  bilateral_single_ply = rear_count == 1 and front_count == 1
+  one_sided_single_ply = _is_one_sided_single_ply(rear_count, front_count)
   orders = sorted(
     {
       min(max(layer.connection_order or layer.order, 1), 3)
@@ -1102,11 +1108,12 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   notices: list[str] = []
   for order in orders:
     pitch = _pitch_for_order(bolt.pitch, order)
-    standard = (
-      BILATERAL_SINGLE_PLY_SCREW_PITCH_MM
-      if bilateral_single_ply and order == 1
-      else _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
-    )
+    if order == 1 and bilateral_single_ply:
+      standard = BILATERAL_SINGLE_PLY_SCREW_PITCH_MM
+    elif order == 1 and one_sided_single_ply:
+      standard = ONE_SIDED_SINGLE_PLY_SCREW_PITCH_MM
+    else:
+      standard = _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
     if math.isclose(pitch, standard):
       continue
     label = BOARD_ORDER_LABELS[order]
@@ -1114,6 +1121,11 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
       f"{label} 피스 간격 {pitch:g} mm는 표준 간격 {standard:g} mm와 다름 — 실험 검증 범위 밖의 입력이므로 결과 적용에 유의할 것"
     )
   return tuple(notices)
+
+
+def _is_one_sided_single_ply(rear_count: int, front_count: int) -> bool:
+  """일면마감 1P 단독 구성: 한 면에만 보드 1장, 반대 면 없음(CH·I-STUD는 고정 후면 보드가 있어 해당 없음)."""
+  return rear_count + front_count == 1
 
 
 def _count_for_order(counts: tuple[float, ...], order: int) -> float:

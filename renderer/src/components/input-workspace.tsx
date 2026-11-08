@@ -106,6 +106,9 @@ export function InputWorkspace(p: Props) {
   const [gallery,setGallery]=useState<"types"|"methods"|null>(null);
   const [custom,setCustom]=useState<Record<string,boolean>>({});
   const group = values.studGroup ?? "C-STUD";
+  // CH·I-STUD는 후면 고정 보드(300 mm·4개)가 있어 일면마감 1P 단독 규칙 대상이 아니다
+  const hasFixedRear = group.replace(/\s/g, "").toUpperCase().startsWith("CH-STUD") || group.replace(/\s/g, "").toUpperCase() === "I-STUD";
+  const oneSidedSinglePly = !hasFixedRear && p.frontCount + p.rearCount === 1;
   const method = values.studMethod ?? "기본";
 
 
@@ -118,7 +121,7 @@ export function InputWorkspace(p: Props) {
 
   function preset(name:keyof CheckFormValues,label:string,options:number[],format:(v:number)=>string,step="any",extra: {min?:number;max?:number;disabled?:boolean;help?:string}={}) {
     const value=Number(values[name]);
-    const customKey=name==="boltPitchInner"?`${name}:${p.frontCount===1&&p.rearCount===1?"single":"multi"}`:name;
+    const customKey=name==="boltPitchInner"?`${name}:${(p.frontCount===1&&p.rearCount===1)||oneSidedSinglePly?"single":"multi"}`:name;
     const isCustom=custom[customKey]||!options.includes(value);
     return <div className="preset-field"><label htmlFor={name+"-select"} title={extra.help}>{label}</label>
       <input type="hidden" {...register(name)}/>
@@ -227,7 +230,7 @@ export function InputWorkspace(p: Props) {
         <div className="board-inputs"><h3>석고보드 타입 및 두께</h3><p className="helper">1P는 스터드에 가장 가까운 보드입니다.</p>
           <div className="board-face"><div className="face-title"><strong>1면 <span>(전면)</span></strong></div><p className="helper">스터드측 → 바깥쪽</p><div className="board-slots">{p.frontSlots}</div></div>
           <div className="board-face"><div className="face-title"><strong>2면 <span>(후면)</span></strong><label className="mirror-label"><input type="checkbox" checked={p.mirrorRear} disabled={!p.canMirror} onChange={e=>p.onMirrorChange(e.target.checked)}/>1면과 동일</label></div><p className="helper">스터드측 → 바깥쪽{!p.canMirror ? " · 고정 구성으로 동일 적용 불가" : p.mirrorRear ? " · 1면의 변경사항이 자동 적용됩니다." : ""}</p><fieldset disabled={p.mirrorRear} className="board-slots">{p.rearSlots}</fieldset></div>
-          {group.startsWith("CH") && <p className="helper">2면 1P는 끼움부에 배치됩니다. {group.includes("개량") ? "12.5T형: 12.5T" : "CH-STUD: 25T"} 고정 두께를 적용합니다.</p>}
+          {group.startsWith("CH") && <p className="helper">2면 1P는 끼움부에 배치됩니다. {group.includes("개량") ? "12.5T형: 12.5T" : "CH-STUD: 25T"} 고정 두께를 적용하고, 피스는 300 mm 간격·피치당 4개로 고정됩니다.</p>}
         </div>
         <div className="structure-preview"><h3>구조체 구성</h3>{p.preview}<dl className="preview-summary"><div><dt>스터드 규격</dt><dd>{values.studSpec}</dd></div><div><dt>스터드 간격</dt><dd>{values.spacingMm} mm</dd></div><div><dt>높이</dt><dd>{values.calculationMode==="heightCheck"?`${Number(values.spanMm??0).toLocaleString()} mm`:"자동산정"}</dd></div></dl></div>
       </div>
@@ -235,7 +238,7 @@ export function InputWorkspace(p: Props) {
       <div className="subheading"><h3>석고보드 나사못 간격</h3><span className="unit-label">단위 mm</span></div>
       <div className="field-grid three">{preset("boltPitchInner","1P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900})}{preset("boltPitchMiddle","2P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900,disabled:maxPly<2})}{preset("boltPitchOuter","3P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900,disabled:maxPly<3})}</div>
       <p className="helper">사용자 정의 나사못 간격은 100~900 mm 범위에서 입력할 수 있습니다.</p>
-      <p className="helper">{maxPly===2 ? `2P+1P 구성의 단독 1P 면에는 2P 마감층 피치(${values.boltPitchMiddle ?? 300} mm)가 적용됩니다. 3P 입력은 사용하지 않습니다.` : maxPly>=3 ? "단독 1P 면에는 3P 마감층 피치가 적용됩니다. 기존 v0.6.3 적용 방식입니다." : "1P 구성은 1P 피치를 사용합니다. 2P·3P 입력은 사용하지 않습니다."}</p>
+      <p className="helper">{maxPly===2 ? `2P+1P 구성의 단독 1P 면에는 2P 마감층 피치(${values.boltPitchMiddle ?? 300} mm)가 적용됩니다. 3P 입력은 사용하지 않습니다.` : maxPly>=3 ? "단독 1P 면에는 3P 마감층 피치가 적용됩니다. 기존 v0.6.3 적용 방식입니다." : oneSidedSinglePly ? "일면마감 1P 단독 구성은 1P 피치(표준 300 mm)에 피치당 피스 2개를 적용합니다. 2P·3P 입력은 사용하지 않습니다." : "1P 구성은 1P 피치(표준 300 mm)를 사용합니다. 2P·3P 입력은 사용하지 않습니다."}</p>
       {seismic&&renderAnchorSection()}
     </Step>
     <Step number="04" title="설계하중 및 처짐한계 조건" description="높이, 활하중, 처짐한계와 연직하중을 입력해 주세요.">

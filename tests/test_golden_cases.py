@@ -27,6 +27,8 @@ from backend.engine.calculator import (
 )
 from backend.api.schemas import BoltPayload
 from backend.engine.constants import (
+  FIXED_REAR_BOARD_SCREW_COUNT,
+  FIXED_REAR_BOARD_SCREW_PITCH_MM,
   SCREW_SHEAR_OMEGA,
   STANDARD_SCREW_COUNT,
   STANDARD_SCREW_PITCH_MM,
@@ -301,8 +303,8 @@ class GoldenCaseTest(unittest.TestCase):
       ("C-STUD", "맞댐이음", 1.00),
       ("C-STUD", "중앙부 이음", 0.44),
       ("C-STUD", "중앙부연결", 0.44),
-      ("CH-STUD", "기본", 0.79),
-      ("CH-STUD(개량형)", "기본", 0.79),
+      ("CH-STUD", "기본", 0.66),  # 2026-11-08 고정 후면 보드 피스 4개 반영 재산정(종전 0.79)
+      ("CH-STUD(개량형)", "기본", 0.66),
       ("T-Silent", "기본", 0.70),
       ("T.silent-STUD", "기본", 0.70),
       ("R.STUD", "기본", 0.31),
@@ -337,9 +339,9 @@ class GoldenCaseTest(unittest.TestCase):
     result = _calculate_wall_check_once(request, self.repository)
     layer_inertia_sum = sum(layer.inertia_about_neutral_axis_mm4 for layer in result.layers)
 
-    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.79)
+    self.assertAlmostEqual(result.intermediate["I_eff_correction_factor"], 0.66)
     self.assertAlmostEqual(result.I_full_mm4, layer_inertia_sum)
-    # v0.7.4: L = 7,500 mm에서 M_L 0.791 > M* 0.732이므로 하중 수준 보정 k_L < 1이 함께 곱해진다
+    # v0.7.4: L = 7,500 mm에서 M_L 0.791 > M*(CH 0.789, 2026-11-08 재산정)이므로 하중 수준 보정 k_L < 1이 함께 곱해진다
     self.assertLess(result.intermediate["stiffness_load_factor"], 1.0)
     self.assertAlmostEqual(
       result.I_eff_mm4,
@@ -544,13 +546,13 @@ class GoldenCaseTest(unittest.TestCase):
           if layer.layer_type == "board" and layer.name.startswith(rear_board_prefix)
         )
 
-        # 고정 후면 보드: 피스 간격 300 mm, 피치당 2개(완전합성 가정 폐지)
+        # 고정 후면 보드: 피스 간격 300 mm, 피치당 4개(완전합성 가정 폐지, 2026-11-08 2개→4개)
         per_screw = min(
           785.0840041320893,
           2.0 * 0.85 * thickness * 3.5 * self.repository.get_board("방화", thickness).Fu,
           _screw_stud_side_shear_N(_stud_t(_build_section(request, self.repository)), 3.5, 400.0),
         )
-        expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
+        expected = min(rear_board.axial_strength_kN, per_screw * FIXED_REAR_BOARD_SCREW_COUNT * (request.span_mm / 2.0) / FIXED_REAR_BOARD_SCREW_PITCH_MM * 1e-3)
         self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
         self.assertLessEqual(rear_board.strength_shear_kN, rear_board.cumulative_shear_kN)
 
@@ -602,7 +604,7 @@ class GoldenCaseTest(unittest.TestCase):
       2.0 * 0.85 * 25.0 * 3.5 * self.repository.get_board("방화", 25.0).Fu,
       _screw_stud_side_shear_N(_stud_t(section), 3.5, _stud_fu(section)),
     )
-    expected = min(rear_board.axial_strength_kN, per_screw * 2.0 * (request.span_mm / 2.0) / 300.0 * 1e-3)
+    expected = min(rear_board.axial_strength_kN, per_screw * FIXED_REAR_BOARD_SCREW_COUNT * (request.span_mm / 2.0) / FIXED_REAR_BOARD_SCREW_PITCH_MM * 1e-3)
     self.assertAlmostEqual(rear_board.cumulative_shear_kN, expected, places=6)
 
   def test_stiffness_load_factor_is_one_sided(self) -> None:

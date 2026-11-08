@@ -54,6 +54,8 @@ const hiddenBoltYieldStrength = 340;
 const hiddenBoltCountOuter = 2;
 const hiddenBoltCountMiddle = 2;
 const hiddenBoltCountInner = 1;
+// 일면마감 1P 단독 구성의 피치당 피스 개수(2026-11-08, 엔진 ONE_SIDED_SINGLE_PLY_SCREW_COUNT와 동일). 계산서 표기용
+const oneSidedSinglePlyBoltCountInner = 2;
 const gravity = 9.81;
 const anchorSpacingMinMm = 150;
 const anchorSpacingMaxMm = 600;
@@ -318,7 +320,10 @@ export default function Home() {
       formValues.frontBoardOuterThickness,
     ],
   );
-  const bilateralSinglePly = selectedFrontBoards.length === 1 && selectedRearBoards.length === 1;
+  // 단일층 피치 모드: 양면 1P 또는 일면마감 1P 단독(2026-11-08) — 1P 간격 표준 300 mm
+  const bilateralSinglePly =
+    (selectedFrontBoards.length === 1 && selectedRearBoards.length === 1) ||
+    (!hasFixedRearBoardGroup(selectedStudGroup) && selectedFrontBoards.length + selectedRearBoards.length === 1);
   // Keep independent defaults and user-selected values for single- and multi-ply contexts.
   const innerPitchContexts = useRef({ singleMode: false, single: bilateralSinglePlyPitchMm, multi: defaultValues.boltPitchInner });
   useEffect(() => {
@@ -1044,6 +1049,19 @@ function fixedRearBoardKindForGroup(group: string) {
   return null;
 }
 
+// CH·I-STUD는 후면 고정 보드(300 mm·4개 고정)가 있어 일면마감 1P 단독 규칙(300 mm·2개) 대상이 아니다
+function hasFixedRearBoardGroup(group: string) {
+  return isChStudGroup(group) || isIStudGroup(group);
+}
+
+function isOneSidedSinglePlyValues(values: CheckFormValues) {
+  if (hasFixedRearBoardGroup(values.studGroup)) {
+    return false;
+  }
+  const payload = buildPayload(values);
+  return payload.rear_boards.length + payload.front_boards.length === 1;
+}
+
 function fixedRearBoardLabelForGroup(group: string) {
   return isIStudGroup(group) ? "I 연결" : "CH 끼움";
 }
@@ -1275,7 +1293,8 @@ function createReportData(
     bolts: {
       outerCount: hiddenBoltCountOuter,
       middleCount: hiddenBoltCountMiddle,
-      innerCount: hiddenBoltCountInner,
+      // 일면마감 1P 단독 구성은 엔진이 피치당 2개를 적용하므로 계산서에도 같은 값을 표기한다
+      innerCount: isOneSidedSinglePlyValues(values) ? oneSidedSinglePlyBoltCountInner : hiddenBoltCountInner,
       outerPitch: values.boltPitchOuter,
       middlePitch: values.boltPitchMiddle,
       innerPitch: values.boltPitchInner,
