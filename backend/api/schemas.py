@@ -158,6 +158,12 @@ class WallCheckRequestPayload(ApiModel):
   screw_pull_through_nominal_N: float = Field(default=DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N, gt=0)
   # 런너 고정못 허용내력 출처(2차 심사의견 D-1). 계산에 미사용, 계산서 표기 전용
   anchor_capacity_source: str | None = Field(default=None, max_length=200)
+  # 런너 고정 앵커 제품 선택(anchor_product.json). None/'custom'이면 anchor_capacity_kN 직접 입력값을 쓴다.
+  # 제품이 지정되면 API 계층이 허용하중 표를 조회해 anchor_capacity_kN을 덮어쓴다(엔진은 kN 값만 사용)
+  anchor_product_id: str | None = Field(default=None, max_length=100)
+  anchor_embedment_mm: float | None = Field(default=None, gt=0)
+  anchor_concrete_fc_MPa: float | None = Field(default=None, gt=0)
+  anchor_apply_seismic_cap: bool = True
 
   @field_validator("anchor_spacing_mm")
   @classmethod
@@ -190,6 +196,10 @@ class WallCheckRequestPayload(ApiModel):
       anchor_spacing_mm=self.anchor_spacing_mm,
       screw_pull_through_nominal_N=self.screw_pull_through_nominal_N,
       anchor_capacity_source=self.anchor_capacity_source,
+      anchor_product_id=self.anchor_product_id,
+      anchor_embedment_mm=self.anchor_embedment_mm,
+      anchor_concrete_fc_MPa=self.anchor_concrete_fc_MPa,
+      anchor_apply_seismic_cap=self.anchor_apply_seismic_cap,
     )
 
 
