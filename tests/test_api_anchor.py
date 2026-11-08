@@ -99,6 +99,11 @@ class ApiAnchorTest(unittest.TestCase):
     self.assertEqual(uncapped["intermediate"]["anchor_capacity_kN"], 1.001)
     self.assertEqual(uncapped["intermediate"]["anchor_seismic_cap_applied"], 0.0)
 
+  def test_check_with_infinite_embedment_is_rejected(self) -> None:
+    payload = self._payload(design_case="seismic", anchor_product_id="hilti_x_u", anchor_embedment_mm="Infinity")
+    response = self.client.post("/api/check", json=payload)
+    self.assertEqual(response.status_code, 422)
+
   def test_check_with_unknown_product_returns_lookup_error(self) -> None:
     response = self.client.post(
       "/api/check",

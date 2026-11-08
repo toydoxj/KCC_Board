@@ -185,6 +185,18 @@ class AnchorRepositoryTest(unittest.TestCase):
       SqliteRepository(self.db_path)
     with closing(sqlite3.connect(self.db_path)) as connection:
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "8")
+      # executescript 암묵 커밋 회귀 방지: 실패한 이관은 테이블 생성까지 롤백되어야 한다
+      tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+      self.assertNotIn("anchor_product", tables)
+      self.assertNotIn("anchor_load_row", tables)
+
+  def test_capacity_rounding_matches_client_rule(self) -> None:
+    # 1000.5 N → 1.001 kN (0.5 올림). 파이썬 round()의 짝수 반올림(1.000)과 달라야 한다
+    from backend.engine.anchor import _newton_to_kn
+
+    self.assertEqual(_newton_to_kn(1000.5), 1.001)
+    self.assertEqual(_newton_to_kn(300.0), 0.3)
+    self.assertEqual(_newton_to_kn(1001.4), 1.001)
 
 
 if __name__ == "__main__":

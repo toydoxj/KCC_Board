@@ -22,6 +22,7 @@ import {
   type DesignCase,
   type SiteClass,
   type StudMethod,
+  type MaterialCatalog,
   type StudSection,
   type WallCheckPayload,
   type WallCheckResult,
@@ -195,6 +196,20 @@ const defaultValues: CheckFormValues = {
   seismicZOverH: 1.0,
 };
 
+// 카탈로그의 is_default 앵커 제품으로 폼 기본값을 만든다. 허용내력은 조회 effect가 채우므로 여기서는 제품·hET만 맞춘다.
+// 카탈로그가 없으면(로딩 전·실패) 정적 defaultValues를 쓴다
+function formDefaultsFor(catalog: MaterialCatalog | null): CheckFormValues {
+  const products = catalog?.anchorProducts.items ?? [];
+  const defaultProduct = products.find((product) => product.is_default);
+  if (!defaultProduct) return defaultValues;
+  return {
+    ...defaultValues,
+    anchorProductId: defaultProduct.anchor_id,
+    anchorEmbedmentMm: defaultProduct.default_embedment_mm ?? embedmentOptions(defaultProduct)[0] ?? defaultValues.anchorEmbedmentMm,
+    anchorConcreteFcMPa: null,
+  };
+}
+
 export default function Home() {
   const {
     catalog,
@@ -231,7 +246,7 @@ export default function Home() {
           return;
         }
         setCatalog(nextCatalog);
-        reset(defaultValues);
+        reset(formDefaultsFor(nextCatalog));
         setErrorMessage(null);
       })
       .catch((error: unknown) => {
@@ -355,8 +370,14 @@ export default function Home() {
         : null,
     [anchorCapN, anchorIsCustom, selectedAnchorApplyCap, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorProduct, selectedDesignCase],
   );
+  useEffect(() => {
+    // 조회 조건이 바뀌면 이전 서버 덮어쓰기 값은 무효
+    serverAnchorCapacity.current = null;
+  }, [anchorResolution]);
   // 마지막으로 자동 입력한 출처 문자열. 사용자가 수정하지 않았을 때만 다음 자동 입력으로 덮어쓴다
   const lastAutoAnchorSource = useRef<string>("");
+  // 서버(/api/check)가 덮어쓴 허용내력. 같은 조회 조건이면 클라이언트 계산값보다 우선한다(반올림 차이 방지)
+  const serverAnchorCapacity = useRef<number | null>(null);
 
   // 제품이 바뀌면 기본 매입깊이·첫 f'c로 맞춘다. 사용자 정의로 바뀌면 출처를 비운다
   const previousAnchorId = useRef<string | null>(null);
@@ -366,10 +387,11 @@ export default function Home() {
     const firstSelection = previousAnchorId.current === null;
     previousAnchorId.current = selectedAnchorId;
     if (anchorIsCustom) {
-      if (!firstSelection) {
+      // 자동 생성한 출처만 비운다. 사용자가 직접 쓴 출처는 custom ↔ 제품 왕복에서도 보존한다
+      if (!firstSelection && (formValues.anchorCapacitySource ?? "") === lastAutoAnchorSource.current) {
         setValue("anchorCapacitySource", "", { shouldDirty: true, shouldValidate: true });
-        lastAutoAnchorSource.current = "";
       }
+      lastAutoAnchorSource.current = "";
       return;
     }
     if (!selectedAnchorProduct) return;
@@ -382,7 +404,7 @@ export default function Home() {
     if (nextFc !== selectedAnchorFc) {
       setValue("anchorConcreteFcMPa", nextFc, { shouldDirty: true, shouldValidate: true });
     }
-  }, [anchorIsCustom, catalog, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorId, selectedAnchorProduct, setValue]);
+  }, [anchorIsCustom, catalog, formValues.anchorCapacitySource, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorId, selectedAnchorProduct, setValue]);
 
   // 매입깊이가 바뀌어 f'c 선택지가 달라지면 첫 값으로 맞춘다
   useEffect(() => {
@@ -400,7 +422,9 @@ export default function Home() {
   useEffect(() => {
     if (!selectedAnchorProduct || anchorIsCustom || !anchorResolution || !anchorResolution.ok) return;
     const capacity = anchorResolution.value.capacityKn;
-    if (Number(formValues.anchorCapacityKn) !== capacity) {
+    const current = Number(formValues.anchorCapacityKn);
+    const serverValue = serverAnchorCapacity.current;
+    if (current !== capacity && !(serverValue !== null && current === serverValue)) {
       setValue("anchorCapacityKn", capacity, { shouldDirty: true, shouldValidate: true });
     }
     const autoSource = anchorSourceText(selectedAnchorProduct).slice(0, 200);
@@ -562,10 +586,11 @@ export default function Home() {
 
       if (sequence !== calculationSequence.current) return;
       // 서버가 앵커 제품 표로 허용내력을 덮어썼으면 화면 값도 서버값으로 맞춘다(경고 없이 표시)
-      const serverAnchorCapacity = nextResult.intermediate.anchor_capacity_kN;
-      if (nextResult.anchor_capacity_overridden && typeof serverAnchorCapacity === "number") {
-        nextValues = { ...nextValues, anchorCapacityKn: serverAnchorCapacity };
-        setValue("anchorCapacityKn", serverAnchorCapacity, { shouldDirty: true, shouldValidate: true });
+      const serverCapacityKn = nextResult.intermediate.anchor_capacity_kN;
+      if (nextResult.anchor_capacity_overridden && typeof serverCapacityKn === "number") {
+        serverAnchorCapacity.current = serverCapacityKn;
+        nextValues = { ...nextValues, anchorCapacityKn: serverCapacityKn };
+        setValue("anchorCapacityKn", serverCapacityKn, { shouldDirty: true, shouldValidate: true });
       }
       setResult(nextResult);
       setReportData(createReportData(nextValues, nextResult, catalog?.boards ?? [], catalog?.studs ?? [], anchorProducts));
@@ -587,7 +612,7 @@ export default function Home() {
     setMirrorRear(false);
     previousAnchorId.current = null;
     lastAutoAnchorSource.current = "";
-    reset(defaultValues);
+    reset(formDefaultsFor(catalog));
     setResult(null);
     setReportData(null);
     setErrorMessage(null);

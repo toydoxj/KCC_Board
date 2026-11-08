@@ -14,6 +14,7 @@ anchor_capacity_kN을 WallCheckRequest에 채워 넘긴다(엔진 순수성 유�
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 
 from backend.engine.models import AnchorLoadRow, AnchorProduct, WallCheckRequest
@@ -25,7 +26,9 @@ ANCHOR_FAMILY_CUSTOM = "custom"
 # 내진 검토 CASE 식별자(calculator.DESIGN_CASE_SEISMIC과 같은 값. 순환 import를 피해 문자열로 둔다)
 _DESIGN_CASE_SEISMIC = "seismic"
 # N → kN 환산 후 반올림 자릿수
-_CAPACITY_KN_DECIMALS = 3
+# N → kN 환산: N을 정수로 반올림(0.5는 올림, math.floor(x + 0.5))한 뒤 1000으로 나눈다.
+# 클라이언트 renderer/src/lib/anchor.ts roundKn(Math.round(N) / 1000)과 같은 규칙이어야 서버 덮어쓰기가 생기지 않는다.
+_NEWTON_PER_KILONEWTON = 1000.0
 
 
 class AnchorLookupError(ValueError):
@@ -108,9 +111,9 @@ def resolve_anchor_capacity(
   condition_text = _condition_text(product, row)
   return AnchorResolution(
     anchor_id=product.anchor_id,
-    anchor_capacity_kN=round(shear_N / 1000.0, _CAPACITY_KN_DECIMALS),
+    anchor_capacity_kN=_newton_to_kn(shear_N),
     allowable_shear_N=shear_N,
-    allowable_tension_kN=round(float(row.allowable_tension_N) / 1000.0, _CAPACITY_KN_DECIMALS),
+    allowable_tension_kN=_newton_to_kn(float(row.allowable_tension_N)),
     matched_row=row,
     table_shear_N=table_shear_N,
     cap_applied=cap_applied,
@@ -181,3 +184,8 @@ def _condition_text(product: AnchorProduct, row: AnchorLoadRow) -> str:
 
 def _format_values(values: tuple[float, ...]) -> str:
   return ", ".join(f"{value:g}" for value in values) if values else "없음"
+
+
+def _newton_to_kn(value_N: float) -> float:
+  """N을 정수로 반올림(0.5 올림)한 뒤 kN으로 환산한다. 클라이언트 roundKn과 동일 규칙."""
+  return math.floor(value_N + 0.5) / _NEWTON_PER_KILONEWTON

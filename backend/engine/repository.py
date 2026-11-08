@@ -890,8 +890,11 @@ def _migrate_anchor_product(connection: sqlite3.Connection, seed_dir: Path | Non
   """schema 8 이하 DB에 런너 고정 앵커 제품 테이블을 추가한다.
 
   seed 경로가 없으면 채울 수 없으므로 명시적 오류로 중단한다(트랜잭션 롤백, schema 버전 유지).
+  executescript()는 진행 중인 트랜잭션을 먼저 커밋하므로 쓰지 않는다 — DDL을 문장별 execute()로 실행해
+  실패 시 테이블 생성까지 함께 롤백되게 한다.
   """
-  connection.executescript(_ANCHOR_TABLES_SQL)
+  for statement in _sql_statements(_ANCHOR_TABLES_SQL):
+    connection.execute(statement)
   if connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0] > 0:
     return
   if seed_dir is None:
@@ -900,6 +903,11 @@ def _migrate_anchor_product(connection: sqlite3.Connection, seed_dir: Path | Non
     )
   products, cap = _anchor_catalog_from_seed(seed_dir)
   _insert_anchor_products(connection, products.values(), cap)
+
+
+def _sql_statements(script: str) -> list[str]:
+  """세미콜론으로 구분된 DDL 스크립트를 개별 문장으로 나눈다(문자열 리터럴 없는 스키마 DDL 전용)."""
+  return [statement.strip() for statement in script.split(";") if statement.strip()]
 
 
 _SPECIMEN_TABLE_SQL = """

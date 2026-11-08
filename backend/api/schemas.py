@@ -165,8 +165,9 @@ class WallCheckRequestPayload(ApiModel):
   # 런너 고정 앵커 제품 선택(anchor_product.json). None/'custom'이면 anchor_capacity_kN 직접 입력값을 쓴다.
   # 제품이 지정되면 API 계층이 허용하중 표를 조회해 anchor_capacity_kN을 덮어쓴다(엔진은 kN 값만 사용)
   anchor_product_id: str | None = Field(default=None, max_length=100)
-  anchor_embedment_mm: float | None = Field(default=None, gt=0)
-  anchor_concrete_fc_MPa: float | None = Field(default=None, gt=0)
+  # gt=0만으로는 Infinity를 거르지 못하므로 allow_inf_nan=False로 유한값만 받는다
+  anchor_embedment_mm: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+  anchor_concrete_fc_MPa: float | None = Field(default=None, gt=0, allow_inf_nan=False)
   anchor_apply_seismic_cap: bool = True
 
   @field_validator("anchor_spacing_mm")

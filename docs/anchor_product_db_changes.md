@@ -14,7 +14,8 @@
 | 4 입력 UI | 48f3ee7 | 제품(optgroup) → hET → f'c → 내진 상한 체크 → 허용내력(읽기 전용/사용자 정의) → 출처 → 간격, 참조 카드, 최소 간격 경고. 기본 hilti_x_u / 22 mm → 0.3 kN 자동 입력 | page.tsx, input-workspace.tsx, lib/anchor.ts, lib/api.ts, globals.css |
 | 5 계산서 | f2354c3 | 검토 조건에 고정못 제품·조회 조건·허용 전단/인장·기준·출처 행, 반력 산정 각주, 참고 부록 "선택 앵커 제품의 허용하중 표"(선택 행 강조), 요약페이지 동일 행 | calculation-report.tsx, summary-report.tsx, page.tsx |
 | 6 문서 | 8671ee3 | 매뉴얼 §5.3·§8.1·§9·부록 A, var_formula_spec §9.1, CODEX §6, PRD(스키마·API·OI-10) | docs/*, CODEX.md |
-| 7 마감 | (본 커밋) | 판정 영향 고정 테스트 4건, 버전 0.9.0, 본 문서 | tests/test_anchor_height_impact.py, package.json·lock, pyproject.toml |
+| 7 마감 | 36a44b8 | 판정 영향 고정 테스트 4건, 버전 0.9.0, 본 문서 | tests/test_anchor_height_impact.py, package.json·lock, pyproject.toml |
+| 리뷰 반영 | (본 커밋) | Codex 커밋 전 리뷰 5건 반영 — ①schema 9 이관 `executescript` 암묵 커밋 → 문장별 `execute`(실패 시 테이블까지 롤백) ②N→kN 반올림 규칙 서버·클라이언트 통일(0.5 올림) ③화면 기본 제품을 카탈로그 `is_default`에서 결정(하드코딩 제거) ④사용자 정의 전환 시 자동 생성 출처만 비움 ⑤`anchor_embedment_mm`·`anchor_concrete_fc_MPa` 유한값 검증(`allow_inf_nan=False`) | repository.py, anchor.py, schemas.py, page.tsx, tests |
 
 ## 2. 판정 영향 — 11개 시편 내진 런너 고정못 기준 허용높이
 
@@ -58,9 +59,9 @@
 
 | 항목 | 결과 |
 |---|---|
-| `python -m pytest` | 337 passed, 465 subtests passed |
+| `python -m pytest` | 339 passed, 465 subtests passed |
 | 골든 회귀(상대오차 ≤ 0.1%) | 통과, 골든 파일 수정 없음 |
-| 신규 테스트 | test_anchor_product 7, test_anchor_resolution 14, test_api_anchor 6, test_anchor_height_impact 4 |
+| 신규 테스트 | test_anchor_product 7, test_anchor_resolution 15, test_api_anchor 7, test_anchor_height_impact 4 |
 | `tsc --noEmit` / `npm run build` | 성공 |
 | 브라우저 스모크 | 미실시(개발 PC의 브라우저 확장이 맥북 Chrome에 연결되어 Windows 개발 서버를 볼 수 없었음). 맥북 Electron 배포 후 확인 예정 |
 
