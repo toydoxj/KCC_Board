@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.api.schemas import (
+  AnchorProductCatalogData,
+  AnchorProductListResponse,
   BoardListResponse,
   BoardPropertyData,
   BoltListResponse,
@@ -26,6 +28,7 @@ from backend.api.schemas import (
   WallCheckResponse,
   WallCheckResultData,
 )
+from backend.engine.anchor import resolve_request_anchor
 from backend.engine.calculator import calculate_wall_check
 from backend.engine.repository import JsonSeedRepository, MaterialRepository, RepositoryLookupError, SqliteRepository
 
@@ -77,8 +80,12 @@ def create_app(repository: MaterialRepository | None = None) -> FastAPI:
   @app.post("/api/check", response_model=WallCheckResponse)
   def check(payload: WallCheckRequestPayload, request: Request) -> WallCheckResponse:
     repo = cast(MaterialRepository, request.app.state.repository)
-    result = calculate_wall_check(payload.to_engine(), repo)
-    return WallCheckResponse(data=WallCheckResultData.from_engine(result))
+    # 앵커 제품이 지정되면 허용하중 표를 조회해 anchor_capacity_kN을 서버값으로 채운다(엔진은 kN 값만 사용)
+    engine_request, anchor = resolve_request_anchor(payload.to_engine(), repo)
+    result = calculate_wall_check(engine_request, repo)
+    return WallCheckResponse(
+      data=WallCheckResultData.from_engine(result, anchor=anchor, client_anchor_capacity_kN=payload.anchor_capacity_kN),
+    )
 
   @app.get("/api/db/boards", response_model=BoardListResponse)
   def list_boards(request: Request) -> BoardListResponse:
@@ -101,6 +108,13 @@ def create_app(repository: MaterialRepository | None = None) -> FastAPI:
   def list_bolts(request: Request) -> BoltListResponse:
     repo = cast(MaterialRepository, request.app.state.repository)
     return BoltListResponse(data=[BoltMaterialData.from_repository(bolt) for bolt in repo.list_bolt_materials()])
+
+  @app.get("/api/db/anchor-products", response_model=AnchorProductListResponse)
+  def list_anchor_products(request: Request) -> AnchorProductListResponse:
+    repo = cast(MaterialRepository, request.app.state.repository)
+    return AnchorProductListResponse(
+      data=AnchorProductCatalogData.from_repository(repo.list_anchor_products(), repo.get_anchor_seismic_cap()),
+    )
 
   return app
 

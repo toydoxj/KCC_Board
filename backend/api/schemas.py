@@ -18,7 +18,11 @@ from backend.engine.constants import (
   GRAVITY,
   STANDARD_SCREW_COUNT,
 )
+from backend.engine.anchor import AnchorResolution
 from backend.engine.models import (
+  AnchorLoadRow,
+  AnchorProduct,
+  AnchorSeismicCap,
   BoardLayer,
   BoltInput,
   LayerResult,
@@ -254,10 +258,36 @@ class WallCheckResultData(ApiModel):
   notices: list[str]
   # 시험 시편 구성과 다른 항목 키(2차 심사의견 A-1·F-2). intermediate는 숫자만 허용하므로 별도 키로 둔다
   tested_configuration_mismatch_fields: list[str]
+  # 런너 고정 앵커 제품 조회(anchor_product.json). 제품 미지정(사용자 정의)이면 None/False
+  # "{maker} {product} / hET {hET} mm / f'c {fc} MPa / {basis_label} / {source}"
+  anchor_product_summary: str | None = None
+  # 클라이언트가 보낸 anchor_capacity_kN과 서버 조회값이 달라 서버값으로 덮어썼는지
+  anchor_capacity_overridden: bool = False
 
   @classmethod
-  def from_engine(cls, result: WallCheckResult) -> "WallCheckResultData":
+  def from_engine(
+    cls,
+    result: WallCheckResult,
+    anchor: AnchorResolution | None = None,
+    client_anchor_capacity_kN: float | None = None,
+  ) -> "WallCheckResultData":
+    intermediate = dict(result.intermediate)
+    if anchor is not None:
+      # intermediate는 숫자만 허용 — cap 적용 여부는 0/1
+      intermediate["anchor_capacity_resolved_N"] = anchor.allowable_shear_N
+      intermediate["anchor_table_shear_N"] = anchor.table_shear_N
+      intermediate["anchor_seismic_cap_applied"] = 1.0 if anchor.cap_applied else 0.0
+      intermediate["anchor_allowable_tension_N"] = anchor.allowable_tension_kN * 1000.0
+      if anchor.cap_N is not None:
+        intermediate["anchor_seismic_cap_N"] = anchor.cap_N
+    overridden = (
+      anchor is not None
+      and client_anchor_capacity_kN is not None
+      and abs(client_anchor_capacity_kN - anchor.anchor_capacity_kN) > 1e-9
+    )
     return cls(
+      anchor_product_summary=None if anchor is None else anchor.summary,
+      anchor_capacity_overridden=overridden,
       strength_check_mode=result.strength_check_mode,  # type: ignore[arg-type]
       design_case=result.design_case,  # type: ignore[arg-type]
       neutral_axis_mm=result.neutral_axis_mm,
@@ -278,7 +308,7 @@ class WallCheckResultData(ApiModel):
       max_height_increment_mm=result.max_height_increment_mm,
       anchor_spacing_increment_mm=result.anchor_spacing_increment_mm,
       layers=[LayerResultData.from_engine(layer) for layer in result.layers],
-      intermediate=result.intermediate,
+      intermediate=intermediate,
       notices=list(result.notices),
       tested_configuration_mismatch_fields=list(result.tested_configuration_mismatch_fields),
     )
@@ -410,4 +440,88 @@ class StudMethodListResponse(ApiModel):
 class BoltListResponse(ApiModel):
   success: Literal[True] = True
   data: list[BoltMaterialData]
+  error: None = None
+
+
+class AnchorLoadRowData(ApiModel):
+  embedment_mm: float
+  concrete_fc_MPa: float | None
+  allowable_shear_N: float
+  allowable_tension_N: float
+  label: str | None
+
+  @classmethod
+  def from_repository(cls, row: AnchorLoadRow) -> "AnchorLoadRowData":
+    return cls(
+      embedment_mm=row.embedment_mm,
+      concrete_fc_MPa=row.concrete_fc_MPa,
+      allowable_shear_N=row.allowable_shear_N,
+      allowable_tension_N=row.allowable_tension_N,
+      label=row.label,
+    )
+
+
+class AnchorProductData(ApiModel):
+  anchor_id: str
+  maker: str
+  product: str
+  family: str
+  family_label: str
+  shank_diameter_mm: float | None
+  basis: str
+  basis_label: str
+  concrete_condition: str
+  min_concrete_thickness_mm: float | None
+  min_edge_mm: float | None
+  min_spacing_mm: float | None
+  min_fasteners_per_unit: float | None
+  approvals: str
+  source: str
+  is_default: bool
+  default_embedment_mm: float | None
+  table: list[AnchorLoadRowData]
+
+  @classmethod
+  def from_repository(cls, product: AnchorProduct) -> "AnchorProductData":
+    return cls(
+      anchor_id=product.anchor_id,
+      maker=product.maker,
+      product=product.product,
+      family=product.family,
+      family_label=product.family_label,
+      shank_diameter_mm=product.shank_diameter_mm,
+      basis=product.basis,
+      basis_label=product.basis_label,
+      concrete_condition=product.concrete_condition,
+      min_concrete_thickness_mm=product.min_concrete_thickness_mm,
+      min_edge_mm=product.min_edge_mm,
+      min_spacing_mm=product.min_spacing_mm,
+      min_fasteners_per_unit=product.min_fasteners_per_unit,
+      approvals=product.approvals,
+      source=product.source,
+      is_default=product.is_default,
+      default_embedment_mm=product.default_embedment_mm,
+      table=[AnchorLoadRowData.from_repository(row) for row in product.table],
+    )
+
+
+class AnchorProductCatalogData(ApiModel):
+  """제품 목록 + 내진 전단 상한. UI가 선택지(제품 → hET → f'c)를 이 응답만으로 구성한다."""
+
+  seismic_shear_cap_N: float
+  seismic_shear_cap_note: str
+  items: list[AnchorProductData]
+
+  @classmethod
+  def from_repository(cls, products: tuple[AnchorProduct, ...], cap: AnchorSeismicCap) -> "AnchorProductCatalogData":
+    return cls(
+      seismic_shear_cap_N=cap.cap_N,
+      seismic_shear_cap_note=cap.note,
+      items=[AnchorProductData.from_repository(product) for product in products],
+    )
+
+
+class AnchorProductListResponse(ApiModel):
+  success: Literal[True] = True
+  data: AnchorProductCatalogData
   error: None = None
