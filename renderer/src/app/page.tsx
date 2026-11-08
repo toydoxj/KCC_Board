@@ -6,7 +6,7 @@ import { Printer } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
-import { CalculationReport, type CalculationReportData, type ReportBoardSlot } from "@/components/calculation-report";
+import { CalculationReport, type CalculationReportData, type ReportAnchorProduct, type ReportBoardSlot } from "@/components/calculation-report";
 import { StructurePreview } from "@/components/structure-preview";
 import { InputWorkspace } from "@/components/input-workspace";
 import { SummaryReport } from "@/components/summary-report";
@@ -17,6 +17,7 @@ import { Field, inputClassName } from "@/components/ui/field";
 import {
   checkWall,
   fetchCatalog,
+  type AnchorProduct,
   type BoardProperty,
   type DesignCase,
   type SiteClass,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/api";
 import {
   ANCHOR_CUSTOM_ID,
+  anchorProductLabel,
   anchorSourceText,
   concreteStrengthOptions,
   embedmentOptions,
@@ -566,7 +568,7 @@ export default function Home() {
         setValue("anchorCapacityKn", serverAnchorCapacity, { shouldDirty: true, shouldValidate: true });
       }
       setResult(nextResult);
-      setReportData(createReportData(nextValues, nextResult, catalog?.boards ?? [], catalog?.studs ?? []));
+      setReportData(createReportData(nextValues, nextResult, catalog?.boards ?? [], catalog?.studs ?? [], anchorProducts));
     } catch (error: unknown) {
       if (abortController.signal.aborted || sequence !== calculationSequence.current) return;
       setResult(null);
@@ -1141,8 +1143,29 @@ function createReportData(
   result: WallCheckResult,
   boards: BoardProperty[],
   studs: StudSection[],
+  anchorProducts: AnchorProduct[] = [],
 ): CalculationReportData {
   const stud = findStud(studs, values.studGroup, values.studSpec);
+  const anchorProduct = anchorProducts.find((product) => product.anchor_id === values.anchorProductId);
+  const reportAnchorProduct: ReportAnchorProduct | null =
+    !anchorProduct || isCustomAnchor(values.anchorProductId, anchorProduct)
+      ? null
+      : {
+          anchorId: anchorProduct.anchor_id,
+          label: anchorProductLabel(anchorProduct),
+          basis: anchorProduct.basis,
+          basisLabel: anchorProduct.basis_label,
+          source: anchorProduct.source,
+          approvals: anchorProduct.approvals,
+          concreteCondition: anchorProduct.concrete_condition,
+          embedmentMm: values.anchorEmbedmentMm ?? null,
+          concreteFcMPa: values.anchorConcreteFcMPa ?? null,
+          applySeismicCap: values.anchorApplySeismicCap,
+          minConcreteThicknessMm: anchorProduct.min_concrete_thickness_mm,
+          minEdgeMm: anchorProduct.min_edge_mm,
+          minSpacingMm: anchorProduct.min_spacing_mm,
+          table: anchorProduct.table,
+        };
   const siteClassLabel = siteClassOptions.find((option) => option.value === values.seismicSiteClass)?.label ?? values.seismicSiteClass;
   const designCaseLabel = designCaseOptions.find((option) => option.value === values.designCase)?.label ?? values.designCase;
   const studAssembly = createStudAssembly(stud, values.studMethod);
@@ -1213,6 +1236,7 @@ function createReportData(
       anchorCapacityKn: values.anchorCapacityKn,
       anchorCapacitySource: values.anchorCapacitySource.trim(),
     },
+    anchorProduct: reportAnchorProduct,
     loads: {
       designCaseLabel,
       liveLoadKnM2: values.liveLoadKnM2,

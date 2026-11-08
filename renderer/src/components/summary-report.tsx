@@ -1,6 +1,16 @@
 import type { ReactNode } from "react";
 import { governingHeight, heightReview } from "@/lib/height-review";
-import { anchorSourceLabel, fpBoundLabel, type CalculationReportData, type ReportBoardSlot } from "./calculation-report";
+import {
+  anchorBasisSourceLabel,
+  anchorConditionLabel,
+  anchorProductLabel,
+  anchorScopeNotice,
+  anchorShearTensionLabel,
+  anchorSourceLabel,
+  fpBoundLabel,
+  type CalculationReportData,
+  type ReportBoardSlot,
+} from "./calculation-report";
 import { boardColor, displayStudGroup, findStudAsset } from "@/lib/visual-assets";
 import type { StudSection } from "@/lib/api";
 import { APP_FULL_TITLE } from "@/lib/app-info";
@@ -76,7 +86,9 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
       ["활하중",unit(l.liveLoadKnM2,"kN/m²"),"연직하중",unit(l.verticalLoadKnM,"kN/m")],
       [`처짐한계 (L/${g.deflectionLimitDenom})`,`${n(g.spanMm)} / ${n(g.deflectionLimitDenom)} = ${n(r.deflection_limit_mm,1)} mm`,seismic?"지진 입력":"",seismic?`${l.seismicSiteClass} / S ${l.seismicS} / Ip ${l.seismicIp} / z/h ${l.seismicZOverH}${l.s5BedrockDepthUnknown?" / 110%":""}`:null],
       ...(seismic?[["런너 고정못 허용내력",unit(g.anchorCapacityKn,"kN/개"),"런너 고정못 간격",unit(g.anchorSpacingMm,"mm")] as Row,
-        ["고정못 허용내력 출처",<>{anchorSourceLabel(g.anchorCapacitySource)}<br/><small>고정못 허용내력은 입력값 기준이며, 제품 성능의 검증은 본 프로그램 범위 외임</small></>,"",null] as Row]:[]),
+        ["고정못 제품",anchorProductLabel(data.anchorProduct),"조회 조건",data.anchorProduct?anchorConditionLabel(data.anchorProduct):"—"] as Row,
+        ...(data.anchorProduct?[["허용 전단 / 인장",anchorShearTensionLabel(r),"기준·출처",anchorBasisSourceLabel(data.anchorProduct)] as Row]:[]),
+        ["고정못 허용내력 출처",<>{anchorSourceLabel(g.anchorCapacitySource)}<br/><small>{anchorScopeNotice}</small></>,"",null] as Row]:[]),
     ]}/>
     <Heading>보드 구성</Heading><Assembly data={data}/>
     <Heading>계산 결과</Heading>
