@@ -115,6 +115,10 @@ select {
 .input-actions button[type=submit] { background:#005bac; border-radius:7px; min-width:230px; }
 .input-error { border:1px solid #edb7b7; background:#fff5f5; color:#a12727; padding:14px; border-radius:8px; margin-bottom:16px; font-size:13px; }
 .input-warning { border:1px solid #e1c38e; background:#fff9eb; color:#795620; padding:14px; border-radius:8px; margin-bottom:16px; font-size:13px; }
+/* 런너 고정 앵커 제품 참조 카드(선택 즉시 표시, 계산 전) */
+.anchor-reference { margin-top:14px; border:1px solid #cfdbe8; background:#f4f8fc; color:#2c3a4a; padding:12px 14px; border-radius:8px; font-size:12.5px; line-height:1.65; display:grid; gap:4px; }
+.anchor-reference strong { font-size:13px; color:#123a63; }
+.anchor-reference-note { color:#795620; font-weight:600; }
 .method-overlay { position:fixed; inset:0; background:#10233788; display:grid; place-items:center; z-index:50; padding:24px; }
 .method-dialog { width:min(580px,100%); background:white; border-radius:14px; padding:24px; box-shadow:0 15px 50px #0003; max-height:90vh; overflow:auto; }
 .method-dialog header { display:flex; align-items:center; justify-content:space-between; gap:20px; }

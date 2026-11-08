@@ -26,6 +26,14 @@ import {
   type WallCheckResult,
 } from "@/lib/api";
 import {
+  ANCHOR_CUSTOM_ID,
+  anchorSourceText,
+  concreteStrengthOptions,
+  embedmentOptions,
+  isCustomAnchor,
+  resolveAnchorClient,
+} from "@/lib/anchor";
+import {
   calculationModeLabels,
   type CalculationMode,
 } from "@/lib/calculation-mode";
@@ -100,6 +108,12 @@ const formSchema = z.object({
   anchorCapacityKn: z.coerce.number().positive(),
   // 2차 심사의견 D-1: 런너 고정못 허용내력 출처(선택, 계산서 표기 전용)
   anchorCapacitySource: z.string().max(200, "출처는 200자 이하"),
+  // 런너 고정 앵커 제품 DB(anchor_product.json). "custom"이면 허용내력 직접 입력
+  // hET·f'c는 select에서 setValue로 숫자/null을 직접 넣는다(문자 입력 없음 → coerce 불필요)
+  anchorProductId: z.string().min(1),
+  anchorEmbedmentMm: z.number().positive().optional(),
+  anchorConcreteFcMPa: z.number().positive().nullable().optional(),
+  anchorApplySeismicCap: z.boolean(),
   anchorSpacingMm: z.coerce
     .number()
     .min(anchorSpacingMinMm)
@@ -160,8 +174,14 @@ const defaultValues: CheckFormValues = {
   spacingMm: 450,
   spanMm: 7500,
   deflectionLimitDenom: 240,
-  anchorCapacityKn: 0.4,
+  // 기본 앵커 제품 hilti_x_u(hET 22 mm, 강도 무관) → 허용 전단 300 N = 0.3 kN/개 자동 입력.
+  // 종전 기본값 0.4 kN/개(직접 입력)와 다르므로 내진 런너 고정못 기준 허용높이가 바뀐다(docs/anchor_product_db_changes.md)
+  anchorCapacityKn: 0.3,
   anchorCapacitySource: "",
+  anchorProductId: "hilti_x_u",
+  anchorEmbedmentMm: 22,
+  anchorConcreteFcMPa: null,
+  anchorApplySeismicCap: true,
   anchorSpacingMm: 450,
   boltPitchOuter: 300,
   boltPitchMiddle: 300,
@@ -300,6 +320,94 @@ export default function Home() {
   );
   const selectedSiteClass = (formValues.seismicSiteClass ?? defaultValues.seismicSiteClass) as SiteClass;
   const selectedCalculationMode = (formValues.calculationMode ?? defaultValues.calculationMode) as CalculationMode;
+  const selectedDesignCase = (formValues.designCase ?? defaultValues.designCase) as DesignCase;
+
+  // 런너 고정 앵커 제품 선택 → 허용하중 표 조회(참조 카드·자동 입력). 판정값은 서버가 같은 규칙으로 다시 조회한다
+  const anchorProducts = useMemo(() => catalog?.anchorProducts.items ?? [], [catalog?.anchorProducts]);
+  const anchorCapN = catalog?.anchorProducts.seismic_shear_cap_N ?? null;
+  const anchorCapNote = catalog?.anchorProducts.seismic_shear_cap_note ?? "";
+  const selectedAnchorId = formValues.anchorProductId ?? defaultValues.anchorProductId;
+  const selectedAnchorProduct = useMemo(
+    () => anchorProducts.find((product) => product.anchor_id === selectedAnchorId),
+    [anchorProducts, selectedAnchorId],
+  );
+  const anchorIsCustom = isCustomAnchor(selectedAnchorId, selectedAnchorProduct);
+  const selectedAnchorEmbedment = numberOrNull(formValues.anchorEmbedmentMm);
+  const selectedAnchorFc = numberOrNull(formValues.anchorConcreteFcMPa);
+  const selectedAnchorApplyCap = formValues.anchorApplySeismicCap ?? defaultValues.anchorApplySeismicCap;
+  const anchorEmbedmentOptions = useMemo(
+    () => (selectedAnchorProduct && !anchorIsCustom ? embedmentOptions(selectedAnchorProduct) : []),
+    [anchorIsCustom, selectedAnchorProduct],
+  );
+  const anchorFcOptions = useMemo(
+    () =>
+      selectedAnchorProduct && !anchorIsCustom && selectedAnchorEmbedment !== null
+        ? concreteStrengthOptions(selectedAnchorProduct, selectedAnchorEmbedment)
+        : [],
+    [anchorIsCustom, selectedAnchorEmbedment, selectedAnchorProduct],
+  );
+  const anchorResolution = useMemo(
+    () =>
+      selectedAnchorProduct && !anchorIsCustom
+        ? resolveAnchorClient(selectedAnchorProduct, selectedAnchorEmbedment, selectedAnchorFc, selectedDesignCase, selectedAnchorApplyCap, anchorCapN)
+        : null,
+    [anchorCapN, anchorIsCustom, selectedAnchorApplyCap, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorProduct, selectedDesignCase],
+  );
+  // 마지막으로 자동 입력한 출처 문자열. 사용자가 수정하지 않았을 때만 다음 자동 입력으로 덮어쓴다
+  const lastAutoAnchorSource = useRef<string>("");
+
+  // 제품이 바뀌면 기본 매입깊이·첫 f'c로 맞춘다. 사용자 정의로 바뀌면 출처를 비운다
+  const previousAnchorId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!catalog) return;
+    if (previousAnchorId.current === selectedAnchorId) return;
+    const firstSelection = previousAnchorId.current === null;
+    previousAnchorId.current = selectedAnchorId;
+    if (anchorIsCustom) {
+      if (!firstSelection) {
+        setValue("anchorCapacitySource", "", { shouldDirty: true, shouldValidate: true });
+        lastAutoAnchorSource.current = "";
+      }
+      return;
+    }
+    if (!selectedAnchorProduct) return;
+    const embedment = selectedAnchorProduct.default_embedment_mm ?? embedmentOptions(selectedAnchorProduct)[0] ?? null;
+    if (embedment !== null && embedment !== selectedAnchorEmbedment) {
+      setValue("anchorEmbedmentMm", embedment, { shouldDirty: true, shouldValidate: true });
+    }
+    const fcOptions = embedment === null ? [] : concreteStrengthOptions(selectedAnchorProduct, embedment);
+    const nextFc = fcOptions.length === 0 ? null : fcOptions.includes(selectedAnchorFc ?? Number.NaN) ? selectedAnchorFc : fcOptions[0];
+    if (nextFc !== selectedAnchorFc) {
+      setValue("anchorConcreteFcMPa", nextFc, { shouldDirty: true, shouldValidate: true });
+    }
+  }, [anchorIsCustom, catalog, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorId, selectedAnchorProduct, setValue]);
+
+  // 매입깊이가 바뀌어 f'c 선택지가 달라지면 첫 값으로 맞춘다
+  useEffect(() => {
+    if (anchorIsCustom || !selectedAnchorProduct || selectedAnchorEmbedment === null) return;
+    if (anchorFcOptions.length === 0) {
+      if (selectedAnchorFc !== null) setValue("anchorConcreteFcMPa", null, { shouldDirty: true, shouldValidate: true });
+      return;
+    }
+    if (selectedAnchorFc === null || !anchorFcOptions.includes(selectedAnchorFc)) {
+      setValue("anchorConcreteFcMPa", anchorFcOptions[0], { shouldDirty: true, shouldValidate: true });
+    }
+  }, [anchorFcOptions, anchorIsCustom, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorProduct, setValue]);
+
+  // 조회 결과를 허용내력(읽기 전용)·출처에 자동 입력한다
+  useEffect(() => {
+    if (!selectedAnchorProduct || anchorIsCustom || !anchorResolution || !anchorResolution.ok) return;
+    const capacity = anchorResolution.value.capacityKn;
+    if (Number(formValues.anchorCapacityKn) !== capacity) {
+      setValue("anchorCapacityKn", capacity, { shouldDirty: true, shouldValidate: true });
+    }
+    const autoSource = anchorSourceText(selectedAnchorProduct).slice(0, 200);
+    const currentSource = formValues.anchorCapacitySource ?? "";
+    if (currentSource !== autoSource && (currentSource === "" || currentSource === lastAutoAnchorSource.current)) {
+      setValue("anchorCapacitySource", autoSource, { shouldDirty: true, shouldValidate: true });
+    }
+    lastAutoAnchorSource.current = autoSource;
+  }, [anchorIsCustom, anchorResolution, formValues.anchorCapacityKn, formValues.anchorCapacitySource, selectedAnchorProduct, setValue]);
   const heightFieldLabel =
     selectedCalculationMode === "heightCheck"
       ? "검토 높이 mm"
@@ -451,6 +559,12 @@ export default function Home() {
       }
 
       if (sequence !== calculationSequence.current) return;
+      // 서버가 앵커 제품 표로 허용내력을 덮어썼으면 화면 값도 서버값으로 맞춘다(경고 없이 표시)
+      const serverAnchorCapacity = nextResult.intermediate.anchor_capacity_kN;
+      if (nextResult.anchor_capacity_overridden && typeof serverAnchorCapacity === "number") {
+        nextValues = { ...nextValues, anchorCapacityKn: serverAnchorCapacity };
+        setValue("anchorCapacityKn", serverAnchorCapacity, { shouldDirty: true, shouldValidate: true });
+      }
       setResult(nextResult);
       setReportData(createReportData(nextValues, nextResult, catalog?.boards ?? [], catalog?.studs ?? []));
     } catch (error: unknown) {
@@ -469,6 +583,8 @@ export default function Home() {
   function handleReset() {
     innerPitchContexts.current = { singleMode: false, single: bilateralSinglePlyPitchMm, multi: defaultValues.boltPitchInner };
     setMirrorRear(false);
+    previousAnchorId.current = null;
+    lastAutoAnchorSource.current = "";
     reset(defaultValues);
     setResult(null);
     setReportData(null);
@@ -620,6 +736,28 @@ export default function Home() {
               setValue("studSpec",firstStudSpecValue(catalog?.studs??[],event.target.value),{shouldDirty:true,shouldValidate:true});
             }}
             onModeChange={handleCalculationModeChange} onReset={handleReset}
+            anchor={{
+              products: anchorProducts,
+              capN: anchorCapN,
+              capNote: anchorCapNote,
+              selected: selectedAnchorProduct,
+              isCustom: anchorIsCustom,
+              embedmentOptions: anchorEmbedmentOptions,
+              fcOptions: anchorFcOptions,
+              resolution: anchorResolution,
+              onProductChange: (anchorId) => {
+                setValue("anchorProductId", anchorId, { shouldDirty: true, shouldValidate: true });
+                clearCalculationResult();
+              },
+              onEmbedmentChange: (embedment) => {
+                setValue("anchorEmbedmentMm", embedment, { shouldDirty: true, shouldValidate: true });
+                clearCalculationResult();
+              },
+              onFcChange: (fc) => {
+                setValue("anchorConcreteFcMPa", fc, { shouldDirty: true, shouldValidate: true });
+                clearCalculationResult();
+              },
+            }}
             busy={checking||catalogLoading} submitLabel={submitButtonLabel}
             mirrorRear={mirrorRear} onMirrorChange={setMirrorRear} canMirror={!selectedRearBoardInputsDisabled}
             notice={<>
@@ -967,7 +1105,29 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
     anchor_capacity_kN: values.anchorCapacityKn,
     anchor_capacity_source: values.anchorCapacitySource.trim() || undefined,
     anchor_spacing_mm: values.anchorSpacingMm,
+    ...anchorProductPayload(values),
   };
+}
+
+function anchorProductPayload(values: CheckFormValues): Pick<
+  WallCheckPayload,
+  "anchor_product_id" | "anchor_embedment_mm" | "anchor_concrete_fc_MPa" | "anchor_apply_seismic_cap"
+> {
+  if (isCustomAnchor(values.anchorProductId)) {
+    return { anchor_product_id: ANCHOR_CUSTOM_ID, anchor_apply_seismic_cap: values.anchorApplySeismicCap };
+  }
+  return {
+    anchor_product_id: values.anchorProductId,
+    anchor_embedment_mm: values.anchorEmbedmentMm,
+    anchor_concrete_fc_MPa: values.anchorConcreteFcMPa ?? null,
+    anchor_apply_seismic_cap: values.anchorApplySeismicCap,
+  };
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function createPdfFileName(report: CalculationReportData) {

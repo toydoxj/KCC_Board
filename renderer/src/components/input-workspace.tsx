@@ -4,8 +4,9 @@ import { type ChangeEvent, type ReactNode, useState } from "react";
 import type { FieldErrors, UseFormRegister, UseFormSetValue } from "react-hook-form";
 import { Calculator, RotateCcw } from "lucide-react";
 import { StudGallery } from "./stud-gallery";
-import type { StudSection } from "@/lib/api";
+import type { AnchorProduct, StudSection } from "@/lib/api";
 import type { CheckFormValues } from "@/app/page";
+import { ANCHOR_CUSTOM_ID, anchorProductLabel, groupAnchorProductsByFamily, type AnchorClientResult } from "@/lib/anchor";
 import { Field, inputClassName } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import type { CalculationMode } from "@/lib/calculation-mode";
@@ -35,6 +36,22 @@ interface Props {
   rearCount: number;
   preview: ReactNode;
   stud?: StudSection;
+  anchor: AnchorProps;
+}
+
+// 런너 고정 앵커 제품 선택 상태. 조회(resolution)는 page.tsx가 서버와 같은 규칙으로 계산해 넘긴다
+interface AnchorProps {
+  products: AnchorProduct[];
+  capN: number | null;
+  capNote: string;
+  selected?: AnchorProduct;
+  isCustom: boolean;
+  embedmentOptions: number[];
+  fcOptions: number[];
+  resolution: AnchorClientResult | null;
+  onProductChange: (anchorId: string) => void;
+  onEmbedmentChange: (embedmentMm: number) => void;
+  onFcChange: (fc: number | null) => void;
 }
 
 const modes: {value: CalculationMode; label: string; detail: string}[] = [
@@ -62,6 +79,21 @@ const seismicFormulaSummary = "Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp (ap = 1.0,
 
 // 런너 고정못 허용내력 입력 안내 (2차 심사의견 D-1)
 const anchorCapacityHelp = "매입깊이·모재(콘크리트) 강도·직경 조건이 반영된 제조사 시험성적서의 허용내력을 입력합니다. 프리셋 0.4/0.2 kN은 예시값입니다.";
+const anchorProductHelp = "제품·매입깊이·콘크리트 강도를 고르면 제조사 Data Sheet·ICC-ES 허용 전단값이 자동 입력됩니다. 국내 인증값이 아니므로 현장 조건이 다르면 사용자 정의로 시험성적서 값을 입력하십시오.";
+const anchorRecBasisNote = "제조사 권장하중 — 안전율 미기재(확인 필요)";
+const anchorNoStrengthLabel = "해당 없음(강도 무관)";
+
+function formatN(value: number) {
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatKn(value: number) {
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 }).format(value);
+}
+
+function mmOrDash(value: number | null) {
+  return value === null ? "—" : `${value} mm`;
+}
 
 function Step({number, title, description, children}: {number: string; title: string; description: string; children: ReactNode}) {
   return <section className="input-step"><div className="step-heading"><span className="step-number">{number}</span><h2>{title}</h2><span className="required-mark">필수 *</span></div><p className="step-description">{description}</p>{children}</section>;
@@ -100,6 +132,80 @@ export function InputWorkspace(p: Props) {
     </div>;
   }
 
+  function renderAnchorSection() {
+    const a = p.anchor;
+    const product = a.selected;
+    const resolution = a.resolution;
+    const resolved = resolution && resolution.ok ? resolution.value : null;
+    const resolutionError = resolution && !resolution.ok ? resolution.message : null;
+    const selectedProductId = values.anchorProductId ?? (product?.anchor_id ?? ANCHOR_CUSTOM_ID);
+    const embedmentValue = values.anchorEmbedmentMm === undefined || values.anchorEmbedmentMm === null ? "" : String(values.anchorEmbedmentMm);
+    const fcValue = values.anchorConcreteFcMPa === undefined || values.anchorConcreteFcMPa === null ? "" : String(values.anchorConcreteFcMPa);
+    const noStrength = !a.isCustom && a.fcOptions.length === 0;
+    const anchorSpacing = Number(values.anchorSpacingMm);
+    const minSpacingWarning =
+      !a.isCustom && product?.min_spacing_mm !== null && product?.min_spacing_mm !== undefined && anchorSpacing < product.min_spacing_mm
+        ? `선택한 런너 고정못 간격 ${anchorSpacing} mm는 제품 최소 간격 ${product.min_spacing_mm} mm보다 작습니다. 제조사 기술자료를 확인하십시오.`
+        : null;
+
+    return <div className="runner-section">
+      <div className="subheading"><h3>런너 고정못</h3></div>
+      <div className="field-grid two">
+        <Field label="앵커 제품" help={anchorProductHelp}>
+          <select aria-label="앵커 제품" className={inputClassName} value={selectedProductId} disabled={a.products.length===0} onChange={e=>a.onProductChange(e.target.value)}>
+            {a.products.length===0&&<option value={selectedProductId}>자재 DB 로딩 중…</option>}
+            {groupAnchorProductsByFamily(a.products).map(group=><optgroup key={group.family} label={group.label}>{group.items.map(item=><option key={item.anchor_id} value={item.anchor_id}>{item.family==="custom"?item.product:anchorProductLabel(item)}</option>)}</optgroup>)}
+          </select>
+        </Field>
+        <Field label="매입깊이 hET (mm)" help="hET: 콘크리트 모재 안의 유효 매입깊이. 제품 허용하중 표의 값만 선택할 수 있습니다.">
+          <select aria-label="매입깊이 hET (mm)" className={inputClassName} value={embedmentValue} disabled={a.isCustom||a.embedmentOptions.length===0} onChange={e=>a.onEmbedmentChange(Number(e.target.value))}>
+            {a.isCustom?<option value="">—</option>:a.embedmentOptions.map(v=><option key={v} value={v}>{v} mm</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="field-grid two">
+        <Field label="콘크리트 강도 f'c (MPa)" help="ICC-ES 허용하중은 콘크리트 강도별로 다릅니다. 제조사 권장하중(rec) 제품은 강도 무관입니다.">
+          <select aria-label="콘크리트 강도 f'c (MPa)" className={inputClassName} value={noStrength?"":fcValue} disabled={a.isCustom||noStrength} onChange={e=>a.onFcChange(e.target.value===""?null:Number(e.target.value))}>
+            {a.isCustom?<option value="">—</option>:noStrength?<option value="">{anchorNoStrengthLabel}</option>:a.fcOptions.map(v=><option key={v} value={v}>{v} MPa</option>)}
+          </select>
+        </Field>
+        <div className="grid gap-1.5 text-sm">
+          <span title={a.capNote}>내진 전단 상한 {a.capN===null?"":`${formatN(a.capN)} N`} 적용</span>
+          <label className="checkbox-field" title={a.capNote}><input type="checkbox" disabled={a.isCustom} {...register("anchorApplySeismicCap")}/>{a.capN===null?"상한 적용":`허용 전단 ≤ ${formatN(a.capN)} N/개 적용`}</label>
+          <span className="helper block">{a.capNote||"ICC-ES ESR 공통: SDC D·E·F 런너 고정 허용 전단 상한. 국내 적용은 참고 수준(확인 필요)"}</span>
+        </div>
+      </div>
+      <div className="field-grid two">
+        {a.isCustom
+          ? preset("anchorCapacityKn","런너 고정못 허용내력 (제조사 설계값, kN/개)",[0.4,0.2],v=>`${v} kN/개`,"any",{help:anchorCapacityHelp})
+          : <Field label="런너 고정못 허용내력 (제조사 설계값, kN/개)" error={errors.anchorCapacityKn?.message} help="제품 허용하중 표에서 자동 입력된 값입니다. 직접 입력하려면 앵커 제품을 '사용자 정의'로 바꾸십시오.">
+              <input type="hidden" {...register("anchorCapacityKn")}/>
+              <input className={inputClassName+" bg-slate-100 text-slate-700 cursor-not-allowed"} aria-label="런너 고정못 허용내력 (제조사 설계값, kN/개)" value={values.anchorCapacityKn===undefined||values.anchorCapacityKn===null||Number.isNaN(Number(values.anchorCapacityKn))?"":`${formatKn(Number(values.anchorCapacityKn))} kN/개`} readOnly/>
+            </Field>}
+        <Field label="런너 고정못 간격 (mm)" error={errors.anchorSpacingMm?.message}><select aria-label="런너 고정못 간격 (mm)" className={inputClassName} {...register("anchorSpacingMm")}>{Array.from({length:10},(_,i)=>150+i*50).map(v=><option key={v} value={v}>{v} mm</option>)}</select></Field>
+      </div>
+      <p className="helper">고정못 간격은 150~600 mm, 50 mm 단위</p>
+      {minSpacingWarning&&<p className="input-warning" role="status">{minSpacingWarning}</p>}
+      <div className="field-grid two">
+        <Field label="허용내력 출처(제조사·제품명)" error={errors.anchorCapacitySource?.message} help={a.isCustom?"선택 입력. 계산에는 쓰지 않고 계산서에만 표기합니다.":"제품 선택 시 자동 입력됩니다(수정 가능). 계산에는 쓰지 않고 계산서에만 표기합니다."}>
+          <input className={inputClassName} type="text" maxLength={200} placeholder="예: 제조사 / 제품명 / 시험성적서 번호" {...register("anchorCapacitySource")} aria-label="허용내력 출처(제조사·제품명)"/>
+        </Field>
+      </div>
+      {!a.isCustom&&product&&<div className="anchor-reference" role="note" aria-label="앵커 제품 참조">
+        <strong>{anchorProductLabel(product)}</strong>
+        {resolved
+          ? <>
+              <p>허용 전단 {formatN(resolved.shearN)} N (= {formatKn(resolved.capacityKn)} kN/개) · 허용 인장 {formatN(resolved.tensionN)} N · 기준: {product.basis_label} · 조건: {product.concrete_condition}</p>
+              {resolved.capApplied&&<p>표 값 {formatN(resolved.tableShearN)} N → 상한 {formatN(resolved.capN??0)} N 적용</p>}
+              <p>최소 두께/연단/간격: {mmOrDash(product.min_concrete_thickness_mm)} / {mmOrDash(product.min_edge_mm)} / {mmOrDash(product.min_spacing_mm)}{product.shank_diameter_mm!==null?` · 축경 ${product.shank_diameter_mm} mm`:""}</p>
+              <p>출처: {product.source}{product.approvals?` · 승인: ${product.approvals}`:""}</p>
+              {product.basis==="rec"&&<p className="anchor-reference-note">{anchorRecBasisNote}</p>}
+            </>
+          : <p className="text-destructive">{resolutionError??"허용하중 표를 조회할 수 없습니다."}</p>}
+      </div>}
+    </div>;
+  }
+
   return <div className="input-workspace">
     <div className="input-intro"><div><span className="eyebrow">DRYWALL HEIGHT DESIGN</span><h1>석고보드 벽체 허용높이 검토</h1><p>{seismic?"석고보드와 스터드 사양에 따른 허용높이 및 런너 고정못 간격을 검토합니다.":"석고보드와 스터드 사양에 따른 허용높이를 검토합니다."}</p></div><span className="copy-badge">KCC Board v{APP_VERSION}</span></div>
     {p.notice}
@@ -130,7 +236,7 @@ export function InputWorkspace(p: Props) {
       <div className="field-grid three">{preset("boltPitchInner","1P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900})}{preset("boltPitchMiddle","2P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900,disabled:maxPly<2})}{preset("boltPitchOuter","3P 나사못 간격 (mm)",[300,450,600],v=>`${v} mm`,"any",{min:100,max:900,disabled:maxPly<3})}</div>
       <p className="helper">사용자 정의 나사못 간격은 100~900 mm 범위에서 입력할 수 있습니다.</p>
       <p className="helper">{maxPly===2 ? `2P+1P 구성의 단독 1P 면에는 2P 마감층 피치(${values.boltPitchMiddle ?? 300} mm)가 적용됩니다. 3P 입력은 사용하지 않습니다.` : maxPly>=3 ? "단독 1P 면에는 3P 마감층 피치가 적용됩니다. 기존 v0.6.3 적용 방식입니다." : "1P 구성은 1P 피치를 사용합니다. 2P·3P 입력은 사용하지 않습니다."}</p>
-      {seismic&&<div className="runner-section"><div className="subheading"><h3>런너 고정못</h3></div><div className="field-grid two">{preset("anchorCapacityKn","런너 고정못 허용내력 (제조사 설계값, kN/개)",[0.4,0.2],v=>`${v} kN/개`,"any",{help:anchorCapacityHelp})}<Field label="런너 고정못 간격 (mm)" error={errors.anchorSpacingMm?.message}><select aria-label="런너 고정못 간격 (mm)" className={inputClassName} {...register("anchorSpacingMm")}>{Array.from({length:10},(_,i)=>150+i*50).map(v=><option key={v} value={v}>{v} mm</option>)}</select></Field></div><p className="helper">고정못 간격은 150~600 mm, 50 mm 단위</p><div className="field-grid two"><Field label="허용내력 출처(제조사·제품명)" error={errors.anchorCapacitySource?.message} help="선택 입력. 계산에는 쓰지 않고 계산서에만 표기합니다."><input className={inputClassName} type="text" maxLength={200} placeholder="예: 제조사 / 제품명 / 시험성적서 번호" {...register("anchorCapacitySource")} aria-label="허용내력 출처(제조사·제품명)"/></Field></div></div>}
+      {seismic&&renderAnchorSection()}
     </Step>
     <Step number="04" title="설계하중 및 처짐한계 조건" description="높이, 활하중, 처짐한계와 연직하중을 입력해 주세요.">
       <div className="field-grid four">{values.calculationMode==="heightCheck"?numberField("spanMm","현장 높이 (mm)","1",{help:step04Help.span}):<Field label="산정 높이" help={step04Help.span}><input className={inputClassName+" bg-slate-100 text-slate-500 cursor-not-allowed"} aria-label="산정 높이" value="자동산정" readOnly disabled/></Field>}{preset("liveLoadKnM2","활하중 (kN/m²)",[0.25,0.36,0.48],v=>`${v} kN/m²`,"any",{help:step04Help.liveLoad})}{preset("deflectionLimitDenom","처짐한계",[240,300,360],v=>`L/${v}`,"1",{help:step04Help.deflection})}{numberField("verticalLoadKnM","연직하중 (kN/m)","0.01",{min:0,help:step04Help.verticalLoad})}</div>
