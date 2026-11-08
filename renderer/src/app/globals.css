@@ -252,6 +252,12 @@ select {
 .gallery-content h2 { font-size:25px; font-weight:700; }
 .gallery-content header button { padding:4px; color:#58616d; }
 .gallery-intro { color:#637181; font-size:12px; margin-bottom:18px; }
+/* 결과 화면 적용 범위·제한사항 — 버튼 + 팝업(스터드 타입 갤러리와 같은 dialog) */
+.limitations-row { border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; padding:8px 12px; font-size:14px; }
+.limitations-dialog { width:min(760px,94vw); }
+.limitations-list { display:grid; gap:16px; }
+.limitations-list dt { font-weight:700; font-size:14px; margin-bottom:4px; color:#0f172a; }
+.limitations-list dd { margin:0; font-size:13px; line-height:1.6; color:#334155; }
 .stud-gallery-grid { display:grid; gap:24px 16px; }
 .stud-gallery-grid.types { grid-template-columns:repeat(4,minmax(0,1fr)); }
 .stud-gallery-grid.methods { grid-template-columns:repeat(2,minmax(0,1fr)); }

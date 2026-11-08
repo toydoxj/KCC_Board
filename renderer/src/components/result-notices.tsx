@@ -1,6 +1,9 @@
+"use client";
+import { useState } from "react";
 import { AlertTriangle, BadgeCheck, FlaskConical, Info } from "lucide-react";
 
 import type { WallCheckResult } from "@/lib/api";
+import { LimitationsDialog } from "@/components/limitations-dialog";
 import { productScopeNotice, resultScopeDisclaimer, supportScopeNotice, testedConfigurationStatus } from "@/lib/result-notice";
 
 interface ResultNoticesProps {
@@ -9,6 +12,8 @@ interface ResultNoticesProps {
   showProductScope?: boolean;
   // 시험 시편 구성 대조 배지(2차 심사의견 A-1). 내진·비내진 모두 표시
   result?: WallCheckResult;
+  // 결과 화면: 적용 범위·제한사항을 본문 아래 주석 대신 버튼 → 팝업으로 표시한다(계산서는 본문 표기 유지)
+  limitationsAsPopup?: boolean;
 }
 
 // 시험 구성 대조 배지. 판정(O.K/N.G)과 구분하여 표시한다
@@ -31,8 +36,28 @@ export function TestedConfigurationBadge({ result }: { result: WallCheckResult }
   );
 }
 
+// 적용 범위·제한사항 — 결과 화면용 버튼(스터드 타입 "보기 +" 버튼과 같은 방식) + 팝업
+function LimitationsPopupRow() {
+  const [open, setOpen] = useState(false);
+  // dialog는 .field-head 밖에 둔다(.field-head button 스타일이 팝업 닫기 버튼에 적용되지 않도록)
+  return (
+    <>
+      <div className="field-head limitations-row" data-limitations="popup">
+        <span className="flex items-center gap-2 text-slate-700">
+          <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+          적용 범위·제한사항
+        </span>
+        <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog">
+          제한사항 보기 +
+        </button>
+      </div>
+      {open ? <LimitationsDialog onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
 // 실험 검증 범위 안내(F-2)와 입력 경고(F-4, 표준 외 피스 간격 등). 판정에는 영향하지 않는다.
-export function ResultNotices({ notices, showProductScope = false, result }: ResultNoticesProps) {
+export function ResultNotices({ notices, showProductScope = false, result, limitationsAsPopup = false }: ResultNoticesProps) {
   return (
     <div className="grid gap-2 text-sm">
       {result ? <TestedConfigurationBadge result={result} /> : null}
@@ -42,20 +67,24 @@ export function ResultNotices({ notices, showProductScope = false, result }: Res
           <span>{notice}</span>
         </div>
       ))}
-      <div className="flex items-start gap-2 rounded-md border border-slate-300 bg-slate-50 p-3 text-slate-700">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <span>
-          {resultScopeDisclaimer}
-          <br />
-          {supportScopeNotice}
-          {showProductScope ? (
-            <>
-              <br />
-              {productScopeNotice}
-            </>
-          ) : null}
-        </span>
-      </div>
+      {limitationsAsPopup ? (
+        <LimitationsPopupRow />
+      ) : (
+        <div className="flex items-start gap-2 rounded-md border border-slate-300 bg-slate-50 p-3 text-slate-700">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            {resultScopeDisclaimer}
+            <br />
+            {supportScopeNotice}
+            {showProductScope ? (
+              <>
+                <br />
+                {productScopeNotice}
+              </>
+            ) : null}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

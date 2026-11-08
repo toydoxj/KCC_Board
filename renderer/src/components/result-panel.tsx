@@ -57,7 +57,7 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
           {isSeismic&&<VerdictBadge label="런너 고정못" ok={review.anchorOk} value={review.anchorOk?"O.K":"N.G"}/>}
           <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
         </div>
-        <ResultNotices notices={result.notices ?? []} result={result} />
+        <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup />
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <CaseMetric label="검토 CASE" value={designCaseLabel} />
           <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
@@ -96,7 +96,7 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
         {isSeismic&&<VerdictBadge label="런너 고정못" ok={review.anchorOk} value={review.anchorOk?"O.K":"N.G"}/>}
         <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
       </div>
-      <ResultNotices notices={result.notices ?? []} result={result} />
+      <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup />
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
         <CaseMetric label="검토 CASE" value={designCaseLabel} />
         <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
