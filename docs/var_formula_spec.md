@@ -184,11 +184,25 @@
 | Rh,0.7Ω0E | `0.7 * Ω0 * Rh,E` | 지진 조합 반력 |
 | Rh,0.75L+0.75(0.7Ω0E) | `0.75 * Rh,L + 0.75 * 0.7 * Ω0 * Rh,E` | 복합 조합 반력 (KDS 41 10 15 허용응력 조합, 2026-10 수정: 종전 0.75L+0.7E) |
 | Rh,req | `MAX(Rh,L, Rh,0.7Ω0E, Rh,0.75L+0.75(0.7Ω0E))` | m당 필요 반력 |
-| 앵커 성능 | 기본 `0.4 kN/개`, 입력 변경 가능 | 앵커 1개당 저항 성능 |
+| 앵커 성능 | `anchor_capacity_kN` — 제품 DB 조회값(아래 §9.1) 또는 사용자 정의 입력. 화면 기본 제품(hilti_x_u, hET 22) = `0.3 kN/개`, 엔진 기본 상수 `DEFAULT_ANCHOR_CAPACITY_KN` = 0.4 | 앵커 1개당 저항 성능. 엔진은 kN 값만 사용 |
 | 검토 앵커 간격 | 입력값, 기본 `450 mm` | 150~600mm 범위, 50mm 단위 |
 | 허용 앵커 간격 | `앵커성능 / Rh,req * 1000` 후 50mm 단위 내림 | 필요 반력 기준 허용 앵커 간격 mm |
 | 앵커 사용률 | `Rh,req / (앵커성능 / 검토앵커간격_m)` | 1.0 이하 O.K 기준 |
 | 앵커 기준 최대높이 | 50mm 단위 탐색 | 응력·처짐·앵커 사용률을 모두 만족하는 최대 높이 |
+
+### 9.1 런너 고정 앵커 제품 DB 조회 규칙 (v0.9.0, `backend/engine/anchor.py`)
+
+단일 출처 `data/seed/anchor_product.json`(13건: 제품 12 + 사용자 정의 1, 허용하중 표 74행). API 계층(`/api/check`)이 `resolve_request_anchor`로 조회해 `anchor_capacity_kN`을 채운 뒤 엔진에 넘긴다. 엔진 `calculate_wall_check`는 변경 없음.
+
+| 항목 | 규칙 | 비고 |
+|------|------|------|
+| 조회 키 | `anchor_product_id`, `anchor_embedment_mm`(hET), `anchor_concrete_fc_MPa`(f'c), `anchor_apply_seismic_cap` | `custom`/None이면 조회하지 않고 입력 `anchor_capacity_kN` 그대로 |
+| rec 제품(표의 f'c 전부 null) | 입력 hET 이하 중 **최대 `embedment_mm` 행**. 입력이 표 최소값보다 작으면 `AnchorLookupError` | 제조사 권장하중 Nrec/Vrec. 안전율 문서 미기재 — 확인 필요 |
+| asd 제품(표에 f'c 있음) | (`embedment_mm`, `concrete_fc_MPa`) **정확 일치** 행. 없으면 오류 | ICC-ES 허용하중(비균열·정적). 보간·외삽 금지 |
+| 내진 상한 | `design_case == seismic` 이고 cap 적용이면 `V = min(V표, seismic_shear_cap_N)`; `cap_applied` 반환 | `seismic_shear_cap_N` = 400 (ICC-ES ESR 공통 90 lbf, SDC D·E·F 런너 고정). 국내 적용 확인 필요 |
+| 환산 | `anchor_capacity_kN = round(V / 1000, 3)`, `allowable_tension_kN = round(T / 1000, 3)` | N → kN |
+| 응답 | intermediate `anchor_capacity_resolved_N`·`anchor_table_shear_N`·`anchor_seismic_cap_applied`(0/1)·`anchor_allowable_tension_N`·`anchor_seismic_cap_N`, 최상위 `anchor_product_summary`, `anchor_capacity_overridden`(클라이언트 값과 다를 때 true) | intermediate는 숫자만 |
+| 저장 | SQLite schema 9: `anchor_product`(메타, `seq` 시드 순서) + `anchor_load_row`(행), metadata `anchor_seismic_shear_cap_N`·`_note` | 구 DB는 seed 경로 있으면 이관, 없으면 롤백 오류 |
 
 ## 10. 하중조합·판정 (행45~48, C열)
 | 셀 | 수식 | 의미 |

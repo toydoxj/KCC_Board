@@ -54,6 +54,8 @@ repo/
 - `bolt_material.json`, `stud_method.json`.
 - 시험 구성 대조(2차 심사의견 A-1·F-2): KCC 11종 시험 시편 구성의 단일 출처는 `stud_method.json`의 `tested_configurations`(시편 번호·스터드 형식·규격·시공방식·간격·전·후면 보드, 시험 높이 `tested_height_mm` 2,400). R 보정 시편 입력(`tests/golden/requested_shape_cases.json`)과 일치해야 한다(`tests/test_review_round2.py` 검사). 엔진 `_tested_configuration_match`는 판정에 영향하지 않으며, 결과 intermediate `tested_configuration_match`·`matched_specimen_no`와 응답 `tested_configuration_mismatch_fields`(문자열 목록)를 반환한다.
 - SQLite schema 8: `specimen_configuration` 테이블. 구 DB(schema 7 이하)는 seed 경로가 있으면 이관 시 채우고, 없으면 명시적 오류(롤백).
+- `anchor_product.json`(v0.9.0): 런너 고정 앵커 제품 허용하중 DB의 단일 출처(제품 12 + 사용자 정의 `custom` 1, 허용하중 표 74행, 제조사 Data Sheet·ICC-ES 전재 — 초안, 국내 인증값 아님). `anchor_id`는 안정 키(변경 금지), `is_default` 정확히 1개(`hilti_x_u`, hET 22 → 300 N), 최상위 `seismic_shear_cap_N` 400. 조회 규칙(rec: hET 이하 최대 행, asd: (hET, f'c) 정확 일치, 보간 금지, 내진 cap)은 `backend/engine/anchor.py`에 두고 **API 계층이 `anchor_capacity_kN`을 채운다 — 엔진은 kN 값만 사용**(판정 로직 불변). 기본 제품 적용으로 화면 기본 허용내력이 0.4 → 0.3 kN/개로 바뀌어 내진 anchorHeight가 낮아진다(`docs/anchor_product_db_changes.md`). `default_embedment_mm` 변경은 사용자 결정 사항.
+- SQLite schema 9: `anchor_product`(메타, `seq` 시드 순서) + `anchor_load_row` 테이블, metadata `anchor_seismic_shear_cap_N`·`_note`. 구 DB(schema 8 이하)는 seed 경로가 있으면 이관, 없으면 명시적 오류(롤백). ADR-002.
 - DB 조회는 **그룹+단면명 키** 사용(엑셀 VLOOKUP 인덱스 의존 제거). 미스 시 **명시적 예외**(silent #N/A 금지).
 
 ## 7. 검증 규칙 (필수)
