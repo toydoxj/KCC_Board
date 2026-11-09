@@ -240,7 +240,7 @@ export function InputWorkspace(p: Props) {
         <div className="board-inputs"><h3>석고보드 타입 및 두께</h3><p className="helper">1P는 스터드에 가장 가까운 보드입니다.</p>
           <div className="board-face"><div className="face-title"><strong>1면 <span>(전면)</span></strong></div><p className="helper">스터드측 → 바깥쪽</p><div className="board-slots">{p.frontSlots}</div></div>
           <div className="board-face"><div className="face-title"><strong>2면 <span>(후면)</span></strong><label className="mirror-label"><input type="checkbox" checked={p.mirrorRear} disabled={!p.canMirror} onChange={e=>p.onMirrorChange(e.target.checked)}/>1면과 동일</label></div><p className="helper">스터드측 → 바깥쪽{!p.canMirror ? " · 고정 구성으로 동일 적용 불가" : p.mirrorRear ? " · 1면의 변경사항이 자동 적용됩니다." : ""}</p><fieldset disabled={p.mirrorRear} className="board-slots">{p.rearSlots}</fieldset></div>
-          {group.startsWith("CH") && <p className="helper">2면 1P는 끼움부에 배치됩니다. {group.includes("개량") ? "12.5T형: 12.5T" : "CH-STUD: 25T"} 고정 두께를 적용합니다. 실제 피스 없이 홈에 끼워지므로 피스 인장 검토에서 제외하고, 전단 연결은 300 mm·피치당 4개 체결 상당으로 가정합니다.</p>}
+          {group.startsWith("CH") && <p className="helper">2면 1P는 끼움부에 배치됩니다. {group.includes("개량") ? "12.5T형: 12.5T" : "CH-STUD: 25T"} 고정 두께를 적용합니다. 끼움부 전단 연결은 피스 300 mm·4개 체결 상당으로 산정합니다. 끼움 보드는 피스를 사용하지 않으므로 피스 인장(풀아웃·풀스루) 검토에서 제외합니다.</p>}
         </div>
         <div className="structure-preview"><h3>구조체 구성</h3>{p.preview}<dl className="preview-summary"><div><dt>스터드 규격</dt><dd>{values.studSpec}</dd></div><div><dt>스터드 간격</dt><dd>{values.spacingMm} mm</dd></div><div><dt>높이</dt><dd>{values.calculationMode==="heightCheck"?`${Number(values.spanMm??0).toLocaleString()} mm`:"자동산정"}</dd></div></dl></div>
       </div>

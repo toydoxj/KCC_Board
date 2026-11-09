@@ -287,13 +287,12 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <BoltRow label="3번(외측)" count={data.bolts.outerCount} pitch={data.bolts.outerPitch} applicable={activePlyCount >= 3} />
               <BoltRow label="2번(중간)" count={data.bolts.middleCount} pitch={data.bolts.middlePitch} applicable={activePlyCount >= 2} />
               <BoltRow label="1번(내측)" count={data.bolts.innerCount} pitch={data.bolts.innerPitch} applicable={activePlyCount >= 1} />
-              {data.result.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<BoltRow label={data.result.intermediate.ch_slot_rear_board!==undefined?"2면 끼움 보드(체결 상당)":"2면 고정 보드"} count={data.result.intermediate.fixed_rear_board_screw_count} pitch={data.result.intermediate.fixed_rear_board_screw_pitch_mm} />}
+              {data.result.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<BoltRow label={data.result.intermediate.ch_slot_rear_board!==undefined?"2면 보드(끼움, 피스 체결 상당)":"2면 고정 보드"} count={data.result.intermediate.fixed_rear_board_screw_count} pitch={data.result.intermediate.fixed_rear_board_screw_pitch_mm} />}
             </tbody>
           </table>
           {data.result.intermediate.ch_slot_rear_board!==undefined&&(
             <p className="mt-2 text-xs text-slate-600" data-slot-note>
-              2면 끼움 보드는 CH 홈에 끼워져 피스를 쓰지 않음. 홈이 면외 이탈을 구속하므로 피스 인장(풀아웃·풀스루) 검토 대상에서 제외함.
-              보드–스터드 전단 연결은 피스 300 mm·피치당 4개 체결 상당으로 가정하고 시험 보정계수 R로 실측 강성에 맞춤.
+              CH 계열 후면 보드는 CH 홈에 끼워지며 피스를 사용하지 않음. 본 프로그램은 끼움부의 전단 연결을 피스 300 mm/피치당 4개 체결 상당으로 등가화하고 시험 보정계수 R = 0.66으로 보정하며, 피스가 없으므로 피스 인장(풀아웃·풀스루) 검토에서는 제외함. 홈이 면외 이탈을 구속함.
             </p>
           )}
         </ReportBlock>
@@ -510,7 +509,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
           </div>
           {data.result.intermediate.screw_tension_spacing_mm === 0 ? (
             <p className="text-sm text-slate-700" data-screw-tension="not-applicable">
-              해당 없음 — 피스 체결층이 없음(CH 끼움 보드만 있는 구성). 끼움 보드는 홈이 면외 이탈을 구속하므로 피스 인장 검토 대상이 아님.
+              해당 없음(끼움 보드 — 피스 없음). 피스 체결층이 없는 구성(CH 끼움 보드만 있음)으로, 끼움 보드는 홈이 면외 이탈을 구속하므로 피스 인장 검토 대상이 아님.
             </p>
           ) : (
           <div className="grid gap-1 text-sm md:grid-cols-2">
