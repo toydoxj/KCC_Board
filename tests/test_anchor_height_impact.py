@@ -1,8 +1,9 @@
-"""앵커 제품 DB 도입(v0.9.0)의 판정 영향 고정 테스트.
+"""앵커 제품 DB 도입(v0.9.0)·기본 매입깊이 확정(v0.9.3)의 판정 영향 고정 테스트.
 
-기본 제품(hilti_x_u, hET 22 mm → 300 N)이 화면 기본 허용내력을 0.4 → 0.3 kN/개로 바꾼다.
-11개 시편(requested_shape_cases.json)의 내진 anchor_max_height_mm 전/후 값을 고정해
-의도하지 않은 추가 변동을 막는다. 엔진 자체는 변경이 없으므로 0.4 kN 열은 종전 결과와 같아야 한다.
+v0.9.0에서 기본 제품(hilti_x_u)의 기본 매입깊이가 22 mm(300 N)여서 화면 기본 허용내력이 0.4 → 0.3 kN/개로 바뀌었다.
+2026-11-09 사용자 확정(결정 1)으로 기본 매입깊이를 27 mm(400 N)로 두어 기본 경로의 허용내력이 v0.8.0 기본값 0.4 kN/개와
+같아졌다. 11개 시편(requested_shape_cases.json)의 내진 anchor_max_height_mm를 두 경로(0.4 / 0.3 kN)로 고정해
+의도하지 않은 추가 변동을 막는다. 엔진 자체는 변경이 없으므로 0.4 kN 열은 v0.8.0 결과와 같아야 한다.
 표는 docs/anchor_product_db_changes.md §2와 일치한다.
 """
 from __future__ import annotations
@@ -21,7 +22,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SEED_DIR = ROOT / "data/seed"
 CASES = ROOT / "tests/golden/requested_shape_cases.json"
 
-# (시편 id, anchorH@0.4 kN(종전 기본), anchorH@0.3 kN(기본 제품 조회값)) — 고정못 간격 450 mm
+# v0.8.0 기본값(0.4 kN 직접 입력) = 확정 기본 경로(hilti_x_u, hET 27 → 400 N)
+LEGACY_DEFAULT_CAPACITY_KN = 0.4
+# 기본 제품의 확정 기본 매입깊이(mm)와 종전(v0.9.0~0.9.2) 기본 매입깊이
+CONFIRMED_DEFAULT_EMBEDMENT_MM = 27.0
+PREVIOUS_DEFAULT_EMBEDMENT_MM = 22.0
+PREVIOUS_DEFAULT_CAPACITY_KN = 0.3
+
+# (시편 id, anchorH@0.4 kN(v0.8.0 기본 = hET 27 확정 기본), anchorH@0.3 kN(hET 22)) — 고정못 간격 450 mm
 EXPECTED_ANCHOR_HEIGHT_MM = {
   "requested_01_c_stud_central_joint": (2600.0, 1950.0),
   "requested_02_c_stud_basic_front_only": (4100.0, 3050.0),
@@ -77,33 +85,57 @@ class AnchorHeightImpactTest(unittest.TestCase):
   @classmethod
   def setUpClass(cls) -> None:
     cls.repo = JsonSeedRepository(SEED_DIR)
+    cls.default_product = next(p for p in cls.repo.list_anchor_products() if p.is_default)
     data = json.loads(CASES.read_text(encoding="utf-8"))
     cls.requests = {case["id"]: _request(data["common"], case) for case in data["cases"]}
+
+  def _with_default_product(self, case_id: str, embedment_mm: float) -> WallCheckRequest:
+    return replace(
+      self.requests[case_id],
+      anchor_product_id=self.default_product.anchor_id,
+      anchor_embedment_mm=embedment_mm,
+      anchor_concrete_fc_MPa=None,
+      anchor_apply_seismic_cap=True,
+    )
 
   def test_all_specimens_are_covered(self) -> None:
     self.assertEqual(set(self.requests), set(EXPECTED_ANCHOR_HEIGHT_MM))
 
+  def test_default_product_and_embedment_are_confirmed_values(self) -> None:
+    # 결정 1(2026-11-09): 기본 제품 Hilti X-U P8, 기본 매입깊이 27 mm → 400 N
+    self.assertEqual(self.default_product.anchor_id, "hilti_x_u")
+    self.assertEqual(self.default_product.default_embedment_mm, CONFIRMED_DEFAULT_EMBEDMENT_MM)
+
   def test_legacy_default_0_4_kN_is_unchanged(self) -> None:
     for case_id, (before, _after) in EXPECTED_ANCHOR_HEIGHT_MM.items():
       with self.subTest(case=case_id):
-        result = calculate_wall_check(replace(self.requests[case_id], anchor_capacity_kN=0.4), self.repo)
+        result = calculate_wall_check(replace(self.requests[case_id], anchor_capacity_kN=LEGACY_DEFAULT_CAPACITY_KN), self.repo)
         self.assertEqual(result.anchor_max_height_mm, before)
 
-  def test_default_product_resolves_to_0_3_kN_and_lowers_anchor_height(self) -> None:
-    default = next(p for p in self.repo.list_anchor_products() if p.is_default)
-    self.assertEqual(default.anchor_id, "hilti_x_u")
+  def test_default_product_default_embedment_matches_legacy_0_4_kN(self) -> None:
+    # 기본 제품·기본 매입(hET 27)에서 자동 입력 0.4 kN → anchorHeight가 v0.8.0 기본값(0.4 kN 직접 입력)과 동일
+    for case_id, (legacy, _previous) in EXPECTED_ANCHOR_HEIGHT_MM.items():
+      with self.subTest(case=case_id):
+        resolved, anchor = resolve_request_anchor(
+          self._with_default_product(case_id, float(self.default_product.default_embedment_mm or 0.0)), self.repo
+        )
+        self.assertIsNotNone(anchor)
+        assert anchor is not None
+        self.assertAlmostEqual(resolved.anchor_capacity_kN, LEGACY_DEFAULT_CAPACITY_KN)
+        self.assertFalse(anchor.cap_applied)
+        result = calculate_wall_check(resolved, self.repo)
+        legacy_result = calculate_wall_check(replace(self.requests[case_id], anchor_capacity_kN=LEGACY_DEFAULT_CAPACITY_KN), self.repo)
+        self.assertEqual(result.anchor_max_height_mm, legacy)
+        self.assertEqual(result.anchor_max_height_mm, legacy_result.anchor_max_height_mm)
+        self.assertEqual(result.intermediate["anchor_utilization"], legacy_result.intermediate["anchor_utilization"])
+
+  def test_default_product_hET_22_resolves_to_0_3_kN_and_lowers_anchor_height(self) -> None:
+    # 종전(v0.9.0~0.9.2) 기본 매입 22 mm 경로 보존: 300 N → anchorHeight 약 25% 감소
     for case_id, (before, after) in EXPECTED_ANCHOR_HEIGHT_MM.items():
       with self.subTest(case=case_id):
-        request = replace(
-          self.requests[case_id],
-          anchor_product_id=default.anchor_id,
-          anchor_embedment_mm=default.default_embedment_mm,
-          anchor_concrete_fc_MPa=None,
-          anchor_apply_seismic_cap=True,
-        )
-        resolved, anchor = resolve_request_anchor(request, self.repo)
+        resolved, anchor = resolve_request_anchor(self._with_default_product(case_id, PREVIOUS_DEFAULT_EMBEDMENT_MM), self.repo)
         self.assertIsNotNone(anchor)
-        self.assertAlmostEqual(resolved.anchor_capacity_kN, 0.3)
+        self.assertAlmostEqual(resolved.anchor_capacity_kN, PREVIOUS_DEFAULT_CAPACITY_KN)
         result = calculate_wall_check(resolved, self.repo)
         self.assertEqual(result.anchor_max_height_mm, after)
         self.assertLess(after, before)
@@ -112,8 +144,8 @@ class AnchorHeightImpactTest(unittest.TestCase):
     # 앵커 허용내력은 런너 고정못 경로에만 영향한다 — 응력·처짐·max_height는 동일해야 한다
     for case_id in EXPECTED_ANCHOR_HEIGHT_MM:
       with self.subTest(case=case_id):
-        a = calculate_wall_check(replace(self.requests[case_id], anchor_capacity_kN=0.4), self.repo)
-        b = calculate_wall_check(replace(self.requests[case_id], anchor_capacity_kN=0.3), self.repo)
+        a = calculate_wall_check(replace(self.requests[case_id], anchor_capacity_kN=LEGACY_DEFAULT_CAPACITY_KN), self.repo)
+        b = calculate_wall_check(replace(self.requests[case_id], anchor_capacity_kN=PREVIOUS_DEFAULT_CAPACITY_KN), self.repo)
         self.assertEqual(a.max_height_mm, b.max_height_mm)
         self.assertEqual(a.stress_ratio, b.stress_ratio)
         self.assertEqual(a.deflection_mm, b.deflection_mm)

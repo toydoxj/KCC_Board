@@ -81,6 +81,8 @@ const seismicFormulaSummary = "Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp (ap = 1.0,
 const anchorCapacityHelp = "매입깊이·모재(콘크리트) 강도·직경 조건이 반영된 제조사 시험성적서의 허용내력을 입력합니다. 프리셋 0.4/0.2 kN은 예시값입니다.";
 const anchorProductHelp = "제품·매입깊이·콘크리트 강도를 고르면 제조사 Data Sheet·ICC-ES 허용 전단값이 자동 입력됩니다. 국내 인증값이 아니므로 현장 조건이 다르면 사용자 정의로 시험성적서 값을 입력하십시오.";
 const anchorRecBasisNote = "제조사 권장하중 — 안전율 미기재(확인 필요)";
+// 기본 제품(is_default) 안내: 기본 매입깊이 27 mm → 0.4 kN(2026-11-09 사용자 확정). 값은 시드 default_embedment_mm·표에서 오고 여기서는 문구만 둔다
+const anchorDefaultProductNote = "기본값 0.4 kN은 Hilti X-U P8 매입 hET ≥ 27 mm(X-U 32 P8 이상) 기준임. 매입이 22 mm이면 0.3 kN(hET 22 mm)을 선택할 것.";
 const anchorNoStrengthLabel = "해당 없음(강도 무관)";
 
 function formatN(value: number) {
@@ -203,6 +205,7 @@ export function InputWorkspace(p: Props) {
               <p>최소 두께/연단/간격: {mmOrDash(product.min_concrete_thickness_mm)} / {mmOrDash(product.min_edge_mm)} / {mmOrDash(product.min_spacing_mm)}{product.shank_diameter_mm!==null?` · 축경 ${product.shank_diameter_mm} mm`:""}</p>
               <p>출처: {product.source}{product.approvals?` · 승인: ${product.approvals}`:""}</p>
               {product.basis==="rec"&&<p className="anchor-reference-note">{anchorRecBasisNote}</p>}
+              {product.is_default&&<p className="anchor-reference-note" data-anchor-default-note>{anchorDefaultProductNote}</p>}
             </>
           : <p className="text-destructive">{resolutionError??"허용하중 표를 조회할 수 없습니다."}</p>}
       </div>}

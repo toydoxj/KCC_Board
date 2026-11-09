@@ -180,11 +180,12 @@ const defaultValues: CheckFormValues = {
   spanMm: 7500,
   deflectionLimitDenom: 240,
   // 기본 앵커 제품 hilti_x_u(hET 22 mm, 강도 무관) → 허용 전단 300 N = 0.3 kN/개 자동 입력.
-  // 종전 기본값 0.4 kN/개(직접 입력)와 다르므로 내진 런너 고정못 기준 허용높이가 바뀐다(docs/anchor_product_db_changes.md)
-  anchorCapacityKn: 0.3,
+  // 카탈로그 로딩 전 정적 폴백. 실제 기본 제품·매입깊이는 formDefaultsFor가 카탈로그(is_default·default_embedment_mm)에서 정하고,
+  // 허용내력은 조회 effect가 채운다. 시드 기본(hilti_x_u, hET 27 → 0.4 kN, 2026-11-09 확정)과 맞춰 둔다
+  anchorCapacityKn: 0.4,
   anchorCapacitySource: "",
   anchorProductId: "hilti_x_u",
-  anchorEmbedmentMm: 22,
+  anchorEmbedmentMm: 27,
   anchorConcreteFcMPa: null,
   anchorApplySeismicCap: true,
   anchorSpacingMm: 450,

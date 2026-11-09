@@ -43,7 +43,8 @@ class ApiAnchorTest(unittest.TestCase):
     default = [item for item in items if item["is_default"]]
     self.assertEqual([item["anchor_id"] for item in default], ["hilti_x_u"])
     hilti = default[0]
-    self.assertEqual(hilti["default_embedment_mm"], 22.0)
+    # 2026-11-09 사용자 확정: 기본 매입깊이 27 mm → 400 N(v0.8.0 기본값 0.4 kN과 동일)
+    self.assertEqual(hilti["default_embedment_mm"], 27.0)
     self.assertEqual(len(hilti["table"]), 4)
     self.assertIsNone(hilti["table"][0]["concrete_fc_MPa"])
     custom = [item for item in items if item["anchor_id"] == "custom"]

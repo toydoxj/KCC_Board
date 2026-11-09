@@ -2,7 +2,7 @@
   "_source": "런너 고정 앵커 제품 허용하중 DB — 제조사 Data Sheet 및 ICC-ES 평가보고서 전재·환산 (2026-11-08 조사, 참고표 『런너고정앵커_허용하중_참고표.docx』). 1 lbf = 4.448 N, psi→MPa: 2500=17.2, 3000=20.7, 4000=27.6, 6000=41.4",
   "_unit": "allowable_shear_N·allowable_tension_N: N/개, embedment_mm: mm, concrete_fc_MPa: N/mm², min_*: mm",
   "_note": "basis: 'rec' = 제조사 권장하중(Nrec/Vrec, 안전율 문서 미기재 — 확인 필요), 'asd' = ICC-ES 허용하중(비균열·정적). 프로그램은 allowable_shear_N을 kN으로 환산하여 anchor_capacity_kN에 자동 입력하고, 내진(design_case=seismic)이며 seismic_shear_cap_N이 있으면 min(값, cap)을 적용(옵션, 기본 적용). 제품 성능값의 검증은 프로그램 범위 외(2차 심사의견 D-1).",
-  "_status": "초안 — 사용자 검토 전. ESR-2138 최소 간격·연단, X-C 승인번호, X-GN 하중값, 국내 제조사 자료는 확인 필요",
+  "_status": "초안 — 사용자 검토 전. ESR-2138 최소 간격·연단, X-C 승인번호, X-GN 하중값, 국내 제조사 자료는 확인 필요. 기본 매입깊이 27 mm — 사용자 확정 2026-11-09",
   "seismic_shear_cap_N": 400,
   "seismic_shear_cap_note": "ICC-ES ESR-2269/1663/1752/2024/2138 공통: SDC D·E·F에서 콘크리트에 런너 고정 시 횡압 허용 전단 ≤ 90 lbf(400 N)/개. 국내 적용은 참고 수준(확인 필요)",
   "items": [
@@ -23,10 +23,10 @@
       "approvals": "ICC ESR-2269, DIBt Z-14.4-517, IBMB",
       "source": "Hilti X-U Data Sheet 2018-11",
       "is_default": true,
-      "default_embedment_mm": 22,
+      "default_embedment_mm": 27,
       "table": [
-        { "embedment_mm": 27, "concrete_fc_MPa": null, "allowable_shear_N": 400, "allowable_tension_N": 400, "label": "hET ≥ 27 mm (X-U 32 P8 이상)" },
-        { "embedment_mm": 22, "concrete_fc_MPa": null, "allowable_shear_N": 300, "allowable_tension_N": 300, "label": "hET ≥ 22 mm (권장 매입, X-U 27 P8)" },
+        { "embedment_mm": 27, "concrete_fc_MPa": null, "allowable_shear_N": 400, "allowable_tension_N": 400, "label": "hET ≥ 27 mm (X-U 32 P8 이상, 런너 0.8~1.0 mm 기준 hET ≈ 31 mm)" },
+        { "embedment_mm": 22, "concrete_fc_MPa": null, "allowable_shear_N": 300, "allowable_tension_N": 300, "label": "hET ≥ 22 mm (Hilti 권장 매입, X-U 27 P8)" },
         { "embedment_mm": 18, "concrete_fc_MPa": null, "allowable_shear_N": 200, "allowable_tension_N": 200, "label": "hET ≥ 18 mm" },
         { "embedment_mm": 14, "concrete_fc_MPa": null, "allowable_shear_N": 100, "allowable_tension_N": 100, "label": "hET ≥ 14 mm" }
       ]
