@@ -1055,7 +1055,7 @@ function fixedRearBoardKindForGroup(group: string) {
   return null;
 }
 
-// CH·I-STUD는 후면 고정 보드(300 mm·4개 고정)가 있어 일면마감 1P 단독 규칙(300 mm·2개) 대상이 아니다
+// CH·I-STUD는 후면 끼움 보드(피스 300 mm/피치당 4개 체결 상당)가 있어 일면마감 1P 단독 규칙(300 mm·2개) 대상이 아니다
 function hasFixedRearBoardGroup(group: string) {
   return isChStudGroup(group) || isIStudGroup(group);
 }
