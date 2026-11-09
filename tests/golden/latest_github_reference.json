@@ -1046,11 +1046,11 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 5300.0,
+      "without_runner_mm": 5200.0,
       "with_runner_mm": 0.0,
-      "eta_3000": 0.07911889160494938,
-      "Ieff_3000": 214473.79226878614,
-      "Mn_3000": 0.9488830819293245
+      "eta_3000": 0.12542808966132665,
+      "Ieff_3000": 203112.17712721575,
+      "Mn_3000": 1.0671705809007506
     }
   },
   {
@@ -1116,11 +1116,11 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 5300.0,
+      "without_runner_mm": 5200.0,
       "with_runner_mm": 4600.0,
-      "eta_3000": 0.07911889160494938,
-      "Ieff_3000": 214473.79226878614,
-      "Mn_3000": 0.9488830819293245
+      "eta_3000": 0.12542808966132665,
+      "Ieff_3000": 203112.17712721575,
+      "Mn_3000": 1.0671705809007506
     }
   },
   {
@@ -1186,151 +1186,151 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 5900.0,
-      "with_runner_mm": 0.0,
-      "eta_3000": 0.07911889160494938,
-      "Ieff_3000": 286165.8574499616,
-      "Mn_3000": 1.1420121044810418
-    }
-  },
-  {
-    "name": "CH75",
-    "design": "seismic",
-    "input": {
-      "rear_boards": [
-        {
-          "kind": "방화",
-          "thickness": 25,
-          "order": null
-        }
-      ],
-      "front_boards": [
-        {
-          "kind": "방화",
-          "thickness": 19,
-          "order": null
-        },
-        {
-          "kind": "방화",
-          "thickness": 19,
-          "order": null
-        }
-      ],
-      "stud": {
-        "stud_type": "CH-STUD",
-        "spec": "75CHS-08",
-        "method": "기본"
-      },
-      "horizontal_load_kg_m2": 25.4841997961264,
-      "live_load_kN_m2": 0.25,
-      "vertical_load_kN_m": 0,
-      "spacing_mm": 450,
-      "span_mm": 3000,
-      "deflection_limit_denom": 240,
-      "bolt": {
-        "diameter": 3.5,
-        "yield_strength": 340,
-        "pitch": [
-          300,
-          300,
-          600
-        ],
-        "count": [
-          2,
-          2,
-          1
-        ]
-      },
-      "seismic": {
-        "S": 0.22,
-        "Ip": 1.5,
-        "site_class": "S5",
-        "s5_bedrock_depth_unknown": false,
-        "Fa": null
-      },
-      "design_case": "seismic",
-      "strength_check_mode": "composite",
-      "omega": 1.5,
-      "anchor_capacity_kN": 0.4,
-      "anchor_spacing_mm": 450,
-      "screw_pull_through_nominal_N": 343.0
-    },
-    "expected": {
-      "without_runner_mm": 5900.0,
-      "with_runner_mm": 4600.0,
-      "eta_3000": 0.07911889160494938,
-      "Ieff_3000": 286165.8574499616,
-      "Mn_3000": 1.1420121044810418
-    }
-  },
-  {
-    "name": "CH12_5_64",
-    "design": "non_seismic",
-    "input": {
-      "rear_boards": [
-        {
-          "kind": "방화",
-          "thickness": 12.5,
-          "order": null
-        }
-      ],
-      "front_boards": [
-        {
-          "kind": "방화",
-          "thickness": 19,
-          "order": null
-        },
-        {
-          "kind": "방화",
-          "thickness": 19,
-          "order": null
-        }
-      ],
-      "stud": {
-        "stud_type": "CH-STUD(개량형)",
-        "spec": "64CHS-08",
-        "method": "기본"
-      },
-      "horizontal_load_kg_m2": 25.4841997961264,
-      "live_load_kN_m2": 0.25,
-      "vertical_load_kN_m": 0,
-      "spacing_mm": 450,
-      "span_mm": 3000,
-      "deflection_limit_denom": 240,
-      "bolt": {
-        "diameter": 3.5,
-        "yield_strength": 340,
-        "pitch": [
-          300,
-          300,
-          600
-        ],
-        "count": [
-          2,
-          2,
-          1
-        ]
-      },
-      "seismic": {
-        "S": 0.22,
-        "Ip": 1.5,
-        "site_class": "S5",
-        "s5_bedrock_depth_unknown": false,
-        "Fa": null
-      },
-      "design_case": "non_seismic",
-      "strength_check_mode": "composite",
-      "omega": 1.5,
-      "anchor_capacity_kN": 0.4,
-      "anchor_spacing_mm": 450,
-      "screw_pull_through_nominal_N": 343.0
-    },
-    "expected": {
-      "without_runner_mm": 5600.0,
+      "without_runner_mm": 5800.0,
       "with_runner_mm": 0.0,
       "eta_3000": 0.12542808966132665,
-      "Ieff_3000": 255566.19041677378,
-      "Mn_3000": 1.0740343844337923
+      "Ieff_3000": 270329.4691267104,
+      "Mn_3000": 1.2787806107744597
+    }
+  },
+  {
+    "name": "CH75",
+    "design": "seismic",
+    "input": {
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 25,
+          "order": null
+        }
+      ],
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19,
+          "order": null
+        },
+        {
+          "kind": "방화",
+          "thickness": 19,
+          "order": null
+        }
+      ],
+      "stud": {
+        "stud_type": "CH-STUD",
+        "spec": "75CHS-08",
+        "method": "기본"
+      },
+      "horizontal_load_kg_m2": 25.4841997961264,
+      "live_load_kN_m2": 0.25,
+      "vertical_load_kN_m": 0,
+      "spacing_mm": 450,
+      "span_mm": 3000,
+      "deflection_limit_denom": 240,
+      "bolt": {
+        "diameter": 3.5,
+        "yield_strength": 340,
+        "pitch": [
+          300,
+          300,
+          600
+        ],
+        "count": [
+          2,
+          2,
+          1
+        ]
+      },
+      "seismic": {
+        "S": 0.22,
+        "Ip": 1.5,
+        "site_class": "S5",
+        "s5_bedrock_depth_unknown": false,
+        "Fa": null
+      },
+      "design_case": "seismic",
+      "strength_check_mode": "composite",
+      "omega": 1.5,
+      "anchor_capacity_kN": 0.4,
+      "anchor_spacing_mm": 450,
+      "screw_pull_through_nominal_N": 343.0
+    },
+    "expected": {
+      "without_runner_mm": 5800.0,
+      "with_runner_mm": 4600.0,
+      "eta_3000": 0.12542808966132665,
+      "Ieff_3000": 270329.4691267104,
+      "Mn_3000": 1.2787806107744597
+    }
+  },
+  {
+    "name": "CH12_5_64",
+    "design": "non_seismic",
+    "input": {
+      "rear_boards": [
+        {
+          "kind": "방화",
+          "thickness": 12.5,
+          "order": null
+        }
+      ],
+      "front_boards": [
+        {
+          "kind": "방화",
+          "thickness": 19,
+          "order": null
+        },
+        {
+          "kind": "방화",
+          "thickness": 19,
+          "order": null
+        }
+      ],
+      "stud": {
+        "stud_type": "CH-STUD(개량형)",
+        "spec": "64CHS-08",
+        "method": "기본"
+      },
+      "horizontal_load_kg_m2": 25.4841997961264,
+      "live_load_kN_m2": 0.25,
+      "vertical_load_kN_m": 0,
+      "spacing_mm": 450,
+      "span_mm": 3000,
+      "deflection_limit_denom": 240,
+      "bolt": {
+        "diameter": 3.5,
+        "yield_strength": 340,
+        "pitch": [
+          300,
+          300,
+          600
+        ],
+        "count": [
+          2,
+          2,
+          1
+        ]
+      },
+      "seismic": {
+        "S": 0.22,
+        "Ip": 1.5,
+        "site_class": "S5",
+        "s5_bedrock_depth_unknown": false,
+        "Fa": null
+      },
+      "design_case": "non_seismic",
+      "strength_check_mode": "composite",
+      "omega": 1.5,
+      "anchor_capacity_kN": 0.4,
+      "anchor_spacing_mm": 450,
+      "screw_pull_through_nominal_N": 343.0
+    },
+    "expected": {
+      "without_runner_mm": 5250.0,
+      "with_runner_mm": 0.0,
+      "eta_3000": 0.12542808966132665,
+      "Ieff_3000": 213510.99452540596,
+      "Mn_3000": 1.1960140290648813
     }
   },
   {
@@ -1396,11 +1396,11 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 5600.0,
+      "without_runner_mm": 5250.0,
       "with_runner_mm": 5100.0,
       "eta_3000": 0.12542808966132665,
-      "Ieff_3000": 255566.19041677378,
-      "Mn_3000": 1.0740343844337923
+      "Ieff_3000": 213510.99452540596,
+      "Mn_3000": 1.1960140290648813
     }
   },
   {
@@ -1466,11 +1466,11 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 6050.0,
+      "without_runner_mm": 6350.0,
       "with_runner_mm": 0.0,
-      "eta_3000": 0.05138922753686515,
-      "Ieff_3000": 318016.62315869366,
-      "Mn_3000": 1.0593437119757902
+      "eta_3000": 0.08146793399614591,
+      "Ieff_3000": 354878.63592372264,
+      "Mn_3000": 1.1985028803788969
     }
   },
   {
@@ -1536,11 +1536,11 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 6050.0,
+      "without_runner_mm": 6350.0,
       "with_runner_mm": 4600.0,
-      "eta_3000": 0.05138922753686515,
-      "Ieff_3000": 318016.62315869366,
-      "Mn_3000": 1.0593437119757902
+      "eta_3000": 0.08146793399614591,
+      "Ieff_3000": 354878.63592372264,
+      "Mn_3000": 1.1985028803788969
     }
   },
   {
@@ -1606,11 +1606,11 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 6600.0,
+      "without_runner_mm": 6950.0,
       "with_runner_mm": 0.0,
-      "eta_3000": 0.07911889160494938,
-      "Ieff_3000": 401263.635947295,
-      "Mn_3000": 1.3897668377294252
+      "eta_3000": 0.12542808966132665,
+      "Ieff_3000": 447630.71967023937,
+      "Mn_3000": 1.5242700175382375
     }
   },
   {
@@ -1676,11 +1676,11 @@
       "screw_pull_through_nominal_N": 343.0
     },
     "expected": {
-      "without_runner_mm": 6600.0,
+      "without_runner_mm": 6950.0,
       "with_runner_mm": 4600.0,
-      "eta_3000": 0.07911889160494938,
-      "Ieff_3000": 401263.635947295,
-      "Mn_3000": 1.3897668377294252
+      "eta_3000": 0.12542808966132665,
+      "Ieff_3000": 447630.71967023937,
+      "Mn_3000": 1.5242700175382375
     }
   },
   {

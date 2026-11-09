@@ -21,9 +21,13 @@ from backend.engine.constants import (
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
+  CONNECTION_MODE_SCREW,
+  CONNECTION_MODE_SLOT,
   FIXED_REAR_BOARD_SCREW_COUNT,
   FIXED_REAR_BOARD_SCREW_PITCH_MM,
   GRAVITY,
+  ONE_SIDED_SINGLE_PLY_SCREW_COUNT,
+  ONE_SIDED_SINGLE_PLY_SCREW_PITCH_MM,
   GYPSUM_SCREW_STRENGTH_DIVISOR,
   GYPSUM_SCREW_ULTIMATE_SHEAR_N,
   SCREW_PULLOUT_COEFFICIENT,
@@ -112,6 +116,8 @@ class _Layer:
   connection_count: float | None = None
   # 비대칭 단독 1P의 마감행 간격 기준. 개수는 connection_count로 별도 지정 가능.
   connection_order: int | None = None
+  # 연결 방식: "screw"(피스 체결) / "slot"(CH 홈 끼움 — 피스 없음. 전단 연결 산정은 screw와 같고 피스 인장 검토에서만 제외)
+  connection_mode: str = CONNECTION_MODE_SCREW
 
 
 @dataclass(frozen=True)
@@ -411,6 +417,8 @@ def _calculate_wall_check_once(
         "fixed_rear_board_screw_pitch_mm": FIXED_REAR_BOARD_SCREW_PITCH_MM,
         "fixed_rear_board_screw_count": FIXED_REAR_BOARD_SCREW_COUNT,
       } if _fixed_rear_board_for_group(group) is not None else {}),
+      # CH 끼움 보드 표시(계산서: 피스 없음 → 피스 인장 검토 제외)
+      **({"ch_slot_rear_board": 1.0} if _is_ch_stud_group(group) else {}),
       **_reaction_intermediate(request, reaction),
       **screw_tension,
     },
@@ -512,6 +520,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
       request,
       repo,
       fixed_rear_board=fixed_rear_board is not None,
+      slot_connection=_is_ch_stud_group(group),
     )
     layers.append(layer)
     if fixed_rear_board is None:
@@ -532,6 +541,8 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
     layers.append(layer)
 
   active_count = max(len(rear_boards), len(front_boards))
+  # 2026-11-08 사용자 결정: 일면마감 1P 단독 구성(한 면만 보드 1장)은 피치당 피스 2개로 본다(간격은 입력값, 표준 300 mm).
+  one_sided_single_ply = _is_one_sided_single_ply(len(rear_boards), len(front_boards))
   layers = [
     # 2026-10-26 승인: 2P/3P+1P의 단독 1P는 마감층 간격만 따르고,
     # 개수는 원래 1P 값을 유지한다(UI 기본 1개). 반대 방향에도 동일 적용.
@@ -539,7 +550,9 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
       layer,
       connection_order=active_count,
       connection_count=_count_for_order(request.bolt.count, layer.order)
-      if active_count in (2, 3) else layer.connection_count,
+      if active_count in (2, 3)
+      else ONE_SIDED_SINGLE_PLY_SCREW_COUNT if one_sided_single_ply
+      else layer.connection_count,
     )
     if layer.layer_type == "board"
     and layer.connection_pitch_mm is None
@@ -581,6 +594,7 @@ def _board_layer(
   request: WallCheckRequest,
   repo: MaterialRepository,
   fixed_rear_board: bool = False,
+  slot_connection: bool = False,
 ) -> tuple[_Layer, float]:
   prop = repo.get_board(board.kind, board.thickness)
   elastic_ratio = prop.E_GPa * 1000.0 / STUD_ELASTIC_MODULUS
@@ -605,6 +619,7 @@ def _board_layer(
       board_property=prop,
       connection_pitch_mm=FIXED_REAR_BOARD_SCREW_PITCH_MM if fixed_rear_board else None,
       connection_count=FIXED_REAR_BOARD_SCREW_COUNT if fixed_rear_board else None,
+      connection_mode=CONNECTION_MODE_SLOT if slot_connection else CONNECTION_MODE_SCREW,
     ),
     y_bottom + board.thickness,
   )
@@ -1088,10 +1103,10 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   """표준 외 피스 간격 경고(판정 불변). CH·I-STUD 고정 후면 보드(간격 고정)는 제외한다."""
   # _pitch_for_order와 같은 기준으로 order를 1~3에 정규화한 뒤 중복 제거(order ≥ 3은 모두 외측 피치)
   stud_index = next(i for i, layer in enumerate(section.layers) if layer.layer_type == "stud")
-  bilateral_single_ply = (
-    sum(layer.layer_type == "board" for layer in section.layers[:stud_index]) == 1
-    and sum(layer.layer_type == "board" for layer in section.layers[stud_index + 1:]) == 1
-  )
+  rear_count = sum(layer.layer_type == "board" for layer in section.layers[:stud_index])
+  front_count = sum(layer.layer_type == "board" for layer in section.layers[stud_index + 1:])
+  bilateral_single_ply = rear_count == 1 and front_count == 1
+  one_sided_single_ply = _is_one_sided_single_ply(rear_count, front_count)
   orders = sorted(
     {
       min(max(layer.connection_order or layer.order, 1), 3)
@@ -1102,11 +1117,12 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
   notices: list[str] = []
   for order in orders:
     pitch = _pitch_for_order(bolt.pitch, order)
-    standard = (
-      BILATERAL_SINGLE_PLY_SCREW_PITCH_MM
-      if bilateral_single_ply and order == 1
-      else _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
-    )
+    if order == 1 and bilateral_single_ply:
+      standard = BILATERAL_SINGLE_PLY_SCREW_PITCH_MM
+    elif order == 1 and one_sided_single_ply:
+      standard = ONE_SIDED_SINGLE_PLY_SCREW_PITCH_MM
+    else:
+      standard = _pitch_for_order(STANDARD_SCREW_PITCH_MM, order)
     if math.isclose(pitch, standard):
       continue
     label = BOARD_ORDER_LABELS[order]
@@ -1114,6 +1130,11 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
       f"{label} 피스 간격 {pitch:g} mm는 표준 간격 {standard:g} mm와 다름 — 실험 검증 범위 밖의 입력이므로 결과 적용에 유의할 것"
     )
   return tuple(notices)
+
+
+def _is_one_sided_single_ply(rear_count: int, front_count: int) -> bool:
+  """일면마감 1P 단독 구성: 한 면에만 보드 1장, 반대 면 없음(CH·I-STUD는 고정 후면 보드가 있어 해당 없음)."""
+  return rear_count + front_count == 1
 
 
 def _count_for_order(counts: tuple[float, ...], order: int) -> float:
@@ -1419,6 +1440,7 @@ def _screw_tension_result(
        E = c·SDS·Ip × (해당 면 보드 자중), c = _fp_coefficient(z/h) (z/h = 1.0 → 0.48). 면의 전체 하중을 피스가 가장 성긴 층이 부담한다고 가정(보수측).
   - 풀아웃 Pnot = 0.85·tc·d·Fu2 (Eq. J4.4.1-1), tc = 스터드 두께, Ω = 3.0
   - 풀스루(석고보드) = 입력 공칭값 / Ω (AISI 강판식 J4.4.2는 석고보드에 적용 불가)
+  - CH 홈 끼움 후면 보드(피스 없음)는 홈이 면외 이탈을 구속하므로 검토 대상에서 제외한다(2026-11-09). 피스 체결층만 검토한다.
   벽 높이와 무관한 검토이다.
   """
   stud = section.stud_section
@@ -1426,8 +1448,14 @@ def _screw_tension_result(
     raise ValueError(f"스터드 두께 t가 등록되지 않아 피스 풀아웃 검토를 할 수 없습니다: {stud.group} {stud.name}")
   stud_index = next(index for index, layer in enumerate(section.layers) if layer.layer_type == "stud")
   faces = (
-    tuple(layer for layer in section.layers[:stud_index] if layer.layer_type == "board"),
-    tuple(layer for layer in section.layers[stud_index + 1 :] if layer.layer_type == "board"),
+    tuple(
+      layer for layer in section.layers[:stud_index]
+      if layer.layer_type == "board" and layer.connection_mode == CONNECTION_MODE_SCREW
+    ),
+    tuple(
+      layer for layer in section.layers[stud_index + 1 :]
+      if layer.layer_type == "board" and layer.connection_mode == CONNECTION_MODE_SCREW
+    ),
   )
   demand_N = 0.0
   governing_pressure = 0.0

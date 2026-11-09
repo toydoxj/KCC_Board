@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Protocol, Sequence, cast
 
 from backend.engine.constants import BOARD_YIELD_RATIO_BY_BOARD, BOARD_YIELD_RATIO_FROM_FRACTURE
+from backend.engine.models import AnchorLoadRow, AnchorProduct, AnchorSeismicCap
 
 
 DEFAULT_BOARD_E_GPA = 1.9
@@ -66,10 +67,16 @@ class BoardCatalogItem:
   yield_ratio_source: str = "기본값"
 
 
-SCHEMA_VERSION = "8"
+SCHEMA_VERSION = "10"
 STUD_STEEL_SEED_FILE = "stud_steel.json"
 # 시험 시편 구성은 stud_method.json의 tested_configurations에 등재한다(2차 심사의견 A-1·F-2)
 STUD_METHOD_SEED_FILE = "stud_method.json"
+# 런너 고정 앵커 제품 허용하중 DB(schema 9). 최상위 seismic_shear_cap_N은 metadata 테이블에 저장한다
+ANCHOR_PRODUCT_SEED_FILE = "anchor_product.json"
+ANCHOR_CAP_METADATA_KEY = "anchor_seismic_shear_cap_N"
+ANCHOR_CAP_NOTE_METADATA_KEY = "anchor_seismic_shear_cap_note"
+# schema 10: 상한 적용 대상 제품군(JSON 배열 문자열, 예 '["dx", "gx"]'). 2026-11-09 결정 2
+ANCHOR_CAP_FAMILIES_METADATA_KEY = "anchor_seismic_shear_cap_families"
 
 
 @dataclass(frozen=True)
@@ -173,6 +180,15 @@ class MaterialRepository(Protocol):
   def list_stud_steels(self) -> tuple[StudSteel, ...]:
     """스터드 강재 목록을 조회한다."""
 
+  def list_anchor_products(self) -> tuple[AnchorProduct, ...]:
+    """런너 고정 앵커 제품 목록(허용하중 표 포함)을 조회한다."""
+
+  def get_anchor_product(self, anchor_id: str) -> AnchorProduct:
+    """런너 고정 앵커 제품 1건을 조회한다. 미등재이면 RepositoryLookupError."""
+
+  def get_anchor_seismic_cap(self) -> AnchorSeismicCap:
+    """내진 시 앵커 허용 전단 상한(N/개)과 근거 문구를 조회한다."""
+
 
 class JsonSeedRepository:
   def __init__(self, seed_dir: Path | str = Path("data/seed")) -> None:
@@ -184,6 +200,7 @@ class JsonSeedRepository:
     self._stud_methods = self._load_stud_methods()
     self._specimens = _specimen_configurations_from_seed(self.seed_dir)
     self._bolts = self._load_bolts()
+    self._anchor_products, self._anchor_cap = _anchor_catalog_from_seed(self.seed_dir)
 
   def get_board(self, kind: str, thickness: float) -> BoardProperty:
     key = (kind, float(thickness))
@@ -225,6 +242,19 @@ class JsonSeedRepository:
 
   def list_stud_steels(self) -> tuple[StudSteel, ...]:
     return tuple(sorted(self._steels.values(), key=lambda steel: steel.steel_grade))
+
+  def list_anchor_products(self) -> tuple[AnchorProduct, ...]:
+    # 시드 등재 순서를 유지한다(UI 선택지 순서 = 시드 순서)
+    return tuple(self._anchor_products.values())
+
+  def get_anchor_product(self, anchor_id: str) -> AnchorProduct:
+    try:
+      return self._anchor_products[anchor_id]
+    except KeyError as exc:
+      raise RepositoryLookupError(f"등록되지 않은 런너 고정 앵커 제품입니다: {anchor_id}") from exc
+
+  def get_anchor_seismic_cap(self) -> AnchorSeismicCap:
+    return self._anchor_cap
 
   def _read_items(self, filename: str) -> Sequence[Mapping[str, object]]:
     return _read_seed_items(self.seed_dir, filename)
@@ -287,6 +317,7 @@ class SqliteRepository:
     self._board_cache: dict[tuple[str, float], BoardProperty] = {}
     self._stud_cache: dict[tuple[str, str], StudSection] = {}
     self._bolt_cache: dict[str, BoltMaterial] = {}
+    self._anchor_cache: dict[str, AnchorProduct] | None = None
 
   def get_board(self, kind: str, thickness: float) -> BoardProperty:
     key = (kind, float(thickness))
@@ -420,13 +451,54 @@ class SqliteRepository:
       rows = connection.execute("SELECT * FROM stud_steel ORDER BY steel_grade").fetchall()
     return tuple(_stud_steel_from_mapping(dict(row)) for row in rows)
 
+  def list_anchor_products(self) -> tuple[AnchorProduct, ...]:
+    return tuple(self._anchor_products().values())
+
+  def get_anchor_product(self, anchor_id: str) -> AnchorProduct:
+    try:
+      return self._anchor_products()[anchor_id]
+    except KeyError as exc:
+      raise RepositoryLookupError(f"등록되지 않은 런너 고정 앵커 제품입니다: {anchor_id}") from exc
+
+  def get_anchor_seismic_cap(self) -> AnchorSeismicCap:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      rows = dict(
+        connection.execute(
+          "SELECT key, value FROM metadata WHERE key IN (?, ?, ?)",
+          (ANCHOR_CAP_METADATA_KEY, ANCHOR_CAP_NOTE_METADATA_KEY, ANCHOR_CAP_FAMILIES_METADATA_KEY),
+        ).fetchall()
+      )
+    if ANCHOR_CAP_METADATA_KEY not in rows:
+      raise RepositoryLookupError("자재 DB에 앵커 내진 전단 상한(anchor_seismic_shear_cap_N)이 없습니다. init_db를 다시 실행하십시오.")
+    if ANCHOR_CAP_FAMILIES_METADATA_KEY not in rows:
+      raise RepositoryLookupError(
+        "자재 DB에 앵커 내진 전단 상한 적용 대상(anchor_seismic_shear_cap_families)이 없습니다. init_db를 다시 실행하십시오."
+      )
+    return AnchorSeismicCap(
+      cap_N=float(rows[ANCHOR_CAP_METADATA_KEY]),
+      note=str(rows.get(ANCHOR_CAP_NOTE_METADATA_KEY, "")),
+      families=_anchor_cap_families_from_json(str(rows[ANCHOR_CAP_FAMILIES_METADATA_KEY])),
+    )
+
+  def _anchor_products(self) -> dict[str, AnchorProduct]:
+    if self._anchor_cache is not None:
+      return self._anchor_cache
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      if not _table_columns(connection, "anchor_product"):
+        raise RepositoryLookupError("자재 DB에 런너 고정 앵커 제품(anchor_product)이 없습니다. init_db를 다시 실행하십시오.")
+      products = _anchor_products_from_connection(connection)
+    if not products:
+      raise RepositoryLookupError("자재 DB의 런너 고정 앵커 제품 표가 비어 있습니다. init_db를 다시 실행하십시오.")
+    self._anchor_cache = products
+    return products
+
   def _fetch_one(self, query: str, params: tuple[object, ...]) -> sqlite3.Row | None:
     with closing(sqlite3.connect(self.db_path)) as connection:
       connection.row_factory = sqlite3.Row
       return connection.execute(query, params).fetchone()
 
   def _ensure_board_property_rules(self) -> None:
-    """구 DB를 현재 규칙(schema 7)으로 이관한다. 한 트랜잭션으로 처리하며 실패하면 되돌린다."""
+    """구 DB를 현재 규칙(schema 10)으로 이관한다. 한 트랜잭션으로 처리하며 실패하면 되돌린다."""
     with closing(sqlite3.connect(self.db_path)) as connection:
       columns = _table_columns(connection, "board_property")
       if not columns:
@@ -478,6 +550,8 @@ class SqliteRepository:
     if stud_columns:
       _migrate_stud_steel(connection, self.seed_dir)
     _migrate_specimen_configuration(connection, self.seed_dir)
+    _migrate_anchor_product(connection, self.seed_dir)
+    _migrate_anchor_schema_10(connection, self.seed_dir)
     connection.execute(
       "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
       ("schema_version", SCHEMA_VERSION),
@@ -512,6 +586,7 @@ def _read_seed_items(seed_dir: Path, filename: str) -> Sequence[Mapping[str, obj
 
 def _drop_tables(connection: sqlite3.Connection) -> None:
   for table in [
+    "anchor_load_row", "anchor_product",
     "specimen_configuration", "stud_method", "bolt_material", "stud_section", "stud_steel", "board_property", "metadata",
   ]:
     connection.execute(f"DROP TABLE IF EXISTS {table}")
@@ -573,6 +648,7 @@ def _create_tables(connection: sqlite3.Connection) -> None:
 """
     + _SPECIMEN_TABLE_SQL
     + ";"
+    + _ANCHOR_TABLES_SQL
   )
 
 
@@ -583,6 +659,8 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
   connection.execute("DELETE FROM stud_steel")
   connection.execute("DELETE FROM bolt_material")
   connection.execute("DELETE FROM stud_method")
+  connection.execute("DELETE FROM anchor_load_row")
+  connection.execute("DELETE FROM anchor_product")
 
   board_items = _read_seed_items(seed_dir, "board_property.json")
   connection.executemany(
@@ -645,8 +723,252 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
   connection.execute("DELETE FROM specimen_configuration")
   _insert_specimen_configurations(connection, _specimen_configurations_from_seed(seed_dir))
 
+  anchor_products, anchor_cap = _anchor_catalog_from_seed(seed_dir)
+  _insert_anchor_products(connection, anchor_products.values(), anchor_cap)
+
   connection.execute("INSERT INTO metadata (key, value) VALUES (?, ?)", ("schema_version", SCHEMA_VERSION))
   connection.commit()
+
+
+# ---------------------------------------------------------------------------
+# 런너 고정 앵커 제품 DB(schema 9, 상한 적용 대상 제품군은 schema 10)
+# ---------------------------------------------------------------------------
+
+_ANCHOR_TABLES_SQL = """
+    CREATE TABLE IF NOT EXISTS anchor_product (
+      anchor_id TEXT PRIMARY KEY,
+      seq INTEGER NOT NULL,
+      maker TEXT NOT NULL,
+      product TEXT NOT NULL,
+      family TEXT NOT NULL,
+      family_label TEXT NOT NULL,
+      shank_diameter_mm REAL,
+      basis TEXT NOT NULL,
+      basis_label TEXT NOT NULL,
+      concrete_condition TEXT NOT NULL,
+      min_concrete_thickness_mm REAL,
+      min_edge_mm REAL,
+      min_spacing_mm REAL,
+      min_fasteners_per_unit REAL,
+      approvals TEXT NOT NULL,
+      source TEXT NOT NULL,
+      is_default INTEGER NOT NULL,
+      default_embedment_mm REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS anchor_load_row (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      anchor_id TEXT NOT NULL REFERENCES anchor_product(anchor_id),
+      embedment_mm REAL NOT NULL,
+      concrete_fc_MPa REAL,
+      allowable_shear_N REAL NOT NULL,
+      allowable_tension_N REAL NOT NULL,
+      label TEXT
+    );
+"""
+
+
+def _anchor_catalog_from_seed(seed_dir: Path) -> tuple[dict[str, AnchorProduct], AnchorSeismicCap]:
+  path = seed_dir / ANCHOR_PRODUCT_SEED_FILE
+  with path.open(encoding="utf-8") as file:
+    data = cast(Mapping[str, object], json.load(file))
+  cap_value = data.get("seismic_shear_cap_N")
+  if cap_value is None:
+    raise RepositoryLookupError(f"{ANCHOR_PRODUCT_SEED_FILE}에 seismic_shear_cap_N이 없습니다.")
+  cap = AnchorSeismicCap(
+    cap_N=float(cast(float, cap_value)),
+    note=str(data.get("seismic_shear_cap_note", "")),
+    families=_anchor_cap_families_from_seed(data),
+  )
+  items = cast(Sequence[Mapping[str, object]], data["items"])
+  return _anchor_products_from_items(items), cap
+
+
+def _anchor_cap_families_from_seed(data: Mapping[str, object]) -> tuple[str, ...]:
+  """최상위 seismic_shear_cap_families(비어 있지 않은 문자열 배열). 없거나 비면 명시적 오류(silent 전체 적용 금지)."""
+  raw = data.get("seismic_shear_cap_families")
+  if not isinstance(raw, list) or not raw or not all(isinstance(item, str) and item for item in raw):
+    raise RepositoryLookupError(f"{ANCHOR_PRODUCT_SEED_FILE}에 seismic_shear_cap_families(비어 있지 않은 문자열 배열)가 없습니다.")
+  return tuple(cast(list[str], raw))
+
+
+def _anchor_cap_families_from_json(value: str) -> tuple[str, ...]:
+  try:
+    parsed = json.loads(value)
+  except json.JSONDecodeError as exc:
+    raise RepositoryLookupError(f"자재 DB의 anchor_seismic_shear_cap_families 값이 JSON 배열이 아닙니다: {value!r}") from exc
+  if not isinstance(parsed, list) or not parsed or not all(isinstance(item, str) and item for item in parsed):
+    raise RepositoryLookupError(f"자재 DB의 anchor_seismic_shear_cap_families 값이 올바르지 않습니다: {value!r}")
+  return tuple(cast(list[str], parsed))
+
+
+def _anchor_products_from_items(items: Sequence[Mapping[str, object]]) -> dict[str, AnchorProduct]:
+  products: dict[str, AnchorProduct] = {}
+  for item in items:
+    product = _anchor_product_from_mapping(item)
+    if product.anchor_id in products:
+      raise RepositoryLookupError(f"런너 고정 앵커 제품 식별자가 중복되었습니다: {product.anchor_id}")
+    products[product.anchor_id] = product
+  _default_anchor_id(products)
+  return products
+
+
+def _default_anchor_id(products: Mapping[str, AnchorProduct]) -> str:
+  defaults = [product.anchor_id for product in products.values() if product.is_default]
+  if len(defaults) != 1:
+    raise RepositoryLookupError(f"기본 런너 고정 앵커 제품은 정확히 1개여야 합니다(현재 {len(defaults)}개).")
+  return defaults[0]
+
+
+def _anchor_product_from_mapping(item: Mapping[str, object]) -> AnchorProduct:
+  rows = tuple(_anchor_row_from_mapping(row) for row in cast(Sequence[Mapping[str, object]], item.get("table", ())))
+  seen: set[tuple[float, float | None]] = set()
+  for row in rows:
+    key = (row.embedment_mm, row.concrete_fc_MPa)
+    if key in seen:
+      raise RepositoryLookupError(f"런너 고정 앵커 제품 {item['anchor_id']}의 허용하중 표에 동일 (hET, f'c) 행이 중복됩니다: {key}")
+    seen.add(key)
+  return AnchorProduct(
+    anchor_id=str(item["anchor_id"]),
+    maker=str(item["maker"]),
+    product=str(item["product"]),
+    family=str(item["family"]),
+    family_label=str(item["family_label"]),
+    shank_diameter_mm=_nullable_float(item.get("shank_diameter_mm")),
+    basis=str(item["basis"]),
+    basis_label=str(item["basis_label"]),
+    concrete_condition=str(item["concrete_condition"]),
+    min_concrete_thickness_mm=_nullable_float(item.get("min_concrete_thickness_mm")),
+    min_edge_mm=_nullable_float(item.get("min_edge_mm")),
+    min_spacing_mm=_nullable_float(item.get("min_spacing_mm")),
+    min_fasteners_per_unit=_nullable_float(item.get("min_fasteners_per_unit")),
+    approvals=str(item["approvals"]),
+    source=str(item["source"]),
+    is_default=bool(item["is_default"]),
+    default_embedment_mm=_nullable_float(item.get("default_embedment_mm")),
+    table=rows,
+  )
+
+
+def _anchor_row_from_mapping(row: Mapping[str, object]) -> AnchorLoadRow:
+  shear = float(cast(float, row["allowable_shear_N"]))
+  tension = float(cast(float, row["allowable_tension_N"]))
+  if shear <= 0.0 or tension <= 0.0:
+    raise RepositoryLookupError(f"앵커 허용하중은 양수여야 합니다: 전단 {shear}, 인장 {tension}")
+  return AnchorLoadRow(
+    embedment_mm=float(cast(float, row["embedment_mm"])),
+    concrete_fc_MPa=_nullable_float(row.get("concrete_fc_MPa")),
+    allowable_shear_N=shear,
+    allowable_tension_N=tension,
+    label=None if row.get("label") is None else str(row["label"]),
+  )
+
+
+def _insert_anchor_products(
+  connection: sqlite3.Connection,
+  products: Iterable[AnchorProduct],
+  cap: AnchorSeismicCap,
+) -> None:
+  product_list = list(products)
+  connection.executemany(
+    """
+    INSERT INTO anchor_product (
+      anchor_id, seq, maker, product, family, family_label, shank_diameter_mm, basis, basis_label, concrete_condition,
+      min_concrete_thickness_mm, min_edge_mm, min_spacing_mm, min_fasteners_per_unit, approvals, source, is_default,
+      default_embedment_mm
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+    [
+      (
+        p.anchor_id, seq, p.maker, p.product, p.family, p.family_label, p.shank_diameter_mm, p.basis, p.basis_label,
+        p.concrete_condition, p.min_concrete_thickness_mm, p.min_edge_mm, p.min_spacing_mm, p.min_fasteners_per_unit,
+        p.approvals, p.source, int(p.is_default), p.default_embedment_mm,
+      )
+      for seq, p in enumerate(product_list)
+    ],
+  )
+  connection.executemany(
+    """
+    INSERT INTO anchor_load_row (anchor_id, embedment_mm, concrete_fc_MPa, allowable_shear_N, allowable_tension_N, label)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """,
+    [
+      (p.anchor_id, row.embedment_mm, row.concrete_fc_MPa, row.allowable_shear_N, row.allowable_tension_N, row.label)
+      for p in product_list
+      for row in p.table
+    ],
+  )
+  connection.executemany(
+    "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+    [
+      (ANCHOR_CAP_METADATA_KEY, repr(cap.cap_N)),
+      (ANCHOR_CAP_NOTE_METADATA_KEY, cap.note),
+      (ANCHOR_CAP_FAMILIES_METADATA_KEY, json.dumps(list(cap.families))),
+    ],
+  )
+
+
+def _anchor_products_from_connection(connection: sqlite3.Connection) -> dict[str, AnchorProduct]:
+  connection.row_factory = sqlite3.Row
+  product_rows = connection.execute("SELECT * FROM anchor_product ORDER BY seq").fetchall()
+  load_rows = connection.execute(
+    "SELECT anchor_id, embedment_mm, concrete_fc_MPa, allowable_shear_N, allowable_tension_N, label "
+    "FROM anchor_load_row ORDER BY id"
+  ).fetchall()
+  rows_by_id: dict[str, list[dict[str, object]]] = {}
+  for row in load_rows:
+    rows_by_id.setdefault(str(row["anchor_id"]), []).append(dict(row))
+  items = [{**dict(row), "is_default": bool(row["is_default"]), "table": rows_by_id.get(str(row["anchor_id"]), [])} for row in product_rows]
+  return _anchor_products_from_items(items)
+
+
+def _migrate_anchor_product(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
+  """schema 8 이하 DB에 런너 고정 앵커 제품 테이블을 추가한다.
+
+  seed 경로가 없으면 채울 수 없으므로 명시적 오류로 중단한다(트랜잭션 롤백, schema 버전 유지).
+  executescript()는 진행 중인 트랜잭션을 먼저 커밋하므로 쓰지 않는다 — DDL을 문장별 execute()로 실행해
+  실패 시 테이블 생성까지 함께 롤백되게 한다.
+  """
+  for statement in _sql_statements(_ANCHOR_TABLES_SQL):
+    connection.execute(statement)
+  if connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0] > 0:
+    return
+  if seed_dir is None:
+    raise RepositoryLookupError(
+      "구 자재 DB에 런너 고정 앵커 제품(anchor_product)이 없습니다. seed 경로를 지정하거나 init_db를 다시 실행하십시오."
+    )
+  products, cap = _anchor_catalog_from_seed(seed_dir)
+  _insert_anchor_products(connection, products.values(), cap)
+
+
+def _migrate_anchor_schema_10(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
+  """schema 9 DB를 schema 10으로 이관한다 — 런너 고정 앵커 카탈로그를 seed로 다시 채운다(v0.9.3 결정 1·2).
+
+  판별: metadata anchor_seismic_shear_cap_families 키가 없으면 schema 9 이하이다.
+  schema 10에서 바뀐 것은 ① 상한 적용 대상 제품군(metadata, 신규 키) ② 기본 제품 hilti_x_u의 default_embedment_mm 22 → 27과
+  허용하중 표 label ③ 상한 note이다. anchor_product.json이 단일 출처이고 anchor_id가 안정 키이므로 두 표를 비우고 seed로
+  다시 넣는다(한 트랜잭션 안이라 실패 시 전부 롤백). seed 경로가 없으면 명시적 오류로 중단한다(schema 버전 유지).
+  """
+  exists = connection.execute(
+    "SELECT COUNT(*) FROM metadata WHERE key = ?", (ANCHOR_CAP_FAMILIES_METADATA_KEY,)
+  ).fetchone()[0]
+  if exists:
+    return
+  if seed_dir is None:
+    raise RepositoryLookupError(
+      "구 자재 DB(schema 9)에 앵커 내진 전단 상한 적용 대상(anchor_seismic_shear_cap_families)이 없습니다. "
+      "seed 경로를 지정하거나 init_db를 다시 실행하십시오."
+    )
+  products, cap = _anchor_catalog_from_seed(seed_dir)
+  connection.execute("DELETE FROM anchor_load_row")
+  connection.execute("DELETE FROM anchor_product")
+  _insert_anchor_products(connection, products.values(), cap)
+
+
+def _sql_statements(script: str) -> list[str]:
+  """세미콜론으로 구분된 DDL 스크립트를 개별 문장으로 나눈다(문자열 리터럴 없는 스키마 DDL 전용)."""
+  return [statement.strip() for statement in script.split(";") if statement.strip()]
 
 
 _SPECIMEN_TABLE_SQL = """

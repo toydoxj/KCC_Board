@@ -57,7 +57,7 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
           {isSeismic&&<VerdictBadge label="런너 고정못" ok={review.anchorOk} value={review.anchorOk?"O.K":"N.G"}/>}
           <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
         </div>
-        <ResultNotices notices={result.notices ?? []} result={result} />
+        <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup />
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <CaseMetric label="검토 CASE" value={designCaseLabel} />
           <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
@@ -96,7 +96,7 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
         {isSeismic&&<VerdictBadge label="런너 고정못" ok={review.anchorOk} value={review.anchorOk?"O.K":"N.G"}/>}
         <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
       </div>
-      <ResultNotices notices={result.notices ?? []} result={result} />
+      <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup />
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
         <CaseMetric label="검토 CASE" value={designCaseLabel} />
         <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
@@ -149,6 +149,9 @@ function ScrewTensionMetrics({ result }: { result: WallCheckResult }) {
   return (
     <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
       <Metric label="피스 전단 스터드측(tilting·지압/Ω)" value={intermediateValue(result, "screw_stud_side_shear_N")} suffix="N/개" />
+      {result.intermediate.screw_tension_spacing_mm === 0 ? (
+        <p className="text-sm text-slate-600" data-screw-tension="not-applicable">피스 인장 검토 해당 없음(끼움 보드 — 피스 없음). 피스 체결층이 없는 구성</p>
+      ) : null}
       <Metric label="피스 인장 횡압력" value={intermediateValue(result, "screw_tension_pressure_kN_m2")} suffix="kN/m²" />
       <Metric label="피스 부담 피치" value={intermediateValue(result, "screw_tension_spacing_mm")} suffix="mm" />
       <Metric label="피스 인장 T" value={intermediateValue(result, "screw_tension_demand_N")} suffix="N/개" />

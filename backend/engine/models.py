@@ -66,6 +66,64 @@ class WallCheckRequest:
   anchor_capacity_source: str | None = None
   # 석고보드 풀스루 공칭강도(N/개) — 시험값 확보 전 입력값
   screw_pull_through_nominal_N: float = DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N
+  # 런너 고정 앵커 제품 선택(anchor_product.json). 엔진은 이 필드로 계산하지 않는다 —
+  # API 계층이 제품·매입깊이·콘크리트 강도로 허용 전단을 조회해 anchor_capacity_kN에 채운 뒤 넘긴다.
+  # None(또는 'custom')이면 사용자 정의 입력값을 그대로 쓴다. 계산서 표기용으로만 보존한다.
+  anchor_product_id: str | None = None
+  anchor_embedment_mm: float | None = None
+  anchor_concrete_fc_MPa: float | None = None
+  anchor_apply_seismic_cap: bool = True
+
+
+@dataclass(frozen=True)
+class AnchorLoadRow:
+  """앵커 제품 허용하중 표의 한 행. concrete_fc_MPa가 None이면 콘크리트 강도 무관 행이다."""
+
+  embedment_mm: float
+  concrete_fc_MPa: float | None
+  allowable_shear_N: float
+  allowable_tension_N: float
+  label: str | None = None
+
+
+@dataclass(frozen=True)
+class AnchorSeismicCap:
+  """내진 시 런너 고정 앵커 허용 전단 상한(anchor_product.json 최상위 seismic_shear_cap_N·note).
+
+  ICC-ES ESR 공통: SDC D·E·F에서 콘크리트 런너 고정 시 허용 전단 ≤ 90 lbf(400 N)/개. 국내 적용 타당성 확인 필요.
+  families: 상한 적용 대상 제품군(seismic_shear_cap_families, 2026-11-09 결정 2: dx·gx — ICC-ES PAF 평가서 §4.1 Item 2 전용).
+  screw(콘크리트 스크류)는 적용 대상이 아니며 내진 적격성은 ACI 318 Ch.17 / KDS 14 20 54 체계로 별도 확인 필요.
+  """
+
+  cap_N: float
+  note: str
+  families: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AnchorProduct:
+  """런너 고정 앵커 제품(data/seed/anchor_product.json items[] 1건)."""
+
+  anchor_id: str
+  maker: str
+  product: str
+  # dx(화약식 타정못) | gx(가스식 핀) | screw(콘크리트 스크류) | custom(사용자 정의)
+  family: str
+  family_label: str
+  shank_diameter_mm: float | None
+  # rec(제조사 권장하중) | asd(ICC-ES 허용하중) | user(사용자 입력)
+  basis: str
+  basis_label: str
+  concrete_condition: str
+  min_concrete_thickness_mm: float | None
+  min_edge_mm: float | None
+  min_spacing_mm: float | None
+  min_fasteners_per_unit: float | None
+  approvals: str
+  source: str
+  is_default: bool
+  default_embedment_mm: float | None
+  table: tuple[AnchorLoadRow, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

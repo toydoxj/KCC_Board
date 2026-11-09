@@ -6,7 +6,7 @@ import { Printer } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
-import { CalculationReport, type CalculationReportData, type ReportBoardSlot } from "@/components/calculation-report";
+import { CalculationReport, type CalculationReportData, type ReportAnchorProduct, type ReportBoardSlot } from "@/components/calculation-report";
 import { StructurePreview } from "@/components/structure-preview";
 import { InputWorkspace } from "@/components/input-workspace";
 import { SummaryReport } from "@/components/summary-report";
@@ -17,14 +17,26 @@ import { Field, inputClassName } from "@/components/ui/field";
 import {
   checkWall,
   fetchCatalog,
+  type AnchorProduct,
   type BoardProperty,
   type DesignCase,
   type SiteClass,
   type StudMethod,
+  type MaterialCatalog,
   type StudSection,
   type WallCheckPayload,
   type WallCheckResult,
 } from "@/lib/api";
+import {
+  ANCHOR_CUSTOM_ID,
+  anchorProductLabel,
+  anchorSourceText,
+  concreteStrengthOptions,
+  embedmentOptions,
+  isCapEligibleFamily,
+  isCustomAnchor,
+  resolveAnchorClient,
+} from "@/lib/anchor";
 import {
   calculationModeLabels,
   type CalculationMode,
@@ -43,6 +55,8 @@ const hiddenBoltYieldStrength = 340;
 const hiddenBoltCountOuter = 2;
 const hiddenBoltCountMiddle = 2;
 const hiddenBoltCountInner = 1;
+// 일면마감 1P 단독 구성의 피치당 피스 개수(2026-11-08, 엔진 ONE_SIDED_SINGLE_PLY_SCREW_COUNT와 동일). 계산서 표기용
+const oneSidedSinglePlyBoltCountInner = 2;
 const gravity = 9.81;
 const anchorSpacingMinMm = 150;
 const anchorSpacingMaxMm = 600;
@@ -100,6 +114,12 @@ const formSchema = z.object({
   anchorCapacityKn: z.coerce.number().positive(),
   // 2차 심사의견 D-1: 런너 고정못 허용내력 출처(선택, 계산서 표기 전용)
   anchorCapacitySource: z.string().max(200, "출처는 200자 이하"),
+  // 런너 고정 앵커 제품 DB(anchor_product.json). "custom"이면 허용내력 직접 입력
+  // hET·f'c는 select에서 setValue로 숫자/null을 직접 넣는다(문자 입력 없음 → coerce 불필요)
+  anchorProductId: z.string().min(1),
+  anchorEmbedmentMm: z.number().positive().optional(),
+  anchorConcreteFcMPa: z.number().positive().nullable().optional(),
+  anchorApplySeismicCap: z.boolean(),
   anchorSpacingMm: z.coerce
     .number()
     .min(anchorSpacingMinMm)
@@ -160,8 +180,15 @@ const defaultValues: CheckFormValues = {
   spacingMm: 450,
   spanMm: 7500,
   deflectionLimitDenom: 240,
+  // 기본 앵커 제품 hilti_x_u(hET 22 mm, 강도 무관) → 허용 전단 300 N = 0.3 kN/개 자동 입력.
+  // 카탈로그 로딩 전 정적 폴백. 실제 기본 제품·매입깊이는 formDefaultsFor가 카탈로그(is_default·default_embedment_mm)에서 정하고,
+  // 허용내력은 조회 effect가 채운다. 시드 기본(hilti_x_u, hET 27 → 0.4 kN, 2026-11-09 확정)과 맞춰 둔다
   anchorCapacityKn: 0.4,
   anchorCapacitySource: "",
+  anchorProductId: "hilti_x_u",
+  anchorEmbedmentMm: 27,
+  anchorConcreteFcMPa: null,
+  anchorApplySeismicCap: true,
   anchorSpacingMm: 450,
   boltPitchOuter: 300,
   boltPitchMiddle: 300,
@@ -172,6 +199,20 @@ const defaultValues: CheckFormValues = {
   seismicIp: 1.5,
   seismicZOverH: 1.0,
 };
+
+// 카탈로그의 is_default 앵커 제품으로 폼 기본값을 만든다. 허용내력은 조회 effect가 채우므로 여기서는 제품·hET만 맞춘다.
+// 카탈로그가 없으면(로딩 전·실패) 정적 defaultValues를 쓴다
+function formDefaultsFor(catalog: MaterialCatalog | null): CheckFormValues {
+  const products = catalog?.anchorProducts.items ?? [];
+  const defaultProduct = products.find((product) => product.is_default);
+  if (!defaultProduct) return defaultValues;
+  return {
+    ...defaultValues,
+    anchorProductId: defaultProduct.anchor_id,
+    anchorEmbedmentMm: defaultProduct.default_embedment_mm ?? embedmentOptions(defaultProduct)[0] ?? defaultValues.anchorEmbedmentMm,
+    anchorConcreteFcMPa: null,
+  };
+}
 
 export default function Home() {
   const {
@@ -209,7 +250,7 @@ export default function Home() {
           return;
         }
         setCatalog(nextCatalog);
-        reset(defaultValues);
+        reset(formDefaultsFor(nextCatalog));
         setErrorMessage(null);
       })
       .catch((error: unknown) => {
@@ -281,7 +322,10 @@ export default function Home() {
       formValues.frontBoardOuterThickness,
     ],
   );
-  const bilateralSinglePly = selectedFrontBoards.length === 1 && selectedRearBoards.length === 1;
+  // 단일층 피치 모드: 양면 1P 또는 일면마감 1P 단독(2026-11-08) — 1P 간격 표준 300 mm
+  const bilateralSinglePly =
+    (selectedFrontBoards.length === 1 && selectedRearBoards.length === 1) ||
+    (!hasFixedRearBoardGroup(selectedStudGroup) && selectedFrontBoards.length + selectedRearBoards.length === 1);
   // Keep independent defaults and user-selected values for single- and multi-ply contexts.
   const innerPitchContexts = useRef({ singleMode: false, single: bilateralSinglePlyPitchMm, multi: defaultValues.boltPitchInner });
   useEffect(() => {
@@ -300,6 +344,106 @@ export default function Home() {
   );
   const selectedSiteClass = (formValues.seismicSiteClass ?? defaultValues.seismicSiteClass) as SiteClass;
   const selectedCalculationMode = (formValues.calculationMode ?? defaultValues.calculationMode) as CalculationMode;
+  const selectedDesignCase = (formValues.designCase ?? defaultValues.designCase) as DesignCase;
+
+  // 런너 고정 앵커 제품 선택 → 허용하중 표 조회(참조 카드·자동 입력). 판정값은 서버가 같은 규칙으로 다시 조회한다
+  const anchorProducts = useMemo(() => catalog?.anchorProducts.items ?? [], [catalog?.anchorProducts]);
+  const anchorCapN = catalog?.anchorProducts.seismic_shear_cap_N ?? null;
+  const anchorCapNote = catalog?.anchorProducts.seismic_shear_cap_note ?? "";
+  const anchorCapFamilies = useMemo(() => catalog?.anchorProducts.seismic_shear_cap_families ?? [], [catalog?.anchorProducts]);
+  const selectedAnchorId = formValues.anchorProductId ?? defaultValues.anchorProductId;
+  const selectedAnchorProduct = useMemo(
+    () => anchorProducts.find((product) => product.anchor_id === selectedAnchorId),
+    [anchorProducts, selectedAnchorId],
+  );
+  const anchorIsCustom = isCustomAnchor(selectedAnchorId, selectedAnchorProduct);
+  // 상한 체크박스 활성 조건: 적용 대상 family(dx·gx)일 때만. screw는 비활성 + 별도 확인 안내(결정 2)
+  const anchorCapEligible = !anchorIsCustom && isCapEligibleFamily(selectedAnchorProduct, anchorCapFamilies);
+  const selectedAnchorEmbedment = numberOrNull(formValues.anchorEmbedmentMm);
+  const selectedAnchorFc = numberOrNull(formValues.anchorConcreteFcMPa);
+  const selectedAnchorApplyCap = formValues.anchorApplySeismicCap ?? defaultValues.anchorApplySeismicCap;
+  const anchorEmbedmentOptions = useMemo(
+    () => (selectedAnchorProduct && !anchorIsCustom ? embedmentOptions(selectedAnchorProduct) : []),
+    [anchorIsCustom, selectedAnchorProduct],
+  );
+  const anchorFcOptions = useMemo(
+    () =>
+      selectedAnchorProduct && !anchorIsCustom && selectedAnchorEmbedment !== null
+        ? concreteStrengthOptions(selectedAnchorProduct, selectedAnchorEmbedment)
+        : [],
+    [anchorIsCustom, selectedAnchorEmbedment, selectedAnchorProduct],
+  );
+  const anchorResolution = useMemo(
+    () =>
+      selectedAnchorProduct && !anchorIsCustom
+        ? resolveAnchorClient(selectedAnchorProduct, selectedAnchorEmbedment, selectedAnchorFc, selectedDesignCase, selectedAnchorApplyCap, anchorCapN, anchorCapFamilies)
+        : null,
+    [anchorCapFamilies, anchorCapN, anchorIsCustom, selectedAnchorApplyCap, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorProduct, selectedDesignCase],
+  );
+  useEffect(() => {
+    // 조회 조건이 바뀌면 이전 서버 덮어쓰기 값은 무효
+    serverAnchorCapacity.current = null;
+  }, [anchorResolution]);
+  // 마지막으로 자동 입력한 출처 문자열. 사용자가 수정하지 않았을 때만 다음 자동 입력으로 덮어쓴다
+  const lastAutoAnchorSource = useRef<string>("");
+  // 서버(/api/check)가 덮어쓴 허용내력. 같은 조회 조건이면 클라이언트 계산값보다 우선한다(반올림 차이 방지)
+  const serverAnchorCapacity = useRef<number | null>(null);
+
+  // 제품이 바뀌면 기본 매입깊이·첫 f'c로 맞춘다. 사용자 정의로 바뀌면 출처를 비운다
+  const previousAnchorId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!catalog) return;
+    if (previousAnchorId.current === selectedAnchorId) return;
+    const firstSelection = previousAnchorId.current === null;
+    previousAnchorId.current = selectedAnchorId;
+    if (anchorIsCustom) {
+      // 자동 생성한 출처만 비운다. 사용자가 직접 쓴 출처는 custom ↔ 제품 왕복에서도 보존한다
+      if (!firstSelection && (formValues.anchorCapacitySource ?? "") === lastAutoAnchorSource.current) {
+        setValue("anchorCapacitySource", "", { shouldDirty: true, shouldValidate: true });
+      }
+      lastAutoAnchorSource.current = "";
+      return;
+    }
+    if (!selectedAnchorProduct) return;
+    const embedment = selectedAnchorProduct.default_embedment_mm ?? embedmentOptions(selectedAnchorProduct)[0] ?? null;
+    if (embedment !== null && embedment !== selectedAnchorEmbedment) {
+      setValue("anchorEmbedmentMm", embedment, { shouldDirty: true, shouldValidate: true });
+    }
+    const fcOptions = embedment === null ? [] : concreteStrengthOptions(selectedAnchorProduct, embedment);
+    const nextFc = fcOptions.length === 0 ? null : fcOptions.includes(selectedAnchorFc ?? Number.NaN) ? selectedAnchorFc : fcOptions[0];
+    if (nextFc !== selectedAnchorFc) {
+      setValue("anchorConcreteFcMPa", nextFc, { shouldDirty: true, shouldValidate: true });
+    }
+  }, [anchorIsCustom, catalog, formValues.anchorCapacitySource, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorId, selectedAnchorProduct, setValue]);
+
+  // 매입깊이가 바뀌어 f'c 선택지가 달라지면 첫 값으로 맞춘다
+  useEffect(() => {
+    if (anchorIsCustom || !selectedAnchorProduct || selectedAnchorEmbedment === null) return;
+    if (anchorFcOptions.length === 0) {
+      if (selectedAnchorFc !== null) setValue("anchorConcreteFcMPa", null, { shouldDirty: true, shouldValidate: true });
+      return;
+    }
+    if (selectedAnchorFc === null || !anchorFcOptions.includes(selectedAnchorFc)) {
+      setValue("anchorConcreteFcMPa", anchorFcOptions[0], { shouldDirty: true, shouldValidate: true });
+    }
+  }, [anchorFcOptions, anchorIsCustom, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorProduct, setValue]);
+
+  // 조회 결과를 허용내력(읽기 전용)·출처에 자동 입력한다
+  useEffect(() => {
+    if (!selectedAnchorProduct || anchorIsCustom || !anchorResolution || !anchorResolution.ok) return;
+    const capacity = anchorResolution.value.capacityKn;
+    const current = Number(formValues.anchorCapacityKn);
+    const serverValue = serverAnchorCapacity.current;
+    if (current !== capacity && !(serverValue !== null && current === serverValue)) {
+      setValue("anchorCapacityKn", capacity, { shouldDirty: true, shouldValidate: true });
+    }
+    const autoSource = anchorSourceText(selectedAnchorProduct).slice(0, 200);
+    const currentSource = formValues.anchorCapacitySource ?? "";
+    if (currentSource !== autoSource && (currentSource === "" || currentSource === lastAutoAnchorSource.current)) {
+      setValue("anchorCapacitySource", autoSource, { shouldDirty: true, shouldValidate: true });
+    }
+    lastAutoAnchorSource.current = autoSource;
+  }, [anchorIsCustom, anchorResolution, formValues.anchorCapacityKn, formValues.anchorCapacitySource, selectedAnchorProduct, setValue]);
   const heightFieldLabel =
     selectedCalculationMode === "heightCheck"
       ? "검토 높이 mm"
@@ -451,8 +595,15 @@ export default function Home() {
       }
 
       if (sequence !== calculationSequence.current) return;
+      // 서버가 앵커 제품 표로 허용내력을 덮어썼으면 화면 값도 서버값으로 맞춘다(경고 없이 표시)
+      const serverCapacityKn = nextResult.intermediate.anchor_capacity_kN;
+      if (nextResult.anchor_capacity_overridden && typeof serverCapacityKn === "number") {
+        serverAnchorCapacity.current = serverCapacityKn;
+        nextValues = { ...nextValues, anchorCapacityKn: serverCapacityKn };
+        setValue("anchorCapacityKn", serverCapacityKn, { shouldDirty: true, shouldValidate: true });
+      }
       setResult(nextResult);
-      setReportData(createReportData(nextValues, nextResult, catalog?.boards ?? [], catalog?.studs ?? []));
+      setReportData(createReportData(nextValues, nextResult, catalog?.boards ?? [], catalog?.studs ?? [], anchorProducts));
     } catch (error: unknown) {
       if (abortController.signal.aborted || sequence !== calculationSequence.current) return;
       setResult(null);
@@ -469,7 +620,9 @@ export default function Home() {
   function handleReset() {
     innerPitchContexts.current = { singleMode: false, single: bilateralSinglePlyPitchMm, multi: defaultValues.boltPitchInner };
     setMirrorRear(false);
-    reset(defaultValues);
+    previousAnchorId.current = null;
+    lastAutoAnchorSource.current = "";
+    reset(formDefaultsFor(catalog));
     setResult(null);
     setReportData(null);
     setErrorMessage(null);
@@ -620,6 +773,29 @@ export default function Home() {
               setValue("studSpec",firstStudSpecValue(catalog?.studs??[],event.target.value),{shouldDirty:true,shouldValidate:true});
             }}
             onModeChange={handleCalculationModeChange} onReset={handleReset}
+            anchor={{
+              products: anchorProducts,
+              capN: anchorCapN,
+              capNote: anchorCapNote,
+              capEligible: anchorCapEligible,
+              selected: selectedAnchorProduct,
+              isCustom: anchorIsCustom,
+              embedmentOptions: anchorEmbedmentOptions,
+              fcOptions: anchorFcOptions,
+              resolution: anchorResolution,
+              onProductChange: (anchorId) => {
+                setValue("anchorProductId", anchorId, { shouldDirty: true, shouldValidate: true });
+                clearCalculationResult();
+              },
+              onEmbedmentChange: (embedment) => {
+                setValue("anchorEmbedmentMm", embedment, { shouldDirty: true, shouldValidate: true });
+                clearCalculationResult();
+              },
+              onFcChange: (fc) => {
+                setValue("anchorConcreteFcMPa", fc, { shouldDirty: true, shouldValidate: true });
+                clearCalculationResult();
+              },
+            }}
             busy={checking||catalogLoading} submitLabel={submitButtonLabel}
             mirrorRear={mirrorRear} onMirrorChange={setMirrorRear} canMirror={!selectedRearBoardInputsDisabled}
             notice={<>
@@ -879,6 +1055,19 @@ function fixedRearBoardKindForGroup(group: string) {
   return null;
 }
 
+// CH·I-STUD는 후면 끼움 보드(피스 300 mm/피치당 4개 체결 상당)가 있어 일면마감 1P 단독 규칙(300 mm·2개) 대상이 아니다
+function hasFixedRearBoardGroup(group: string) {
+  return isChStudGroup(group) || isIStudGroup(group);
+}
+
+function isOneSidedSinglePlyValues(values: CheckFormValues) {
+  if (hasFixedRearBoardGroup(values.studGroup)) {
+    return false;
+  }
+  const payload = buildPayload(values);
+  return payload.rear_boards.length + payload.front_boards.length === 1;
+}
+
 function fixedRearBoardLabelForGroup(group: string) {
   return isIStudGroup(group) ? "I 연결" : "CH 끼움";
 }
@@ -967,7 +1156,29 @@ function buildPayload(values: CheckFormValues): WallCheckPayload {
     anchor_capacity_kN: values.anchorCapacityKn,
     anchor_capacity_source: values.anchorCapacitySource.trim() || undefined,
     anchor_spacing_mm: values.anchorSpacingMm,
+    ...anchorProductPayload(values),
   };
+}
+
+function anchorProductPayload(values: CheckFormValues): Pick<
+  WallCheckPayload,
+  "anchor_product_id" | "anchor_embedment_mm" | "anchor_concrete_fc_MPa" | "anchor_apply_seismic_cap"
+> {
+  if (isCustomAnchor(values.anchorProductId)) {
+    return { anchor_product_id: ANCHOR_CUSTOM_ID, anchor_apply_seismic_cap: values.anchorApplySeismicCap };
+  }
+  return {
+    anchor_product_id: values.anchorProductId,
+    anchor_embedment_mm: values.anchorEmbedmentMm,
+    anchor_concrete_fc_MPa: values.anchorConcreteFcMPa ?? null,
+    anchor_apply_seismic_cap: values.anchorApplySeismicCap,
+  };
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function createPdfFileName(report: CalculationReportData) {
@@ -981,8 +1192,29 @@ function createReportData(
   result: WallCheckResult,
   boards: BoardProperty[],
   studs: StudSection[],
+  anchorProducts: AnchorProduct[] = [],
 ): CalculationReportData {
   const stud = findStud(studs, values.studGroup, values.studSpec);
+  const anchorProduct = anchorProducts.find((product) => product.anchor_id === values.anchorProductId);
+  const reportAnchorProduct: ReportAnchorProduct | null =
+    !anchorProduct || isCustomAnchor(values.anchorProductId, anchorProduct)
+      ? null
+      : {
+          anchorId: anchorProduct.anchor_id,
+          label: anchorProductLabel(anchorProduct),
+          basis: anchorProduct.basis,
+          basisLabel: anchorProduct.basis_label,
+          source: anchorProduct.source,
+          approvals: anchorProduct.approvals,
+          concreteCondition: anchorProduct.concrete_condition,
+          embedmentMm: values.anchorEmbedmentMm ?? null,
+          concreteFcMPa: values.anchorConcreteFcMPa ?? null,
+          applySeismicCap: values.anchorApplySeismicCap,
+          minConcreteThicknessMm: anchorProduct.min_concrete_thickness_mm,
+          minEdgeMm: anchorProduct.min_edge_mm,
+          minSpacingMm: anchorProduct.min_spacing_mm,
+          table: anchorProduct.table,
+        };
   const siteClassLabel = siteClassOptions.find((option) => option.value === values.seismicSiteClass)?.label ?? values.seismicSiteClass;
   const designCaseLabel = designCaseOptions.find((option) => option.value === values.designCase)?.label ?? values.designCase;
   const studAssembly = createStudAssembly(stud, values.studMethod);
@@ -1053,6 +1285,7 @@ function createReportData(
       anchorCapacityKn: values.anchorCapacityKn,
       anchorCapacitySource: values.anchorCapacitySource.trim(),
     },
+    anchorProduct: reportAnchorProduct,
     loads: {
       designCaseLabel,
       liveLoadKnM2: values.liveLoadKnM2,
@@ -1066,7 +1299,8 @@ function createReportData(
     bolts: {
       outerCount: hiddenBoltCountOuter,
       middleCount: hiddenBoltCountMiddle,
-      innerCount: hiddenBoltCountInner,
+      // 일면마감 1P 단독 구성은 엔진이 피치당 2개를 적용하므로 계산서에도 같은 값을 표기한다
+      innerCount: isOneSidedSinglePlyValues(values) ? oneSidedSinglePlyBoltCountInner : hiddenBoltCountInner,
       outerPitch: values.boltPitchOuter,
       middlePitch: values.boltPitchMiddle,
       innerPitch: values.boltPitchInner,

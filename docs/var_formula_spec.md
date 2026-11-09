@@ -43,7 +43,8 @@
 - CH-STUD(개량형)의 후면 보드는 현 자재 DB 기준 12.5T(명목 12T 계열)로 고정한다.
 - 중립축 산정 시 후면 보드의 단면적·자체I·도심은 포함하되, 후면 보드 두께는 스터드 및 전면 보드의 적층 좌표에 더하지 않는다.
 - 따라서 CH-STUD 스터드 도심은 `y_bottom + 후면보드두께 + cy`가 아니라 `cy`이고, 전면 보드 첫 레이어의 하단 좌표는 `후면보드두께 + H`가 아니라 `H`이다.
-- 후면 끼움 보드와 CH-STUD의 합성은 피스 전단연결이 아니라 넓은면 끼움 고정으로 보고 합성률 100%를 적용한다. 엔진에서는 해당 후면 보드의 전단누계를 보드 축강도와 동일하게 둔다.
+- 후면 끼움 보드는 피스를 사용하지 않는다. 끼움부와 CH-STUD의 전단 연결은 **피스 300 mm/피치당 4개 체결 상당으로 등가화**한다(완전합성 가정 폐지. 2026-11-08 사용자 결정, 종전 2개 상당) — `FIXED_REAR_BOARD_SCREW_PITCH_MM`·`FIXED_REAR_BOARD_SCREW_COUNT`. 사용자 피스 간격 입력은 이 보드에 적용하지 않는다.
+- 2026-11-09(A안): CH 계열 후면 보드는 CH 홈에 끼워지며 피스를 사용하지 않음. 본 프로그램은 끼움부의 전단 연결을 피스 300 mm/피치당 4개 체결 상당으로 등가화하고 시험 보정계수 R = 0.66으로 보정하며, 피스가 없으므로 피스 인장(풀아웃·풀스루) 검토에서는 제외함. 구현: `_Layer.connection_mode = "slot"`으로 표시하고 피스 인장 검토에서만 제외한다(홈이 면외 이탈을 구속). 전단 연결·중립축·η·R·Mn은 위 체결 상당(등가) 가정을 유지한다. I-STUD 후면 보드는 끼움이 아니므로 `screw`. 대안(끼움 연결 k 보정 α, 비합성 γ) 검토 결과는 `docs/screw_count_changes.md` §7 참조.
 
 ### I-STUD 후면 고정 보드 좌표 규칙
 
@@ -71,7 +72,7 @@
 |----|------|------|
 | 행20(축파괴강도) | 보드 `=IFERROR(행32*행6*행5*10^-3,0)` / J20 `=J10*J32*10^-3` | 층 항복축력 **Py,i** kN(계산서 기호, 심사의견 D-5 — 부재 공칭 압축강도 Pn과 구분). API 필드명 `axial_strength_kN` 유지 |
 | C31(피스강도/개) | `=0.5*0.6*Fy_bolt*PI()/4*d^2/1.25` (Fv=0.6·Fy) | 피스 1개당 전단강도 N. EN 1993-1-8 인용. 제원 Fy=340→Fv=204, d=3.5 → 785.1N (2026-07 나사 제원 변경, 엑셀 대체) |
-| 행22(볼트전단) | `=$C$31*행21` | 볼트개수×강도. 피치당 연결 피스 개수 표준 = 누계 1-3-5(층별 1번 내측 1, 2번 2, 3번 외측 2) — `STANDARD_SCREW_COUNT`, 엔진 `bolt.count` 순서 [외측, 중간, 내측] = (2, 2, 1) |
+| 행22(볼트전단) | `=$C$31*행21` | 볼트개수×강도. 피치당 연결 피스 개수 표준 = 누계 1-3-5(층별 1번 내측 1, 2번 2, 3번 외측 2) — `STANDARD_SCREW_COUNT`, 엔진 `bolt.count` 순서 [외측, 중간, 내측] = (2, 2, 1). 예외(2026-11-08): 일면마감 1P 단독 구성(한 면만 보드 1장)은 피치당 2개, 표준 간격 300 mm — `ONE_SIDED_SINGLE_PLY_SCREW_COUNT`·`ONE_SIDED_SINGLE_PLY_SCREW_PITCH_MM`. 양면 1P(300 mm/1개)·다겹 구성은 현행 유지 |
 | 행24 볼트간격 | 1번 `$C$32`=600, 2번 `$C$33`=300, 3번 `$C$34`=300 | 1P = 내측(스터드 인접). 엔진 `bolt.pitch` 순서 [외측, 중간, 내측] = (300, 300, 600) |
 | 행23(지압) | `=2*0.85*행5*행21*$C$27*Fu_board` | 지압강도 N. `Fb=Fu` 적용 |
 | (신규) 스터드측 한계 | `행21 × min(4.2·(t2³·d)^0.5·Fu2, 2.7·t2·d·Fu2) / Ω 3.0` | 피스 1개당 값(AISI S100-16 Eq. J4.3.1-1 tilting·-3 스터드 지압, t2 = 스터드 두께, Fu2 = 스터드 Fu)에 행21 개수를 곱한 N. 강성(η)·강도(Mn) 경로 모두 적용(2026-10-20, A-4·D-7) |
@@ -113,7 +114,7 @@
 | C-STUD 기본·맞댐 | 0.73 → 1.00 (산정 1.32·1.59, 상한) |
 | C-STUD 후면 보드 없음(기본·일면마감·이중스터드·맞댐, 2026-10-25 공법 무관) | 1.00 → 1.00 (산정 1.39, 상한) |
 | C-STUD(중앙부연결/중앙부 이음) | 0.37 → 0.44 |
-| CH-STUD / CH-STUD(개량형) | 0.68 → 0.79 |
+| CH-STUD / CH-STUD(개량형) | 0.68 → 0.79 → 0.66 (2026-11-08 고정 후면 보드 피스 4개 반영 재산정) |
 | T-Silent | 0.56 → 0.70 |
 | R-STUD | 0.28 → 0.31 |
 | I-STUD | 1.00 → 1.00 (산정 1.17, 상한) |
@@ -130,8 +131,8 @@
 |------|---------|------|
 | u/u_ref | `max(M_L / M*, (q·s·L/2) / V_ref) × max(p_i / p_ref,i)` | 모멘트 기준과 피스력 기준 중 불리한 값 × 피치비 (v0.7.4. 종전: 피스력 기준만) |
 | M_L | `q·s·L²/8` (kN·m, q kN/m², s·L m) | 처짐 검토 하중(활하중) 최대모멘트 |
-| M* | 형식별 기준 모멘트(kN·m): C 중앙부 1.126 / C 기본 일면 1.692 / C 1.690 / CH 0.732 / T.silent 0.732 / R 0.731 / I 1.690 / HR 1.647 / RV 0.663 / MP 0.672 | 실측 할선강성비 I_test(M)/I_eff,raw(2,400) = 적용 R인 모멘트. 시험 범위에서 R 아래로 내려가지 않으면 시험 최대모멘트(외삽 금지). 같은 형식은 최솟값, 소수 셋째 자리 버림. `constants.STIFFNESS_REF_MOMENT_KNM_BY_TYPE`, 산정 `backend/tools/r_calibration.py` |
-| V_ref | 형식별 R 보정점 피스력 `V* = P*·a/L`, `P* = M_L/(a·b/L)` (M_L: 설계 R의 비내진 허용높이 사용하중 모멘트). C 중앙부 1,169.1 / C 기본 일면 390.6 / C 787.7 / CH 800.8 / T.silent 754.7 / R 620.2 / I 826.9 / HR 1,772.2 / RV 711.9 / MP 691.0 N, 미등록 형식은 계산 거부(종전 최솟값) | 2026-10-24 변경(종전: 시험 최대 가력 시 1,876 N). `constants.STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE`, 산정 `backend/tools/r_calibration.py`. 같은 형식 시편이 여럿이면 최솟값 |
+| M* | 형식별 기준 모멘트(kN·m): C 중앙부 1.126 / C 기본 일면 1.692 / C 1.690 / CH 0.789 / T.silent 0.732 / R 0.731 / I 0.890 / HR 1.647 / RV 0.663 / MP 0.672 (CH·I는 2026-11-08 고정 후면 보드 피스 4개 반영 재산정, 종전 0.732·1.690) | 실측 할선강성비 I_test(M)/I_eff,raw(2,400) = 적용 R인 모멘트. 시험 범위에서 R 아래로 내려가지 않으면 시험 최대모멘트(외삽 금지). 같은 형식은 최솟값, 소수 셋째 자리 버림. `constants.STIFFNESS_REF_MOMENT_KNM_BY_TYPE`, 산정 `backend/tools/r_calibration.py` |
+| V_ref | 형식별 R 보정점 피스력 `V* = P*·a/L`, `P* = M_L/(a·b/L)` (M_L: 설계 R의 비내진 허용높이 사용하중 모멘트). C 중앙부 1,169.1 / C 기본 일면 390.6 / C 787.7 / CH 800.8 / T.silent 754.7 / R 620.2 / I 949.2 / HR 1,772.2 / RV 711.9 / MP 691.0 N (I는 2026-11-08 재산정, 종전 826.9), 미등록 형식은 계산 거부(종전 최솟값) | 2026-10-24 변경(종전: 시험 최대 가력 시 1,876 N). `constants.STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE`, 산정 `backend/tools/r_calibration.py`. 같은 형식 시편이 여럿이면 최솟값 |
 | p_ref | 1P(내측, 스터드 인접) 600 / 2P 300 / 3P(외측) 300 mm | 시험 피스 간격(엑셀 VAR. C32:C34). 엔진 `bolt.pitch`는 [외측, 중간, 내측] 순서 |
 | m | C 맞댐·중앙부 1.49, C 기본 1.38, CH 1.25, HR 1.33, MP 1.24, RV 1.25, T.silent 1.29, R 1.11, I 1.26 (미등록 형식은 계산 거부, 종전 1.49) | 실측 δ = c·Mᵐ 회귀(분석 시트 0724, ch4). `constants.STIFFNESS_CURVE_EXPONENT_BY_TYPE` |
 | 성질 | u ≤ u_ref → 1.0(현행 R 유지), u > u_ref → 강성 저감 | 시험 범위 초과 하중 수준만 보수 처리 |
@@ -144,14 +145,14 @@
 | 강도용 | `min(강성용, V_d,gyp(t))`, `V_d,gyp = 극한/2.0` — AISI S240-20 해설 Table C-B3.2-1(No.6): 12.7 mm 516 N, 15.9 mm 605 N. 12.7 미만 두께 비례(확인 필요), 15.9 초과는 605 N | Mn 보드항 (`LayerResult.strength_shear_kN`) |
 
 - 설계강도(÷2.0)와 휨 Ω 1.5를 합하면 피스에 실질 Ω ≈ 3.0(AISI S100-16 J4 수준).
-- CH·I-STUD 고정 후면 보드: 완전합성 가정 폐지 → 피스 체결(간격 300 mm, 피치당 2개). η는 전면 보드가 지배하여 불변, Mn만 감소.
+- CH·I-STUD 고정 후면 보드: 완전합성 가정 폐지 → 피스 체결(I-STUD) / 피스 체결 상당(등가, CH 끼움 보드 — 실제 피스 없음)(간격 300 mm, 피치당 2개). 2026-11-08 피치당 4개로 변경(사용자 결정) — Ieff,raw·η·Mn이 함께 바뀌므로 CH·I-STUD의 R·M*·V*를 `r_calibration.py`로 재산정함(CH R 0.79→0.66, M* 0.732→0.789 / I V* 826.9→949.2, M* 1.690→0.890).
 
 ### 피스 인장(면외 이탈) 검토 — 2026-10 신설 (D-7, B안)
 
 | 항목 | 식 | 비고 |
 |------|----|------|
 | 면별 횡압력 q | 비내진 `L`, 내진 `max(L, 0.7E, 0.75L+0.75(0.7E))`, `E = c·SDS·Ip·W보드(면)`, c = Fp 계수(§8, z/h = 1.0 → 0.48) | 후면·전면 각각 산정 후 큰 값. 모멘트 경로와 같은 계수(`_fp_coefficient`) |
-| 요구 인장력 T | `q × s × p_max` (N/개) | 피치당 피스 1개, 면 하중 전체를 가장 성긴 층 피스가 부담(보수측). bolt.count 미적용 — 확인 필요 |
+| 요구 인장력 T | `q × s × p_max` (N/개) | 피치당 피스 1개, 면 하중 전체를 가장 성긴 층 피스가 부담(보수측). bolt.count 미적용 — 확인 필요. **CH 끼움 후면 보드(`connection_mode = slot`)는 피스가 없어 검토 대상에서 제외**(2026-11-09). 피스 체결층이 한 층도 없으면 T = 0(해당 없음) |
 | 풀아웃 | `Pnot = 0.85·tc·d·Fu2`, tc = 스터드 t, Fu2 = 400 MPa, Ω = 3.0 | AISI S100-16 Eq. J4.4.1-1, J4 |
 | 풀스루 | `입력 공칭값 / Ω`, 기본 343 N | ASTM C1396 nail pull 참고값(못 기준) — 기본값 343 N 적용 확정(2026-10-21, 사용자 결정) |
 | 판정 | `max(T/(Pnot/Ω), T/(풀스루/Ω)) ≤ 1.0` | 벽 높이와 무관. N.G이면 최대 산정높이 0 |
@@ -184,11 +185,25 @@
 | Rh,0.7Ω0E | `0.7 * Ω0 * Rh,E` | 지진 조합 반력 |
 | Rh,0.75L+0.75(0.7Ω0E) | `0.75 * Rh,L + 0.75 * 0.7 * Ω0 * Rh,E` | 복합 조합 반력 (KDS 41 10 15 허용응력 조합, 2026-10 수정: 종전 0.75L+0.7E) |
 | Rh,req | `MAX(Rh,L, Rh,0.7Ω0E, Rh,0.75L+0.75(0.7Ω0E))` | m당 필요 반력 |
-| 앵커 성능 | 기본 `0.4 kN/개`, 입력 변경 가능 | 앵커 1개당 저항 성능 |
+| 앵커 성능 | `anchor_capacity_kN` — 제품 DB 조회값(아래 §9.1) 또는 사용자 정의 입력. 화면 기본 제품(hilti_x_u, hET 22) = `0.3 kN/개`, 엔진 기본 상수 `DEFAULT_ANCHOR_CAPACITY_KN` = 0.4 | 앵커 1개당 저항 성능. 엔진은 kN 값만 사용 |
 | 검토 앵커 간격 | 입력값, 기본 `450 mm` | 150~600mm 범위, 50mm 단위 |
 | 허용 앵커 간격 | `앵커성능 / Rh,req * 1000` 후 50mm 단위 내림 | 필요 반력 기준 허용 앵커 간격 mm |
 | 앵커 사용률 | `Rh,req / (앵커성능 / 검토앵커간격_m)` | 1.0 이하 O.K 기준 |
 | 앵커 기준 최대높이 | 50mm 단위 탐색 | 응력·처짐·앵커 사용률을 모두 만족하는 최대 높이 |
+
+### 9.1 런너 고정 앵커 제품 DB 조회 규칙 (v0.9.0, `backend/engine/anchor.py`)
+
+단일 출처 `data/seed/anchor_product.json`(13건: 제품 12 + 사용자 정의 1, 허용하중 표 74행). API 계층(`/api/check`)이 `resolve_request_anchor`로 조회해 `anchor_capacity_kN`을 채운 뒤 엔진에 넘긴다. 엔진 `calculate_wall_check`는 변경 없음.
+
+| 항목 | 규칙 | 비고 |
+|------|------|------|
+| 조회 키 | `anchor_product_id`, `anchor_embedment_mm`(hET), `anchor_concrete_fc_MPa`(f'c), `anchor_apply_seismic_cap` | `custom`/None이면 조회하지 않고 입력 `anchor_capacity_kN` 그대로 |
+| rec 제품(표의 f'c 전부 null) | 입력 hET 이하 중 **최대 `embedment_mm` 행**. 입력이 표 최소값보다 작으면 `AnchorLookupError` | 제조사 권장하중 Nrec/Vrec. 안전율 문서 미기재 — 확인 필요 |
+| asd 제품(표에 f'c 있음) | (`embedment_mm`, `concrete_fc_MPa`) **정확 일치** 행. 없으면 오류 | ICC-ES 허용하중(비균열·정적). 보간·외삽 금지 |
+| 내진 상한 | `design_case == seismic` 이고 cap 적용이면 `V = min(V표, seismic_shear_cap_N)`; `cap_applied` 반환 | `seismic_shear_cap_N` = 400 (ICC-ES ESR 공통 90 lbf, SDC D·E·F 런너 고정). 국내 적용 확인 필요 |
+| 환산 | `anchor_capacity_kN = round(V / 1000, 3)`, `allowable_tension_kN = round(T / 1000, 3)` | N → kN |
+| 응답 | intermediate `anchor_capacity_resolved_N`·`anchor_table_shear_N`·`anchor_seismic_cap_applied`(0/1)·`anchor_allowable_tension_N`·`anchor_seismic_cap_N`, 최상위 `anchor_product_summary`, `anchor_capacity_overridden`(클라이언트 값과 다를 때 true) | intermediate는 숫자만 |
+| 저장 | SQLite schema 9: `anchor_product`(메타, `seq` 시드 순서) + `anchor_load_row`(행), metadata `anchor_seismic_shear_cap_N`·`_note` | 구 DB는 seed 경로 있으면 이관, 없으면 롤백 오류 |
 
 ## 10. 하중조합·판정 (행45~48, C열)
 | 셀 | 수식 | 의미 |

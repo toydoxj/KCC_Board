@@ -272,6 +272,7 @@
 | board_property | kind, thickness, mass, Fy, Fu, E |
 | bolt_material | material, Fu(legacy 원천, 직접 적용 금지; 계산용 Fy 컬럼 보완 필요) |
 | stud_method | type, method |
+| anchor_product / anchor_load_row | 런너 고정 앵커 제품 메타(anchor_id, maker, product, family, basis, 최소 두께·연단·간격, approvals, source, is_default, default_embedment_mm) / 허용하중 행(embedment_mm, concrete_fc_MPa NULL 허용, allowable_shear_N, allowable_tension_N). schema 9 |
 | case | 입력 스냅샷 + 결과 요약 + 생성일시 |
 
 ### 9.3 출력 스키마 (WallCheckResult)
@@ -287,6 +288,7 @@
 | POST | /api/optimize | 단면 자동선정(제약·목적함수→순위표) |
 | POST | /api/report | 계산서 생성(케이스→PDF) |
 | GET/POST/PUT/DELETE | /api/db/studs · /boards · /bolts | 자재 DB CRUD |
+| GET | /api/db/anchor-products | 런너 고정 앵커 제품 목록 + 허용하중 표 + 내진 전단 상한(v0.9.0). `/api/check`는 `anchor_product_id`·`anchor_embedment_mm`·`anchor_concrete_fc_MPa`·`anchor_apply_seismic_cap`로 조회해 `anchor_capacity_kN`을 덮어씀 |
 | GET/POST | /api/cases | 케이스 저장·조회 |
 
 > 모든 엔드포인트는 Electron 내부 localhost(127.0.0.1) FastAPI 사이드카에서만 제공되며 외부에 노출하지 않는다.
@@ -333,6 +335,9 @@
 | OI-07 | 계산서 서식 | 사내 표준 계산서 양식·로고·서명란 요건 |
 | OI-08 | 박판 유효폭 | T.silent 등 박판 단면의 KDS 41 30 30 유효폭(effective width) 검토 반영 여부 — **확인 필요** |
 | OI-09 | 단면값 정밀화 | 신규 파일에서 T.silent 등 Ix/Sx 값 변동 → 회귀검증 골든값을 신규 파일로 재산정 |
+| OI-10 | 타정못 권장하중 안전율·국내 기준 대응 | 런너 고정 앵커 제품 DB(`anchor_product.json`, v0.9.0)의 Hilti 권장하중(rec) 콘크리트 안전율 미기재, X-C 승인번호, ESR-2138 최소 간격·연단; ICC-ES 400 N 내진 상한의 KDS 41 17 00 비구조요소 대응; 타정못의 KDS 14 20 54 적용 범위; 국내 제조사 제품 추가(시드 행 추가로 대응) — **확인 필요** |
+| OI-11 | CH 끼움 보드 연결 모델 | A안(피스 300 mm/피치당 4개 체결 상당 + 피스 인장 검토 제외, R = 0.66) 채택(v0.9.2, 2026-11-09). γ안(끼움 보드 비합성, R 0.82)은 시험곡선 추종이 가장 좋으나 허용높이 최저로 보류. 12.5T형(CH-STUD 개량형)은 시편 없음 — **확인 필요** |
+| OI-12 | I-STUD 하중 수준 보정 기준 모멘트 M* | 2026-11-08 고정 후면 보드 피스 4개 재산정으로 M* 1.690(시험 최대모멘트) → 0.890 kN·m 급감. 시험 M–δ 곡선 대조 전 임의 변경 금지 — 값 유지(결정 4, 2026-11-09). 민감도(`backend/tools/kl_sensitivity.py`, `docs/screw_count_changes.md` §6.1): 75-06 불변, 75-08 부분합성 7,300 → 7,350(+50 mm) — **확인 필요** |
 
 ---
 

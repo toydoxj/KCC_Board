@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from backend.engine.calculator import _build_section, _calculate_wall_check_once, _layer_pitch_count, _shear_connection_by_layer
+from backend.engine.constants import FIXED_REAR_BOARD_SCREW_COUNT, FIXED_REAR_BOARD_SCREW_PITCH_MM
 from backend.engine.models import BoardLayer, BoltInput, SeismicInput, StudInput, WallCheckRequest
 from backend.engine.repository import JsonSeedRepository, RepositoryLookupError
 
@@ -65,11 +66,13 @@ def test_asymmetric_single_ply_keeps_count_and_only_follows_finish_pitch(rear,fr
         assert new==pytest.approx(old/finish_order)
     _calculate_wall_check_once(req,repo)
 
-def test_fixed_ch_rear_keeps_latest_300mm_two_screws():
+def test_fixed_ch_rear_uses_fixed_300mm_four_screws():
+    # 2026-11-08 사용자 결정: CH·I-STUD 고정 후면 보드 피스 300 mm / 피치당 4개(종전 2개)
     repo=JsonSeedRepository(SEED)
     req=replace(request(),stud=StudInput("CH-STUD","75CHS-08","기본"),rear_boards=(BoardLayer("방화",25),))
     section=_build_section(req,repo)
-    assert _layer_pitch_count(section.layers[0],req.bolt)==(300.,2.)
+    assert _layer_pitch_count(section.layers[0],req.bolt)==(FIXED_REAR_BOARD_SCREW_PITCH_MM,FIXED_REAR_BOARD_SCREW_COUNT)
+    assert FIXED_REAR_BOARD_SCREW_COUNT==4.0
     assert section.layers[0].connection_order is None
 
 @pytest.mark.parametrize("kind,t",[("차음",9.5),("차음",15),("전방수",15)])
@@ -92,7 +95,7 @@ def test_i_stud_selected_rear_board_drives_properties_and_connection(kind,t):
     rear=section.layers[0]
     assert rear.board_property == repo.get_board(kind,t)
     assert rear.thickness_mm == t
-    assert _layer_pitch_count(rear,req.bolt)==(300.,2.)
+    assert _layer_pitch_count(rear,req.bolt)==(FIXED_REAR_BOARD_SCREW_PITCH_MM,FIXED_REAR_BOARD_SCREW_COUNT)
     assert section.stud_layer.y_centroid_mm==section.stud_section.cy
     result=_calculate_wall_check_once(req,repo)
     assert result.layers[0].axial_strength_kN==pytest.approx(repo.get_board(kind,t).Fy*req.spacing_mm*t/1000)

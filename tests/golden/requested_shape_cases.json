@@ -226,8 +226,8 @@
       "expected": {
         "max_height_mm": 6200.0,
         "Mu_at_max_height_kNm": 1.1778784236468987,
-        "I_eff_raw_at_2400_mm4": 525150.4859919625,
-        "I_eff_correction_factor": 0.79
+        "I_eff_raw_at_2400_mm4": 614681.0809217251,
+        "I_eff_correction_factor": 0.66
       },
       "expected_legacy": {
         "max_height_mm": 5850.0,
@@ -476,9 +476,9 @@
         ]
       },
       "expected": {
-        "max_height_mm": 6300.0,
-        "Mu_at_max_height_kNm": 1.2121972580903884,
-        "I_eff_raw_at_2400_mm4": 447574.627897901,
+        "max_height_mm": 6750.0,
+        "Mu_at_max_height_kNm": 1.3915529748486601,
+        "I_eff_raw_at_2400_mm4": 517516.053457527,
         "I_eff_correction_factor": 1.0
       },
       "expected_legacy": {

@@ -117,7 +117,7 @@ SPECIMEN_MAX_HEIGHT_MM = {
   "requested_08_rv_stud_74": (6750.0, 5150.0, 6750.0, 3950.0),
   "requested_09_t_silent_stud_74": (6950.0, 5700.0, 6950.0, 4350.0),
   "requested_10_r_stud_75": (6300.0, 6300.0, 6300.0, 5700.0),
-  "requested_11_i_stud_75": (6300.0, 5150.0, 6300.0, 4000.0),
+  "requested_11_i_stud_75": (6750.0, 5150.0, 6750.0, 4000.0),  # 2026-11-08 고정 후면 보드 피스 4개·I-STUD 재보정(종전 6300/6300)
 }
 CONDITIONS = (
   ("non_seismic", "composite"),

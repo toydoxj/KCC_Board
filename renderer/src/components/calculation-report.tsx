@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { LayerResult, WallCheckResult } from "@/lib/api";
+import type { AnchorLoadRow, LayerResult, WallCheckResult } from "@/lib/api";
 import { governingHeight, heightReview } from "@/lib/height-review";
 import { displayStudGroup } from "@/lib/visual-assets";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
@@ -38,6 +38,27 @@ export interface ReportStud {
   Sx: number | null;
 }
 
+// 계산서 표기용 런너 고정 앵커 제품 정보(data/seed/anchor_product.json). 사용자 정의 입력이면 null
+export interface ReportAnchorProduct {
+  anchorId: string;
+  // "{maker} {product}"
+  label: string;
+  basis: string;
+  basisLabel: string;
+  source: string;
+  approvals: string;
+  concreteCondition: string;
+  embedmentMm: number | null;
+  // null = 콘크리트 강도 무관(제조사 권장하중)
+  concreteFcMPa: number | null;
+  applySeismicCap: boolean;
+  minConcreteThicknessMm: number | null;
+  minEdgeMm: number | null;
+  minSpacingMm: number | null;
+  // 부록 "선택 앵커 제품의 허용하중 표"
+  table: AnchorLoadRow[];
+}
+
 export interface CalculationReportData {
   generatedAt: string;
   calculationMode: CalculationMode;
@@ -53,6 +74,8 @@ export interface CalculationReportData {
     // 빈 문자열이면 계산서에 "—" 표시
     anchorCapacitySource: string;
   };
+  // 사용자 정의 허용내력 입력이면 null
+  anchorProduct: ReportAnchorProduct | null;
   loads: {
     designCaseLabel: string;
     liveLoadKnM2: number;
@@ -202,9 +225,13 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="활하중" value={`${formatNumber(data.loads.liveLoadKnM2)} kN/m²`} />
             <KeyValue label="연직하중" value={`${formatNumber(data.loads.verticalLoadKnM)} kN/m`} />
             <KeyValue label="처짐한계" value={`L/${formatNumber(data.geometry.deflectionLimitDenom)}`} />
-            {isSeismic ? <KeyValue label="런너 고정못 허용내력" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="런너 고정못 허용내력(제조사 설계값)" value={`${formatNumber(data.geometry.anchorCapacityKn)} kN/개`} /> : null}
+            {isSeismic ? <KeyValue label="고정못 제품" value={anchorProductLabel(data.anchorProduct)} /> : null}
+            {isSeismic && data.anchorProduct ? <KeyValue label="조회 조건" value={anchorConditionLabel(data.anchorProduct)} /> : null}
+            {isSeismic && data.anchorProduct ? <KeyValue label="허용 전단 / 인장" value={anchorShearTensionLabel(data.result)} /> : null}
+            {isSeismic && data.anchorProduct ? <KeyValue label="기준·출처" value={anchorBasisSourceLabel(data.anchorProduct)} /> : null}
             {isSeismic ? <KeyValue label="고정못 허용내력 출처" value={anchorSourceLabel(data.geometry.anchorCapacitySource)} /> : null}
-            {isSeismic ? <p className="py-1 text-xs text-slate-600">고정못 허용내력은 입력값 기준이며, 제품 성능의 검증은 본 프로그램 범위 외임</p> : null}
+            {isSeismic ? <p className="py-1 text-xs text-slate-600">{anchorScopeNotice}</p> : null}
             {isSeismic ? <KeyValue label="런너 고정못 간격" value={`${formatNumber(data.geometry.anchorSpacingMm)} mm`} /> : null}
             {isHeightSearchMode ? (
               <KeyValue label="높이 산정 단위" value={`${formatNumber(data.result.max_height_increment_mm)} mm`} />
@@ -260,9 +287,14 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               <BoltRow label="3번(외측)" count={data.bolts.outerCount} pitch={data.bolts.outerPitch} applicable={activePlyCount >= 3} />
               <BoltRow label="2번(중간)" count={data.bolts.middleCount} pitch={data.bolts.middlePitch} applicable={activePlyCount >= 2} />
               <BoltRow label="1번(내측)" count={data.bolts.innerCount} pitch={data.bolts.innerPitch} applicable={activePlyCount >= 1} />
-              {data.result.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<BoltRow label="2면 고정 보드" count={data.result.intermediate.fixed_rear_board_screw_count} pitch={data.result.intermediate.fixed_rear_board_screw_pitch_mm} />}
+              {data.result.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<BoltRow label={data.result.intermediate.ch_slot_rear_board!==undefined?"2면 보드(끼움, 피스 체결 상당)":"2면 고정 보드"} count={data.result.intermediate.fixed_rear_board_screw_count} pitch={data.result.intermediate.fixed_rear_board_screw_pitch_mm} />}
             </tbody>
           </table>
+          {data.result.intermediate.ch_slot_rear_board!==undefined&&(
+            <p className="mt-2 text-xs text-slate-600" data-slot-note>
+              CH 계열 후면 보드는 CH 홈에 끼워지며 피스를 사용하지 않음. 본 프로그램은 끼움부의 전단 연결을 피스 300 mm/피치당 4개 체결 상당으로 등가화하고 시험 보정계수 R = 0.66으로 보정하며, 피스가 없으므로 피스 인장(풀아웃·풀스루) 검토에서는 제외함. 홈이 면외 이탈을 구속함.
+            </p>
+          )}
         </ReportBlock>
       </section>
 
@@ -393,7 +425,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 value={`${formatNumber(data.result.intermediate.reaction_required_kN_per_m ?? 0)} kN/m`}
               />
               <KeyValue
-                label="런너 고정못 허용내력"
+                label="런너 고정못 허용내력 ¹⁾"
                 value={`${formatNumber(data.result.intermediate.anchor_capacity_kN ?? 0)} kN/개`}
               />
               <KeyValue
@@ -413,6 +445,10 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 value={formatNumber(data.result.intermediate.anchor_utilization ?? 0)}
               />
             </div>
+            <p className="mt-3 text-xs text-slate-600">
+              1) {data.anchorProduct ? `DB 조회값(${anchorProductLabel(data.anchorProduct)}, ${anchorConditionLabel(data.anchorProduct)}${anchorCapFootnote(data.result)}). ` : "입력값. "}
+              {anchorScopeNotice}
+            </p>
           </ReportBlock>
         </section>
       ) : null}
@@ -471,6 +507,11 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <div>풀아웃 Pnot = 0.85 × tc × d × Fu2 (Eq. J4.4.1-1), Ω = 3.0</div>
             <div>풀스루(석고보드) = 입력 공칭값 / Ω (기본 343 N — ASTM C1396 nail pull 참고값)</div>
           </div>
+          {data.result.intermediate.screw_tension_spacing_mm === 0 ? (
+            <p className="text-sm text-slate-700" data-screw-tension="not-applicable">
+              해당 없음(끼움 보드 — 피스 없음). 피스 체결층이 없는 구성(CH 끼움 보드만 있음)으로, 끼움 보드는 홈이 면외 이탈을 구속하므로 피스 인장 검토 대상이 아님.
+            </p>
+          ) : (
           <div className="grid gap-1 text-sm md:grid-cols-2">
             <KeyValue label="횡압력 q" value={`${formatNumber(data.result.intermediate.screw_tension_pressure_kN_m2 ?? Number.NaN)} kN/m²`} />
             <KeyValue label="피스 부담 피치" value={`${formatNumber(data.result.intermediate.screw_tension_spacing_mm ?? Number.NaN)} mm`} />
@@ -482,6 +523,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <KeyValue label="풀스루 사용률" value={formatNumber(data.result.intermediate.screw_pull_through_utilization ?? Number.NaN)} />
             <KeyValue label="피스 인장 사용률" value={formatNumber(data.result.intermediate.screw_tension_utilization ?? Number.NaN)} />
           </div>
+          )}
         </ReportBlock>
       </section>
 
@@ -509,8 +551,117 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
           </table>
         </ReportBlock>
       </section>
+
+      {isSeismic && data.anchorProduct ? (
+        <section className="mt-5">
+          <ReportBlock title={`참고 부록 — 선택 앵커 제품의 허용하중 표 (${anchorProductLabel(data.anchorProduct)})`}>
+            <p className="mb-2 text-xs text-slate-600">
+              {data.anchorProduct.basisLabel} — {data.anchorProduct.source}
+              {data.anchorProduct.approvals ? `; ${data.anchorProduct.approvals}` : ""}. 조건: {data.anchorProduct.concreteCondition}.
+              최소 콘크리트 두께 / 연단거리 / 간격: {mmOrDash(data.anchorProduct.minConcreteThicknessMm)} / {mmOrDash(data.anchorProduct.minEdgeMm)} / {mmOrDash(data.anchorProduct.minSpacingMm)}.
+              {data.anchorProduct.basis === "rec" ? " 제조사 권장하중 — 안전율 미기재(확인 필요)." : ""}
+              {" "}DB 수치는 제조사 Data Sheet·ICC-ES 평가서 전재값이며 국내 인증값이 아님.
+            </p>
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  <TableHead>hET (mm)</TableHead>
+                  <TableHead>f&apos;c (MPa)</TableHead>
+                  <TableHead>허용 전단 (N/개)</TableHead>
+                  <TableHead>허용 인장 (N/개)</TableHead>
+                  <TableHead>비고</TableHead>
+                </tr>
+              </thead>
+              <tbody>
+                {[...data.anchorProduct.table]
+                  .sort((left, right) => left.embedment_mm - right.embedment_mm || (left.concrete_fc_MPa ?? 0) - (right.concrete_fc_MPa ?? 0))
+                  .map((row) => {
+                    const selected = isSelectedAnchorRow(row, data.anchorProduct!);
+                    return (
+                      <tr key={`${row.embedment_mm}-${row.concrete_fc_MPa ?? "na"}`} data-selected={selected} className={selected ? "bg-amber-50 font-semibold" : ""}>
+                        <TableCell>{formatNumber(row.embedment_mm)}</TableCell>
+                        <TableCell>{row.concrete_fc_MPa === null ? "강도 무관" : formatNumber(row.concrete_fc_MPa)}</TableCell>
+                        <TableCell>{formatNumber(row.allowable_shear_N)}</TableCell>
+                        <TableCell>{formatNumber(row.allowable_tension_N)}</TableCell>
+                        <TableCell>{[selected ? "◀ 선택 행" : "", row.label ?? ""].filter(Boolean).join(" ")}</TableCell>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </ReportBlock>
+        </section>
+      ) : null}
     </article>
   );
+}
+
+// 고정못 허용내력 검증 범위 문구(2차 심사의견 D-1 유지·보강)
+export const anchorScopeNotice =
+  "고정못 허용내력은 입력(또는 DB 조회)값 기준이며, 제품 성능의 검증은 본 프로그램 범위 외임. 매입깊이·연단거리·콘크리트 두께 등 시공 조건은 제조사 기술자료를 따를 것";
+
+export function anchorProductLabel(product: ReportAnchorProduct | null) {
+  return product ? product.label : "사용자 정의";
+}
+
+export function anchorConditionLabel(product: ReportAnchorProduct) {
+  const embedment = product.embedmentMm === null ? "hET —" : `hET ${formatNumber(product.embedmentMm)} mm`;
+  const strength = product.concreteFcMPa === null ? "강도 무관" : `f'c ${formatNumber(product.concreteFcMPa)} MPa`;
+  return `${embedment}, ${strength}`;
+}
+
+// 내진 상한 비적용 제품군(screw) 안내(결정 2, 2026-11-09). 내진 CASE에서만 표기
+const anchorCapNotEligibleReportNote = "내진 상한 비적용 — 스크류 앵커 내진 적격성(ACI 318 Ch.17 / KDS 14 20 54) 별도 확인";
+
+// 내진 상한 적용 여부 상태: "applied" | "not-eligible"(내진·비대상 family) | null
+function anchorCapStatus(result: WallCheckResult): "applied" | "not-eligible" | null {
+  const i = result.intermediate;
+  if (i.anchor_seismic_cap_applied === 1) return "applied";
+  if (result.design_case === "seismic" && i.anchor_seismic_cap_eligible === 0) return "not-eligible";
+  return null;
+}
+
+// 반력 산정 각주용: ", 내진 상한 적용" / ", 내진 상한 비적용(…)" / ""
+function anchorCapFootnote(result: WallCheckResult) {
+  const status = anchorCapStatus(result);
+  if (status === "applied") return ", 내진 상한 적용";
+  if (status === "not-eligible") return `, ${anchorCapNotEligibleReportNote}`;
+  return "";
+}
+
+// 응답 intermediate(anchor_capacity_resolved_N·anchor_allowable_tension_N·anchor_seismic_cap_applied·anchor_seismic_cap_eligible·anchor_table_shear_N)로 표기
+export function anchorShearTensionLabel(result: WallCheckResult) {
+  const i = result.intermediate;
+  const shear = i.anchor_capacity_resolved_N;
+  const tension = i.anchor_allowable_tension_N;
+  if (shear === undefined || tension === undefined) return "—";
+  const status = anchorCapStatus(result);
+  const capNote =
+    status === "applied"
+      ? ` (ICC-ES ${formatNumber(i.anchor_seismic_cap_N ?? shear)} N 상한 적용, 표 값 ${formatNumber(i.anchor_table_shear_N ?? shear)} N)`
+      : status === "not-eligible"
+        ? ` (${anchorCapNotEligibleReportNote})`
+        : "";
+  return `${formatNumber(shear)} N / ${formatNumber(tension)} N${capNote}`;
+}
+
+export function anchorBasisSourceLabel(product: ReportAnchorProduct) {
+  return `${product.basisLabel} — ${product.source}${product.approvals ? `; ${product.approvals}` : ""}`;
+}
+
+function isSelectedAnchorRow(row: AnchorLoadRow, product: ReportAnchorProduct) {
+  if (product.embedmentMm === null) return false;
+  if (row.concrete_fc_MPa === null) {
+    // 강도 무관 제품: 입력 hET 이하 최대 행이 선택됨
+    const candidates = product.table.filter((item) => item.embedment_mm <= (product.embedmentMm as number));
+    const best = candidates.reduce<AnchorLoadRow | null>((acc, item) => (acc === null || item.embedment_mm > acc.embedment_mm ? item : acc), null);
+    return best !== null && best.embedment_mm === row.embedment_mm;
+  }
+  return row.embedment_mm === product.embedmentMm && row.concrete_fc_MPa === product.concreteFcMPa;
+}
+
+function mmOrDash(value: number | null) {
+  return value === null ? "—" : `${formatNumber(value)} mm`;
 }
 
 function ReportBlock({ title, children }: { title: string; children: ReactNode }) {

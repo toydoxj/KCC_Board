@@ -88,9 +88,19 @@ DEFAULT_SCREW_PULL_THROUGH_NOMINAL_N = 343.0
 GYPSUM_SCREW_ULTIMATE_SHEAR_N = ((12.7, 516.0), (15.9, 605.0))
 # 동 표의 설계강도 = 극한 / 2.0. 휨 Ω 1.5와 합하여 피스에 실질 Ω ≈ 3.0(AISI S100-16 J4 수준) 확보
 GYPSUM_SCREW_STRENGTH_DIVISOR = 2.0
-# CH·I-STUD 고정 후면 보드 피스 체결(가정): 간격 300 mm, 피치당 2개
+# CH·I-STUD 고정 후면 보드 피스 체결(가정): 간격 300 mm, 피치당 4개 (2026-11-08 사용자 결정, 종전 2개)
+# CH 계열 후면 보드는 실제로는 피스 없이 홈에 끼워지나, 전단 연결은 이 피스 체결 상당으로 보고 시험 보정 R로 맞춘다
+# (2026-11-09 사용자 결정 — 대안 검토: 끼움 연결 k 보정(α)·비합성(γ)은 docs/screw_count_changes.md §7 참조).
 FIXED_REAR_BOARD_SCREW_PITCH_MM = 300.0
-FIXED_REAR_BOARD_SCREW_COUNT = 2.0
+FIXED_REAR_BOARD_SCREW_COUNT = 4.0
+# 보드–스터드 연결 방식 식별자(calculator._Layer.connection_mode). slot = CH 홈 끼움(피스 없음):
+# 홈이 면외 이탈을 구속하므로 피스 인장(풀아웃·풀스루) 검토 대상에서 제외한다(2026-11-09, A안). 전단 연결 산정은 screw와 같다.
+CONNECTION_MODE_SCREW = "screw"
+CONNECTION_MODE_SLOT = "slot"
+# 일면마감 1P 단독 구성(한 면에만 보드 1장, 반대 면 없음)의 피스 체결: 간격 300 mm 표준, 피치당 2개
+# (2026-11-08 사용자 결정, 종전 다겹 내측 1P 규칙 600 mm/1개 적용). 양면 1P·다겹 구성은 현행 유지.
+ONE_SIDED_SINGLE_PLY_SCREW_PITCH_MM = 300.0
+ONE_SIDED_SINGLE_PLY_SCREW_COUNT = 2.0
 
 # 시험 보정계수 R(E-11)과 E-8 기준 피스력 V*의 형식 분류명 (calculator._stiffness_calibration_type)
 STIFFNESS_TYPE_C_CENTRAL_JOINT = "C-STUD 중앙부이음"
@@ -110,7 +120,7 @@ EFFECTIVE_INERTIA_CORRECTION_BY_TYPE: dict[str, float] = {
   STIFFNESS_TYPE_C_CENTRAL_JOINT: 0.44,
   STIFFNESS_TYPE_C_FRONT_ONLY: 1.0,
   STIFFNESS_TYPE_C: 1.0,
-  STIFFNESS_TYPE_CH: 0.79,
+  STIFFNESS_TYPE_CH: 0.66,  # 2026-11-08 고정 후면 보드 피스 2→4개 반영 재산정(종전 0.79)
   STIFFNESS_TYPE_T_SILENT: 0.70,
   STIFFNESS_TYPE_R: 0.31,
   STIFFNESS_TYPE_I: 1.0,
@@ -146,7 +156,7 @@ STIFFNESS_REF_SUPPORT_SHEAR_N_BY_TYPE: dict[str, float] = {
   STIFFNESS_TYPE_CH: 800.8,
   STIFFNESS_TYPE_T_SILENT: 754.7,
   STIFFNESS_TYPE_R: 620.2,
-  STIFFNESS_TYPE_I: 826.9,
+  STIFFNESS_TYPE_I: 949.2,  # 2026-11-08 고정 후면 보드 피스 2→4개 반영 재산정(종전 826.9)
   STIFFNESS_TYPE_HR: 1772.2,
   STIFFNESS_TYPE_RV: 711.9,
   STIFFNESS_TYPE_MP: 691.0,
@@ -159,10 +169,10 @@ STIFFNESS_REF_MOMENT_KNM_BY_TYPE: dict[str, float] = {
   STIFFNESS_TYPE_C_CENTRAL_JOINT: 1.126,
   STIFFNESS_TYPE_C_FRONT_ONLY: 1.692,
   STIFFNESS_TYPE_C: 1.690,
-  STIFFNESS_TYPE_CH: 0.732,
+  STIFFNESS_TYPE_CH: 0.789,  # 2026-11-08 고정 후면 보드 피스 2→4개 반영 재산정(종전 0.732)
   STIFFNESS_TYPE_T_SILENT: 0.732,
   STIFFNESS_TYPE_R: 0.731,
-  STIFFNESS_TYPE_I: 1.690,
+  STIFFNESS_TYPE_I: 0.890,  # 2026-11-08 고정 후면 보드 피스 2→4개 반영 재산정(종전 1.690)
   STIFFNESS_TYPE_HR: 1.647,
   STIFFNESS_TYPE_RV: 0.663,
   STIFFNESS_TYPE_MP: 0.672,
