@@ -62,8 +62,8 @@ v0.9.0~0.9.2에서는 화면 기본값이 "0.4 kN/개 직접 입력"에서 "기�
 | `python -m pytest` | 358 passed, 478 subtests passed (v0.9.3) |
 | 골든 회귀(상대오차 ≤ 0.1%) | 통과, 골든 파일 수정 없음 |
 | 신규 테스트 | test_anchor_product 8, test_anchor_resolution 20, test_api_anchor 9, test_anchor_height_impact 6 (v0.9.3 기준) |
-| `tsc --noEmit` / `npm run build` | 성공 |
-| 브라우저 스모크 | 미실시(개발 PC의 브라우저 확장이 맥북 Chrome에 연결되어 Windows 개발 서버를 볼 수 없었음). 맥북 Electron 배포 후 확인 예정 |
+| `tsc --noEmit` / `npm run build` | 성공(v0.9.3) |
+| 브라우저 스모크(v0.9.3, 2026-11-09) | 실시 — Windows 개발 서버(정적 빌드 127.0.0.1:3000 + uvicorn 8010, SQLite schema 10) Chrome headless(puppeteer-core). ① 내진 + 기본 제품 → hET 27 선택, 허용내력 0.4 kN/개 자동 입력(읽기 전용), 참조 카드에 기본값 조건 안내 표시 ② Simpson Titen 1/4 선택 → hET 25·f'c 13.8 → 1.001 kN, 상한 체크박스 비활성 + "(비적용 — 타정못·가스핀 전용)" + 스크류 앵커 경고 helper ③ CH-STUD 75CHS-08(전면 0장·표준 3P) → 계산서 "2면 보드(끼움, 피스 체결 상당)" 행·통일 각주, 전면 0장에서 피스 인장 "해당 없음(끼움 보드 — 피스 없음)", 표준 구성에서는 해당 없음 미표시. 캡처 `.orca/drops/smoke_v093/` |
 
 ## 5. 확인 필요 (임의 확정 금지, 시드 `_notes`·PRD OI-10)
 
@@ -86,7 +86,7 @@ v0.9.0~0.9.2에서는 화면 기본값이 "0.4 kN/개 직접 입력"에서 "기�
 | No | 결정 | 반영 | 변경 파일 |
 |---|---|---|---|
 | 1 | 기본 제품 Hilti X-U P8 유지, `default_embedment_mm` 22 → **27** → 자동 입력 0.4 kN/개 | 시드 label·_status, 참조 카드 기본값 안내, 정적 폴백 0.4/27, 판정 영향 테스트 재구성(0.4 경로 = v0.8.0 고정, hET 22 → 0.3 경로 보존) | `data/seed/anchor_product.json`, `renderer/src/components/input-workspace.tsx`, `renderer/src/app/page.tsx`, `tests/test_anchor_height_impact.py`, `tests/test_api_anchor.py` |
-| 2 | 내진 상한 400 N 적용 대상을 **dx·gx**로 한정, `screw` 비적용 + 별도 안내 | 시드 `seismic_shear_cap_families`, `AnchorSeismicCap.families`, SQLite schema 9 → 10(metadata, 이관·롤백), `resolve_anchor_capacity(cap_families)`·`cap_eligible`, intermediate `anchor_seismic_cap_eligible`, summary 문구, UI 체크박스 비활성·스크류 경고, 계산서·요약 분기 | `backend/engine/{models,repository,anchor}.py`, `backend/api/schemas.py`, `renderer/src/lib/{api,anchor}.ts`, `renderer/src/app/page.tsx`, `renderer/src/components/{input-workspace,calculation-report}.tsx`, 테스트 3파일 |
+| 2 | 내진 상한 400 N 적용 대상을 **dx·gx**로 한정, `screw` 비적용 + 별도 안내 | 시드 `seismic_shear_cap_families`, `AnchorSeismicCap.families`, SQLite schema 9 → 10(metadata `anchor_seismic_shear_cap_families`; schema 9 DB는 seed로 앵커 카탈로그를 다시 채워 기본 매입 27·표 label·note도 갱신, 실패 시 롤백), `resolve_anchor_capacity(cap_families)`·`cap_eligible`, intermediate `anchor_seismic_cap_eligible`, summary 문구, UI 체크박스 비활성·스크류 경고, 계산서·요약 분기 | `backend/engine/{models,repository,anchor}.py`, `backend/api/schemas.py`, `renderer/src/lib/{api,anchor}.ts`, `renderer/src/app/page.tsx`, `renderer/src/components/{input-workspace,calculation-report}.tsx`, 테스트 3파일 |
 | 3 | CH 끼움 보드 모델 A안 유지, 용어·문서 정합화 | "피스 300 mm/피치당 4개 체결 상당(등가)" 서술 통일, PRD OI-11 | 렌더러 3파일, `docs/{var_formula_spec,user_manual,screw_count_changes,PRD}.md` |
 | 4 | I-STUD M* 0.890 유지, 민감도 표·확인 필요 | `backend/tools/kl_sensitivity.py`(임시 주입, 상수 불변), screw_count_changes §6.1, PRD OI-12 | 도구 1, 문서 2 |
 | 5 | 버전 0.9.2 → 0.9.3 | package.json·lock, pyproject.toml, About(동적), 매뉴얼 부록 B(캡처 갱신 목록) | — |

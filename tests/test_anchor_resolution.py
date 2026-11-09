@@ -219,15 +219,19 @@ class AnchorRepositoryTest(unittest.TestCase):
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
 
   def test_schema_9_db_is_migrated_with_seed_dir(self) -> None:
-    # schema 9(v0.9.0~0.9.2) DB: 앵커 표는 있으나 상한 적용 대상(families)이 없다
+    # schema 9(v0.9.0~0.9.2) DB: 앵커 표는 있으나 상한 적용 대상(families)이 없고 기본 매입깊이가 22였다
     with closing(sqlite3.connect(self.db_path)) as connection:
       connection.execute("DELETE FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'")
+      connection.execute("UPDATE anchor_product SET default_embedment_mm = 22 WHERE anchor_id = 'hilti_x_u'")
       connection.execute("UPDATE metadata SET value = '9' WHERE key = 'schema_version'")
       connection.commit()
     migrated = SqliteRepository(self.db_path, ROOT / "data/seed")
     cap = migrated.get_anchor_seismic_cap()
     self.assertEqual(cap.families, ("dx", "gx"))
     self.assertEqual(cap, self.json_repo.get_anchor_seismic_cap())
+    # 카탈로그를 seed로 다시 채우므로 기본 매입깊이 27(결정 1)·표 label도 함께 갱신된다
+    self.assertEqual(migrated.get_anchor_product("hilti_x_u").default_embedment_mm, 27.0)
+    self.assertEqual(migrated.list_anchor_products(), self.json_repo.list_anchor_products())
     with closing(sqlite3.connect(self.db_path)) as connection:
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
 
@@ -241,6 +245,8 @@ class AnchorRepositoryTest(unittest.TestCase):
     with closing(sqlite3.connect(self.db_path)) as connection:
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "9")
       self.assertIsNone(connection.execute("SELECT value FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'").fetchone())
+      # 실패한 이관은 카탈로그 삭제까지 롤백되어야 한다
+      self.assertEqual(connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0], 13)
 
   def test_schema_8_db_without_seed_dir_rolls_back(self) -> None:
     with closing(sqlite3.connect(self.db_path)) as connection:

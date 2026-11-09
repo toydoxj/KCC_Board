@@ -551,7 +551,7 @@ class SqliteRepository:
       _migrate_stud_steel(connection, self.seed_dir)
     _migrate_specimen_configuration(connection, self.seed_dir)
     _migrate_anchor_product(connection, self.seed_dir)
-    _migrate_anchor_cap_families(connection, self.seed_dir)
+    _migrate_anchor_schema_10(connection, self.seed_dir)
     connection.execute(
       "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
       ("schema_version", SCHEMA_VERSION),
@@ -942,10 +942,13 @@ def _migrate_anchor_product(connection: sqlite3.Connection, seed_dir: Path | Non
   _insert_anchor_products(connection, products.values(), cap)
 
 
-def _migrate_anchor_cap_families(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
-  """schema 9 DB에 내진 상한 적용 대상 제품군(metadata anchor_seismic_shear_cap_families)과 갱신된 상한 note를 채운다(schema 10).
+def _migrate_anchor_schema_10(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
+  """schema 9 DB를 schema 10으로 이관한다 — 런너 고정 앵커 카탈로그를 seed로 다시 채운다(v0.9.3 결정 1·2).
 
-  seed 경로가 없으면 채울 수 없으므로 명시적 오류로 중단한다(트랜잭션 롤백, schema 버전 유지).
+  판별: metadata anchor_seismic_shear_cap_families 키가 없으면 schema 9 이하이다.
+  schema 10에서 바뀐 것은 ① 상한 적용 대상 제품군(metadata, 신규 키) ② 기본 제품 hilti_x_u의 default_embedment_mm 22 → 27과
+  허용하중 표 label ③ 상한 note이다. anchor_product.json이 단일 출처이고 anchor_id가 안정 키이므로 두 표를 비우고 seed로
+  다시 넣는다(한 트랜잭션 안이라 실패 시 전부 롤백). seed 경로가 없으면 명시적 오류로 중단한다(schema 버전 유지).
   """
   exists = connection.execute(
     "SELECT COUNT(*) FROM metadata WHERE key = ?", (ANCHOR_CAP_FAMILIES_METADATA_KEY,)
@@ -954,17 +957,13 @@ def _migrate_anchor_cap_families(connection: sqlite3.Connection, seed_dir: Path 
     return
   if seed_dir is None:
     raise RepositoryLookupError(
-      "구 자재 DB에 앵커 내진 전단 상한 적용 대상(anchor_seismic_shear_cap_families)이 없습니다. "
+      "구 자재 DB(schema 9)에 앵커 내진 전단 상한 적용 대상(anchor_seismic_shear_cap_families)이 없습니다. "
       "seed 경로를 지정하거나 init_db를 다시 실행하십시오."
     )
-  _, cap = _anchor_catalog_from_seed(seed_dir)
-  connection.executemany(
-    "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
-    [
-      (ANCHOR_CAP_NOTE_METADATA_KEY, cap.note),
-      (ANCHOR_CAP_FAMILIES_METADATA_KEY, json.dumps(list(cap.families))),
-    ],
-  )
+  products, cap = _anchor_catalog_from_seed(seed_dir)
+  connection.execute("DELETE FROM anchor_load_row")
+  connection.execute("DELETE FROM anchor_product")
+  _insert_anchor_products(connection, products.values(), cap)
 
 
 def _sql_statements(script: str) -> list[str]:
