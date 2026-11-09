@@ -33,6 +33,7 @@ import {
   anchorSourceText,
   concreteStrengthOptions,
   embedmentOptions,
+  isCapEligibleFamily,
   isCustomAnchor,
   resolveAnchorClient,
 } from "@/lib/anchor";
@@ -349,12 +350,15 @@ export default function Home() {
   const anchorProducts = useMemo(() => catalog?.anchorProducts.items ?? [], [catalog?.anchorProducts]);
   const anchorCapN = catalog?.anchorProducts.seismic_shear_cap_N ?? null;
   const anchorCapNote = catalog?.anchorProducts.seismic_shear_cap_note ?? "";
+  const anchorCapFamilies = useMemo(() => catalog?.anchorProducts.seismic_shear_cap_families ?? [], [catalog?.anchorProducts]);
   const selectedAnchorId = formValues.anchorProductId ?? defaultValues.anchorProductId;
   const selectedAnchorProduct = useMemo(
     () => anchorProducts.find((product) => product.anchor_id === selectedAnchorId),
     [anchorProducts, selectedAnchorId],
   );
   const anchorIsCustom = isCustomAnchor(selectedAnchorId, selectedAnchorProduct);
+  // 상한 체크박스 활성 조건: 적용 대상 family(dx·gx)일 때만. screw는 비활성 + 별도 확인 안내(결정 2)
+  const anchorCapEligible = !anchorIsCustom && isCapEligibleFamily(selectedAnchorProduct, anchorCapFamilies);
   const selectedAnchorEmbedment = numberOrNull(formValues.anchorEmbedmentMm);
   const selectedAnchorFc = numberOrNull(formValues.anchorConcreteFcMPa);
   const selectedAnchorApplyCap = formValues.anchorApplySeismicCap ?? defaultValues.anchorApplySeismicCap;
@@ -372,9 +376,9 @@ export default function Home() {
   const anchorResolution = useMemo(
     () =>
       selectedAnchorProduct && !anchorIsCustom
-        ? resolveAnchorClient(selectedAnchorProduct, selectedAnchorEmbedment, selectedAnchorFc, selectedDesignCase, selectedAnchorApplyCap, anchorCapN)
+        ? resolveAnchorClient(selectedAnchorProduct, selectedAnchorEmbedment, selectedAnchorFc, selectedDesignCase, selectedAnchorApplyCap, anchorCapN, anchorCapFamilies)
         : null,
-    [anchorCapN, anchorIsCustom, selectedAnchorApplyCap, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorProduct, selectedDesignCase],
+    [anchorCapFamilies, anchorCapN, anchorIsCustom, selectedAnchorApplyCap, selectedAnchorEmbedment, selectedAnchorFc, selectedAnchorProduct, selectedDesignCase],
   );
   useEffect(() => {
     // 조회 조건이 바뀌면 이전 서버 덮어쓰기 값은 무효
@@ -773,6 +777,7 @@ export default function Home() {
               products: anchorProducts,
               capN: anchorCapN,
               capNote: anchorCapNote,
+              capEligible: anchorCapEligible,
               selected: selectedAnchorProduct,
               isCustom: anchorIsCustom,
               embedmentOptions: anchorEmbedmentOptions,

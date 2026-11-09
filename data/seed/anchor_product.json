@@ -4,7 +4,8 @@
   "_note": "basis: 'rec' = 제조사 권장하중(Nrec/Vrec, 안전율 문서 미기재 — 확인 필요), 'asd' = ICC-ES 허용하중(비균열·정적). 프로그램은 allowable_shear_N을 kN으로 환산하여 anchor_capacity_kN에 자동 입력하고, 내진(design_case=seismic)이며 seismic_shear_cap_N이 있으면 min(값, cap)을 적용(옵션, 기본 적용). 제품 성능값의 검증은 프로그램 범위 외(2차 심사의견 D-1).",
   "_status": "초안 — 사용자 검토 전. ESR-2138 최소 간격·연단, X-C 승인번호, X-GN 하중값, 국내 제조사 자료는 확인 필요. 기본 매입깊이 27 mm — 사용자 확정 2026-11-09",
   "seismic_shear_cap_N": 400,
-  "seismic_shear_cap_note": "ICC-ES ESR-2269/1663/1752/2024/2138 공통: SDC D·E·F에서 콘크리트에 런너 고정 시 횡압 허용 전단 ≤ 90 lbf(400 N)/개. 국내 적용은 참고 수준(확인 필요)",
+  "seismic_shear_cap_families": ["dx", "gx"],
+  "seismic_shear_cap_note": "ICC-ES ESR-2269/1663/1752/2024/2138 공통: SDC D·E·F에서 콘크리트에 런너 고정 시 횡압 허용 전단 ≤ 90 lbf(400 N)/개. 타정못·가스핀(ICC-ES PAF 평가서 §4.1 Item 2) 전용. 콘크리트 스크류 앵커의 내진 적격성은 ACI 318 Ch.17 / KDS 14 20 54 체계로 별도 검토 필요(확인 필요). 국내 적용은 참고 수준(확인 필요)",
   "items": [
     {
       "anchor_id": "hilti_x_u",

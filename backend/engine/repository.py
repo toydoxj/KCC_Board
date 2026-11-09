@@ -67,7 +67,7 @@ class BoardCatalogItem:
   yield_ratio_source: str = "기본값"
 
 
-SCHEMA_VERSION = "9"
+SCHEMA_VERSION = "10"
 STUD_STEEL_SEED_FILE = "stud_steel.json"
 # 시험 시편 구성은 stud_method.json의 tested_configurations에 등재한다(2차 심사의견 A-1·F-2)
 STUD_METHOD_SEED_FILE = "stud_method.json"
@@ -75,6 +75,8 @@ STUD_METHOD_SEED_FILE = "stud_method.json"
 ANCHOR_PRODUCT_SEED_FILE = "anchor_product.json"
 ANCHOR_CAP_METADATA_KEY = "anchor_seismic_shear_cap_N"
 ANCHOR_CAP_NOTE_METADATA_KEY = "anchor_seismic_shear_cap_note"
+# schema 10: 상한 적용 대상 제품군(JSON 배열 문자열, 예 '["dx", "gx"]'). 2026-11-09 결정 2
+ANCHOR_CAP_FAMILIES_METADATA_KEY = "anchor_seismic_shear_cap_families"
 
 
 @dataclass(frozen=True)
@@ -462,13 +464,21 @@ class SqliteRepository:
     with closing(sqlite3.connect(self.db_path)) as connection:
       rows = dict(
         connection.execute(
-          "SELECT key, value FROM metadata WHERE key IN (?, ?)",
-          (ANCHOR_CAP_METADATA_KEY, ANCHOR_CAP_NOTE_METADATA_KEY),
+          "SELECT key, value FROM metadata WHERE key IN (?, ?, ?)",
+          (ANCHOR_CAP_METADATA_KEY, ANCHOR_CAP_NOTE_METADATA_KEY, ANCHOR_CAP_FAMILIES_METADATA_KEY),
         ).fetchall()
       )
     if ANCHOR_CAP_METADATA_KEY not in rows:
       raise RepositoryLookupError("자재 DB에 앵커 내진 전단 상한(anchor_seismic_shear_cap_N)이 없습니다. init_db를 다시 실행하십시오.")
-    return AnchorSeismicCap(cap_N=float(rows[ANCHOR_CAP_METADATA_KEY]), note=str(rows.get(ANCHOR_CAP_NOTE_METADATA_KEY, "")))
+    if ANCHOR_CAP_FAMILIES_METADATA_KEY not in rows:
+      raise RepositoryLookupError(
+        "자재 DB에 앵커 내진 전단 상한 적용 대상(anchor_seismic_shear_cap_families)이 없습니다. init_db를 다시 실행하십시오."
+      )
+    return AnchorSeismicCap(
+      cap_N=float(rows[ANCHOR_CAP_METADATA_KEY]),
+      note=str(rows.get(ANCHOR_CAP_NOTE_METADATA_KEY, "")),
+      families=_anchor_cap_families_from_json(str(rows[ANCHOR_CAP_FAMILIES_METADATA_KEY])),
+    )
 
   def _anchor_products(self) -> dict[str, AnchorProduct]:
     if self._anchor_cache is not None:
@@ -488,7 +498,7 @@ class SqliteRepository:
       return connection.execute(query, params).fetchone()
 
   def _ensure_board_property_rules(self) -> None:
-    """구 DB를 현재 규칙(schema 9)으로 이관한다. 한 트랜잭션으로 처리하며 실패하면 되돌린다."""
+    """구 DB를 현재 규칙(schema 10)으로 이관한다. 한 트랜잭션으로 처리하며 실패하면 되돌린다."""
     with closing(sqlite3.connect(self.db_path)) as connection:
       columns = _table_columns(connection, "board_property")
       if not columns:
@@ -541,6 +551,7 @@ class SqliteRepository:
       _migrate_stud_steel(connection, self.seed_dir)
     _migrate_specimen_configuration(connection, self.seed_dir)
     _migrate_anchor_product(connection, self.seed_dir)
+    _migrate_anchor_cap_families(connection, self.seed_dir)
     connection.execute(
       "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
       ("schema_version", SCHEMA_VERSION),
@@ -720,7 +731,7 @@ def _insert_seed_data(connection: sqlite3.Connection, seed_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 런너 고정 앵커 제품 DB(schema 9)
+# 런너 고정 앵커 제품 DB(schema 9, 상한 적용 대상 제품군은 schema 10)
 # ---------------------------------------------------------------------------
 
 _ANCHOR_TABLES_SQL = """
@@ -764,9 +775,31 @@ def _anchor_catalog_from_seed(seed_dir: Path) -> tuple[dict[str, AnchorProduct],
   cap_value = data.get("seismic_shear_cap_N")
   if cap_value is None:
     raise RepositoryLookupError(f"{ANCHOR_PRODUCT_SEED_FILE}에 seismic_shear_cap_N이 없습니다.")
-  cap = AnchorSeismicCap(cap_N=float(cast(float, cap_value)), note=str(data.get("seismic_shear_cap_note", "")))
+  cap = AnchorSeismicCap(
+    cap_N=float(cast(float, cap_value)),
+    note=str(data.get("seismic_shear_cap_note", "")),
+    families=_anchor_cap_families_from_seed(data),
+  )
   items = cast(Sequence[Mapping[str, object]], data["items"])
   return _anchor_products_from_items(items), cap
+
+
+def _anchor_cap_families_from_seed(data: Mapping[str, object]) -> tuple[str, ...]:
+  """최상위 seismic_shear_cap_families(비어 있지 않은 문자열 배열). 없거나 비면 명시적 오류(silent 전체 적용 금지)."""
+  raw = data.get("seismic_shear_cap_families")
+  if not isinstance(raw, list) or not raw or not all(isinstance(item, str) and item for item in raw):
+    raise RepositoryLookupError(f"{ANCHOR_PRODUCT_SEED_FILE}에 seismic_shear_cap_families(비어 있지 않은 문자열 배열)가 없습니다.")
+  return tuple(cast(list[str], raw))
+
+
+def _anchor_cap_families_from_json(value: str) -> tuple[str, ...]:
+  try:
+    parsed = json.loads(value)
+  except json.JSONDecodeError as exc:
+    raise RepositoryLookupError(f"자재 DB의 anchor_seismic_shear_cap_families 값이 JSON 배열이 아닙니다: {value!r}") from exc
+  if not isinstance(parsed, list) or not parsed or not all(isinstance(item, str) and item for item in parsed):
+    raise RepositoryLookupError(f"자재 DB의 anchor_seismic_shear_cap_families 값이 올바르지 않습니다: {value!r}")
+  return tuple(cast(list[str], parsed))
 
 
 def _anchor_products_from_items(items: Sequence[Mapping[str, object]]) -> dict[str, AnchorProduct]:
@@ -868,7 +901,11 @@ def _insert_anchor_products(
   )
   connection.executemany(
     "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
-    [(ANCHOR_CAP_METADATA_KEY, repr(cap.cap_N)), (ANCHOR_CAP_NOTE_METADATA_KEY, cap.note)],
+    [
+      (ANCHOR_CAP_METADATA_KEY, repr(cap.cap_N)),
+      (ANCHOR_CAP_NOTE_METADATA_KEY, cap.note),
+      (ANCHOR_CAP_FAMILIES_METADATA_KEY, json.dumps(list(cap.families))),
+    ],
   )
 
 
@@ -903,6 +940,31 @@ def _migrate_anchor_product(connection: sqlite3.Connection, seed_dir: Path | Non
     )
   products, cap = _anchor_catalog_from_seed(seed_dir)
   _insert_anchor_products(connection, products.values(), cap)
+
+
+def _migrate_anchor_cap_families(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
+  """schema 9 DB에 내진 상한 적용 대상 제품군(metadata anchor_seismic_shear_cap_families)과 갱신된 상한 note를 채운다(schema 10).
+
+  seed 경로가 없으면 채울 수 없으므로 명시적 오류로 중단한다(트랜잭션 롤백, schema 버전 유지).
+  """
+  exists = connection.execute(
+    "SELECT COUNT(*) FROM metadata WHERE key = ?", (ANCHOR_CAP_FAMILIES_METADATA_KEY,)
+  ).fetchone()[0]
+  if exists:
+    return
+  if seed_dir is None:
+    raise RepositoryLookupError(
+      "구 자재 DB에 앵커 내진 전단 상한 적용 대상(anchor_seismic_shear_cap_families)이 없습니다. "
+      "seed 경로를 지정하거나 init_db를 다시 실행하십시오."
+    )
+  _, cap = _anchor_catalog_from_seed(seed_dir)
+  connection.executemany(
+    "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+    [
+      (ANCHOR_CAP_NOTE_METADATA_KEY, cap.note),
+      (ANCHOR_CAP_FAMILIES_METADATA_KEY, json.dumps(list(cap.families))),
+    ],
+  )
 
 
 def _sql_statements(script: str) -> list[str]:

@@ -91,10 +91,13 @@ class AnchorSeismicCap:
   """내진 시 런너 고정 앵커 허용 전단 상한(anchor_product.json 최상위 seismic_shear_cap_N·note).
 
   ICC-ES ESR 공통: SDC D·E·F에서 콘크리트 런너 고정 시 허용 전단 ≤ 90 lbf(400 N)/개. 국내 적용 타당성 확인 필요.
+  families: 상한 적용 대상 제품군(seismic_shear_cap_families, 2026-11-09 결정 2: dx·gx — ICC-ES PAF 평가서 §4.1 Item 2 전용).
+  screw(콘크리트 스크류)는 적용 대상이 아니며 내진 적격성은 ACI 318 Ch.17 / KDS 14 20 54 체계로 별도 확인 필요.
   """
 
   cap_N: float
   note: str
+  families: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

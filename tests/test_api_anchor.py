@@ -38,6 +38,7 @@ class ApiAnchorTest(unittest.TestCase):
     self.assertTrue(body["success"])
     self.assertEqual(body["data"]["seismic_shear_cap_N"], 400.0)
     self.assertIn("400 N", body["data"]["seismic_shear_cap_note"])
+    self.assertEqual(body["data"]["seismic_shear_cap_families"], ["dx", "gx"])
     items = body["data"]["items"]
     self.assertEqual(len(items), 13)
     default = [item for item in items if item["is_default"]]
@@ -94,11 +95,43 @@ class ApiAnchorTest(unittest.TestCase):
     self.assertEqual(capped["intermediate"]["anchor_capacity_kN"], 0.4)
     self.assertEqual(capped["intermediate"]["anchor_capacity_resolved_N"], 400.0)
     self.assertEqual(capped["intermediate"]["anchor_seismic_cap_applied"], 1.0)
+    self.assertEqual(capped["intermediate"]["anchor_seismic_cap_eligible"], 1.0)
     self.assertEqual(capped["intermediate"]["anchor_table_shear_N"], 1001.0)
+    self.assertIn("(내진 상한 400 N 적용)", capped["anchor_product_summary"])
 
     uncapped = self.client.post("/api/check", json={**payload, "anchor_apply_seismic_cap": False}).json()["data"]
     self.assertEqual(uncapped["intermediate"]["anchor_capacity_kN"], 1.001)
     self.assertEqual(uncapped["intermediate"]["anchor_seismic_cap_applied"], 0.0)
+
+  def test_check_with_screw_product_is_not_capped_in_seismic(self) -> None:
+    # 결정 2: 콘크리트 스크류(screw)는 상한 비적용 — 표 값 1,779 N 그대로, 별도 확인 문구
+    payload = self._payload(
+      design_case="seismic",
+      anchor_product_id="simpson_titen_14",
+      anchor_embedment_mm=38.0,
+      anchor_concrete_fc_MPa=27.6,
+      anchor_apply_seismic_cap=True,
+    )
+    data = self.client.post("/api/check", json=payload).json()["data"]
+    self.assertEqual(data["intermediate"]["anchor_capacity_kN"], 1.779)
+    self.assertEqual(data["intermediate"]["anchor_capacity_resolved_N"], 1779.0)
+    self.assertEqual(data["intermediate"]["anchor_seismic_cap_applied"], 0.0)
+    self.assertEqual(data["intermediate"]["anchor_seismic_cap_eligible"], 0.0)
+    self.assertIn("내진 상한 비적용", data["anchor_product_summary"])
+
+  def test_check_with_gx_product_at_cap_value_is_eligible_but_not_applied(self) -> None:
+    # 표 값 400 = cap: 적용 대상(gx)이지만 초과가 아니므로 cap_applied 0
+    payload = self._payload(
+      design_case="seismic",
+      anchor_product_id="hilti_gx3_esr",
+      anchor_embedment_mm=19.0,
+      anchor_concrete_fc_MPa=17.2,
+    )
+    data = self.client.post("/api/check", json=payload).json()["data"]
+    self.assertEqual(data["intermediate"]["anchor_capacity_kN"], 0.4)
+    self.assertEqual(data["intermediate"]["anchor_seismic_cap_applied"], 0.0)
+    self.assertEqual(data["intermediate"]["anchor_seismic_cap_eligible"], 1.0)
+    self.assertNotIn("내진 상한", data["anchor_product_summary"])
 
   def test_check_with_infinite_embedment_is_rejected(self) -> None:
     payload = self._payload(design_case="seismic", anchor_product_id="hilti_x_u", anchor_embedment_mm="Infinity")

@@ -447,7 +447,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               />
             </div>
             <p className="mt-3 text-xs text-slate-600">
-              1) {data.anchorProduct ? `DB 조회값(${anchorProductLabel(data.anchorProduct)}, ${anchorConditionLabel(data.anchorProduct)}${data.result.intermediate.anchor_seismic_cap_applied === 1 ? ", 내진 상한 적용" : ""}). ` : "입력값. "}
+              1) {data.anchorProduct ? `DB 조회값(${anchorProductLabel(data.anchorProduct)}, ${anchorConditionLabel(data.anchorProduct)}${anchorCapFootnote(data.result)}). ` : "입력값. "}
               {anchorScopeNotice}
             </p>
           </ReportBlock>
@@ -611,16 +611,38 @@ export function anchorConditionLabel(product: ReportAnchorProduct) {
   return `${embedment}, ${strength}`;
 }
 
-// 응답 intermediate(anchor_capacity_resolved_N·anchor_allowable_tension_N·anchor_seismic_cap_applied·anchor_table_shear_N)로 표기
+// 내진 상한 비적용 제품군(screw) 안내(결정 2, 2026-11-09). 내진 CASE에서만 표기
+const anchorCapNotEligibleReportNote = "내진 상한 비적용 — 스크류 앵커 내진 적격성(ACI 318 Ch.17 / KDS 14 20 54) 별도 확인";
+
+// 내진 상한 적용 여부 상태: "applied" | "not-eligible"(내진·비대상 family) | null
+function anchorCapStatus(result: WallCheckResult): "applied" | "not-eligible" | null {
+  const i = result.intermediate;
+  if (i.anchor_seismic_cap_applied === 1) return "applied";
+  if (result.design_case === "seismic" && i.anchor_seismic_cap_eligible === 0) return "not-eligible";
+  return null;
+}
+
+// 반력 산정 각주용: ", 내진 상한 적용" / ", 내진 상한 비적용(…)" / ""
+function anchorCapFootnote(result: WallCheckResult) {
+  const status = anchorCapStatus(result);
+  if (status === "applied") return ", 내진 상한 적용";
+  if (status === "not-eligible") return `, ${anchorCapNotEligibleReportNote}`;
+  return "";
+}
+
+// 응답 intermediate(anchor_capacity_resolved_N·anchor_allowable_tension_N·anchor_seismic_cap_applied·anchor_seismic_cap_eligible·anchor_table_shear_N)로 표기
 export function anchorShearTensionLabel(result: WallCheckResult) {
   const i = result.intermediate;
   const shear = i.anchor_capacity_resolved_N;
   const tension = i.anchor_allowable_tension_N;
   if (shear === undefined || tension === undefined) return "—";
+  const status = anchorCapStatus(result);
   const capNote =
-    i.anchor_seismic_cap_applied === 1
+    status === "applied"
       ? ` (ICC-ES ${formatNumber(i.anchor_seismic_cap_N ?? shear)} N 상한 적용, 표 값 ${formatNumber(i.anchor_table_shear_N ?? shear)} N)`
-      : "";
+      : status === "not-eligible"
+        ? ` (${anchorCapNotEligibleReportNote})`
+        : "";
   return `${formatNumber(shear)} N / ${formatNumber(tension)} N${capNote}`;
 }
 

@@ -8,13 +8,17 @@ anchor_capacity_kN을 WallCheckRequest에 채워 넘긴다(엔진 순수성 유�
 1. 강도 무관 제품(표의 concrete_fc_MPa가 전부 None, basis rec): 입력 매입깊이 이하 중 최대 embedment_mm 행.
    입력이 최소 행보다 작으면 오류.
 2. 강도 열이 있는 제품(basis asd): (embedment_mm, concrete_fc_MPa) 정확 일치 행. 없으면 오류.
-3. design_case가 내진이고 apply_seismic_cap이면 허용 전단 = min(표 값, cap_N). cap 적용 여부를 반환한다.
-   cap_N 출처: ICC-ES ESR 공통 SDC D·E·F 런너 고정 허용 전단 90 lbf(400 N) — 국내 적용 타당성 확인 필요.
+3. design_case가 내진이고 apply_seismic_cap이며 제품 family가 상한 적용 대상(cap_families, 시드 seismic_shear_cap_families:
+   dx·gx)이면 허용 전단 = min(표 값, cap_N). cap 적용 여부(cap_applied)와 적용 대상 여부(cap_eligible)를 반환한다.
+   cap_N 출처: ICC-ES PAF 평가서(ESR-2269·1663·1752·2024·2138) §4.1 Item 2 — SDC D·E·F 런너 고정 허용 전단 90 lbf(400 N),
+   타정못·가스핀 전용. 콘크리트 스크류 앵커(screw)는 상한 비적용 — 내진 적격성은 ACI 318 Ch.17 / KDS 14 20 54 체계로
+   별도 확인 필요(2026-11-09 결정 2). 국내 적용 타당성 확인 필요.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from backend.engine.models import AnchorLoadRow, AnchorProduct, WallCheckRequest
@@ -25,7 +29,9 @@ ANCHOR_CUSTOM_ID = "custom"
 ANCHOR_FAMILY_CUSTOM = "custom"
 # 내진 검토 CASE 식별자(calculator.DESIGN_CASE_SEISMIC과 같은 값. 순환 import를 피해 문자열로 둔다)
 _DESIGN_CASE_SEISMIC = "seismic"
-# N → kN 환산 후 반올림 자릿수
+# 조회 요약(summary) 뒤에 붙는 내진 상한 적용 여부 문구
+SUMMARY_CAP_APPLIED_SUFFIX = " (내진 상한 {cap_N:g} N 적용)"
+SUMMARY_CAP_NOT_ELIGIBLE_SUFFIX = " (내진 상한 비적용 — 스크류 앵커 내진 적격성 별도 확인)"
 # N → kN 환산: N을 정수로 반올림(0.5는 올림, math.floor(x + 0.5))한 뒤 1000으로 나눈다.
 # 클라이언트 renderer/src/lib/anchor.ts roundKn(Math.round(N) / 1000)과 같은 규칙이어야 서버 덮어쓰기가 생기지 않는다.
 _NEWTON_PER_KILONEWTON = 1000.0
@@ -47,6 +53,8 @@ class AnchorResolution:
   matched_row: AnchorLoadRow
   table_shear_N: float
   cap_applied: bool
+  # 제품 family가 상한 적용 대상(dx·gx)인지. False(screw 등)이면 내진이어도 표 값을 그대로 쓴다
+  cap_eligible: bool
   cap_N: float | None
   basis: str
   basis_label: str
@@ -88,6 +96,7 @@ def resolve_anchor_capacity(
   design_case: str,
   apply_seismic_cap: bool,
   cap_N: float | None,
+  cap_families: Sequence[str],
 ) -> AnchorResolution:
   if product.family == ANCHOR_FAMILY_CUSTOM or product.anchor_id == ANCHOR_CUSTOM_ID:
     raise AnchorLookupError("사용자 정의 항목은 허용하중 표 조회 대상이 아닙니다. 허용내력을 직접 입력하십시오.")
@@ -104,11 +113,18 @@ def resolve_anchor_capacity(
   table_shear_N = float(row.allowable_shear_N)
   shear_N = table_shear_N
   cap_applied = False
-  if design_case == _DESIGN_CASE_SEISMIC and apply_seismic_cap and cap_N is not None and shear_N > cap_N:
+  cap_eligible = product.family in tuple(cap_families)
+  is_seismic = design_case == _DESIGN_CASE_SEISMIC
+  if is_seismic and apply_seismic_cap and cap_eligible and cap_N is not None and shear_N > cap_N:
     shear_N = float(cap_N)
     cap_applied = True
 
   condition_text = _condition_text(product, row)
+  summary = f"{product.maker} {product.product} / {condition_text} / {product.basis_label} / {product.source}"
+  if cap_applied:
+    summary += SUMMARY_CAP_APPLIED_SUFFIX.format(cap_N=shear_N)
+  elif is_seismic and not cap_eligible:
+    summary += SUMMARY_CAP_NOT_ELIGIBLE_SUFFIX
   return AnchorResolution(
     anchor_id=product.anchor_id,
     anchor_capacity_kN=_newton_to_kn(shear_N),
@@ -117,13 +133,14 @@ def resolve_anchor_capacity(
     matched_row=row,
     table_shear_N=table_shear_N,
     cap_applied=cap_applied,
+    cap_eligible=cap_eligible,
     cap_N=None if cap_N is None else float(cap_N),
     basis=product.basis,
     basis_label=product.basis_label,
     source=product.source,
     approvals=product.approvals,
     condition_text=condition_text,
-    summary=f"{product.maker} {product.product} / {condition_text} / {product.basis_label} / {product.source}",
+    summary=summary,
   )
 
 
@@ -146,6 +163,7 @@ def resolve_request_anchor(
     request.design_case,
     request.anchor_apply_seismic_cap,
     cap.cap_N,
+    cap.families,
   )
   return replace(request, anchor_capacity_kN=resolution.anchor_capacity_kN), resolution
 

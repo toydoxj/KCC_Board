@@ -95,6 +95,8 @@ export interface AnchorProductCatalog {
   // 내진 시 런너 고정 앵커 허용 전단 상한(N/개). ICC-ES ESR 공통 90 lbf(400 N) — 국내 적용 확인 필요
   seismic_shear_cap_N: number;
   seismic_shear_cap_note: string;
+  // 상한 적용 대상 제품군(dx·gx — ICC-ES PAF 평가서 §4.1 Item 2 전용). screw는 비적용(결정 2, 2026-11-09)
+  seismic_shear_cap_families: string[];
   items: AnchorProduct[];
 }
 

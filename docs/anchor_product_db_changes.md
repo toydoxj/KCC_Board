@@ -51,7 +51,7 @@ v0.9.0~0.9.2에서는 화면 기본값이 "0.4 kN/개 직접 입력"에서 "기�
 |---|---|
 | 제조사 권장하중(rec, f'c 전부 null) | 입력 hET 이하 중 최대 매입깊이 행. 표 최소값 미만이면 `AnchorLookupError` |
 | ICC-ES 허용하중(asd) | (hET, f'c) 정확 일치. 보간·외삽 없음 |
-| 내진 상한 | 내진 + 적용 체크 시 `min(V표, 400 N)`, `anchor_seismic_cap_applied` = 1 |
+| 내진 상한 | 내진 + 적용 체크 + **적용 대상 제품군(`seismic_shear_cap_families` = dx·gx)**일 때 `min(V표, 400 N)`, `anchor_seismic_cap_applied` = 1. screw(콘크리트 스크류)는 비적용(`anchor_seismic_cap_eligible` = 0, 표 값 그대로) — ICC-ES PAF 평가서 §4.1 Item 2가 타정못·가스핀 전용이므로(결정 2, 2026-11-09). 스크류 앵커 내진 적격성은 ACI 318 Ch.17 / KDS 14 20 54 체계로 별도 확인 필요 |
 | 사용자 정의 | 조회 안 함. 입력 `anchor_capacity_kN` 그대로 |
 | 위치 | 규칙은 `backend/engine/anchor.py`(순수 함수), API 계층이 `anchor_capacity_kN`을 채움. 클라이언트 `renderer/src/lib/anchor.ts`는 참조 카드·자동 입력용 미러이며 판정값은 서버 응답을 따름 |
 

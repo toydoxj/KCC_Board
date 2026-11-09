@@ -13,6 +13,8 @@ from typing import Mapping, Sequence, cast
 
 from backend.engine.anchor import (
   ANCHOR_CUSTOM_ID,
+  SUMMARY_CAP_APPLIED_SUFFIX,
+  SUMMARY_CAP_NOT_ELIGIBLE_SUFFIX,
   AnchorLookupError,
   concrete_strength_options,
   embedment_options,
@@ -42,11 +44,49 @@ class AnchorResolutionTest(unittest.TestCase):
     cls.cap = cls.repo.get_anchor_seismic_cap()
 
   def resolve(self, anchor_id: str, embedment: float | None, fc: float | None, case: str = SEISMIC, apply_cap: bool = True):
-    return resolve_anchor_capacity(self.repo.get_anchor_product(anchor_id), embedment, fc, case, apply_cap, self.cap.cap_N)
+    return resolve_anchor_capacity(
+      self.repo.get_anchor_product(anchor_id), embedment, fc, case, apply_cap, self.cap.cap_N, self.cap.families
+    )
 
   def test_seismic_cap_from_seed(self) -> None:
     self.assertEqual(self.cap.cap_N, 400.0)
     self.assertIn("400 N", self.cap.note)
+    # 결정 2(2026-11-09): 상한은 타정못·가스핀(ICC-ES PAF 평가서 §4.1 Item 2) 전용
+    self.assertEqual(self.cap.families, ("dx", "gx"))
+    self.assertIn("ACI 318", self.cap.note)
+
+  def test_screw_family_is_not_capped_in_seismic(self) -> None:
+    # 콘크리트 스크류(screw)는 상한 적용 대상이 아니다 — 내진·상한 체크여도 표 값 그대로, 별도 확인 문구
+    titen = self.resolve("simpson_titen_14", 38, 27.6)
+    self.assertEqual(titen.table_shear_N, 1779.0)
+    self.assertEqual(titen.allowable_shear_N, 1779.0)
+    self.assertEqual(titen.anchor_capacity_kN, 1.779)
+    self.assertFalse(titen.cap_applied)
+    self.assertFalse(titen.cap_eligible)
+    self.assertTrue(titen.summary.endswith(SUMMARY_CAP_NOT_ELIGIBLE_SUFFIX), titen.summary)
+    # 비내진이면 비적용 문구도 붙지 않는다
+    titen_static = self.resolve("simpson_titen_14", 38, 27.6, case=NON_SEISMIC)
+    self.assertFalse(titen_static.cap_eligible)
+    self.assertNotIn("내진 상한", titen_static.summary)
+
+  def test_dx_gx_families_are_cap_eligible(self) -> None:
+    capped = self.resolve("hilti_x_u_esr", 25, 27.6)
+    self.assertTrue(capped.cap_eligible)
+    self.assertTrue(capped.cap_applied)
+    self.assertTrue(capped.summary.endswith(SUMMARY_CAP_APPLIED_SUFFIX.format(cap_N=400.0)), capped.summary)
+    # 표 값 400 = cap: 초과가 아니므로 cap_applied False(적용 대상이긴 함), 문구 없음
+    gx3 = self.resolve("hilti_gx3_esr", 19, 17.2)
+    self.assertEqual(gx3.allowable_shear_N, 400.0)
+    self.assertEqual(gx3.anchor_capacity_kN, 0.4)
+    self.assertTrue(gx3.cap_eligible)
+    self.assertFalse(gx3.cap_applied)
+    self.assertNotIn("내진 상한", gx3.summary)
+    # 권장하중(rec) 제품 hET 27 → 400 N: cap 미도달
+    rec = self.resolve("hilti_x_u", 27, None)
+    self.assertEqual(rec.allowable_shear_N, 400.0)
+    self.assertTrue(rec.cap_eligible)
+    self.assertFalse(rec.cap_applied)
+    self.assertNotIn("내진 상한", rec.summary)
 
   def test_rec_product_uses_embedment_floor(self) -> None:
     self.assertEqual(self.resolve("hilti_x_u", 22, None).allowable_shear_N, 300.0)
@@ -141,11 +181,13 @@ class AnchorRepositoryTest(unittest.TestCase):
   def tearDown(self) -> None:
     self.temp_dir.cleanup()
 
-  def test_schema_version_is_9(self) -> None:
-    self.assertEqual(SCHEMA_VERSION, "9")
+  def test_schema_version_is_10(self) -> None:
+    self.assertEqual(SCHEMA_VERSION, "10")
     with closing(sqlite3.connect(self.db_path)) as connection:
       version = connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0]
-      self.assertEqual(version, "9")
+      self.assertEqual(version, "10")
+      families = connection.execute("SELECT value FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'").fetchone()[0]
+      self.assertEqual(json.loads(families), ["dx", "gx"])
       self.assertEqual(connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0], 13)
       self.assertEqual(connection.execute("SELECT COUNT(*) FROM anchor_load_row").fetchone()[0], 74)
 
@@ -172,8 +214,33 @@ class AnchorRepositoryTest(unittest.TestCase):
     migrated = SqliteRepository(self.db_path, ROOT / "data/seed")
     self.assertEqual(len(migrated.list_anchor_products()), 13)
     self.assertEqual(migrated.get_anchor_seismic_cap().cap_N, 400.0)
+    self.assertEqual(migrated.get_anchor_seismic_cap().families, ("dx", "gx"))
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
+
+  def test_schema_9_db_is_migrated_with_seed_dir(self) -> None:
+    # schema 9(v0.9.0~0.9.2) DB: 앵커 표는 있으나 상한 적용 대상(families)이 없다
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute("DELETE FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'")
+      connection.execute("UPDATE metadata SET value = '9' WHERE key = 'schema_version'")
+      connection.commit()
+    migrated = SqliteRepository(self.db_path, ROOT / "data/seed")
+    cap = migrated.get_anchor_seismic_cap()
+    self.assertEqual(cap.families, ("dx", "gx"))
+    self.assertEqual(cap, self.json_repo.get_anchor_seismic_cap())
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
+
+  def test_schema_9_db_without_seed_dir_rolls_back(self) -> None:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute("DELETE FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'")
+      connection.execute("UPDATE metadata SET value = '9' WHERE key = 'schema_version'")
+      connection.commit()
+    with self.assertRaises(RepositoryLookupError):
+      SqliteRepository(self.db_path)
     with closing(sqlite3.connect(self.db_path)) as connection:
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "9")
+      self.assertIsNone(connection.execute("SELECT value FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'").fetchone())
 
   def test_schema_8_db_without_seed_dir_rolls_back(self) -> None:
     with closing(sqlite3.connect(self.db_path)) as connection:

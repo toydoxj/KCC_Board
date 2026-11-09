@@ -12,7 +12,9 @@ from typing import Mapping, Sequence, cast
 ROOT = Path(__file__).resolve().parents[1]
 SEED_PATH = ROOT / "data/seed/anchor_product.json"
 
-REQUIRED_TOP_KEYS = ("_source", "_unit", "_note", "_status", "seismic_shear_cap_N", "seismic_shear_cap_note", "items")
+REQUIRED_TOP_KEYS = (
+  "_source", "_unit", "_note", "_status", "seismic_shear_cap_N", "seismic_shear_cap_families", "seismic_shear_cap_note", "items",
+)
 REQUIRED_ITEM_KEYS = (
   "anchor_id", "maker", "product", "family", "family_label", "shank_diameter_mm", "basis", "basis_label",
   "concrete_condition", "min_concrete_thickness_mm", "min_edge_mm", "min_spacing_mm", "min_fasteners_per_unit",
@@ -37,6 +39,15 @@ class AnchorProductSeedTest(unittest.TestCase):
     cap = self.data["seismic_shear_cap_N"]
     self.assertIsInstance(cap, (int, float))
     self.assertGreater(cast(float, cap), 0)
+
+  def test_seismic_cap_families_are_known_product_families(self) -> None:
+    """상한 적용 대상 제품군은 비어 있지 않고 {dx, gx, screw}의 부분집합이어야 한다(사용자 정의 제외). 결정 2: dx·gx."""
+    families = self.data["seismic_shear_cap_families"]
+    self.assertIsInstance(families, list)
+    self.assertGreater(len(cast(list[object], families)), 0)
+    self.assertTrue(set(cast(list[str], families)) <= (FAMILIES - {CUSTOM_FAMILY}), f"알 수 없는 family: {families}")
+    self.assertEqual(len(set(cast(list[str], families))), len(cast(list[str], families)), "family 중복")
+    self.assertEqual(cast(list[str], families), ["dx", "gx"])
 
   def test_item_keys_and_enums(self) -> None:
     self.assertGreater(len(self.items), 0)

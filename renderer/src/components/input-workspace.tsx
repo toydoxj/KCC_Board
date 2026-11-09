@@ -44,6 +44,8 @@ interface AnchorProps {
   products: AnchorProduct[];
   capN: number | null;
   capNote: string;
+  // 선택 제품 family가 상한 적용 대상(dx·gx)인지. false면 체크박스 비활성 + 스크류 앵커 안내
+  capEligible: boolean;
   selected?: AnchorProduct;
   isCustom: boolean;
   embedmentOptions: number[];
@@ -84,6 +86,10 @@ const anchorRecBasisNote = "제조사 권장하중 — 안전율 미기재(확�
 // 기본 제품(is_default) 안내: 기본 매입깊이 27 mm → 0.4 kN(2026-11-09 사용자 확정). 값은 시드 default_embedment_mm·표에서 오고 여기서는 문구만 둔다
 const anchorDefaultProductNote = "기본값 0.4 kN은 Hilti X-U P8 매입 hET ≥ 27 mm(X-U 32 P8 이상) 기준임. 매입이 22 mm이면 0.3 kN(hET 22 mm)을 선택할 것.";
 const anchorNoStrengthLabel = "해당 없음(강도 무관)";
+// 결정 2(2026-11-09): 내진 상한 400 N은 타정못·가스핀(ICC-ES PAF 평가서 §4.1 Item 2) 전용. 스크류 앵커는 비적용·별도 확인
+const anchorCapNotEligibleNote =
+  "콘크리트 스크류 앵커의 내진 적용은 제조사 내진 평가(ACI 318 Ch.17 / KDS 14 20 54)로 별도 확인할 것 — 확인 필요";
+const anchorCapNotEligibleTitle = "내진 상한 400 N은 타정못·가스핀 전용입니다. " + anchorCapNotEligibleNote;
 
 function formatN(value: number) {
   return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
@@ -176,8 +182,8 @@ export function InputWorkspace(p: Props) {
         </Field>
         <div className="grid gap-1.5 text-sm">
           <span title={a.capNote}>내진 전단 상한 {a.capN===null?"":`${formatN(a.capN)} N`} 적용</span>
-          <label className="checkbox-field" title={a.capNote}><input type="checkbox" disabled={a.isCustom} {...register("anchorApplySeismicCap")}/>{a.capN===null?"상한 적용":`허용 전단 ≤ ${formatN(a.capN)} N/개 적용`}</label>
-          <span className="helper block">{a.capNote||"ICC-ES ESR 공통: SDC D·E·F 런너 고정 허용 전단 상한. 국내 적용은 참고 수준(확인 필요)"}</span>
+          <label className="checkbox-field" title={!a.isCustom&&!a.capEligible?anchorCapNotEligibleTitle:a.capNote}><input type="checkbox" disabled={a.isCustom||!a.capEligible} aria-disabled={a.isCustom||!a.capEligible} {...register("anchorApplySeismicCap")}/>{a.capN===null?"상한 적용":`허용 전단 ≤ ${formatN(a.capN)} N/개 적용`}{!a.isCustom&&!a.capEligible&&<span className="helper"> (비적용 — 타정못·가스핀 전용)</span>}</label>
+          <span className="helper block">{!a.isCustom&&!a.capEligible?anchorCapNotEligibleTitle:(a.capNote||"ICC-ES ESR 공통: SDC D·E·F 런너 고정 허용 전단 상한(타정못·가스핀 전용). 국내 적용은 참고 수준(확인 필요)")}</span>
         </div>
       </div>
       <div className="field-grid two">
@@ -202,6 +208,7 @@ export function InputWorkspace(p: Props) {
           ? <>
               <p>허용 전단 {formatN(resolved.shearN)} N (= {formatKn(resolved.capacityKn)} kN/개) · 허용 인장 {formatN(resolved.tensionN)} N · 기준: {product.basis_label} · 조건: {product.concrete_condition}</p>
               {resolved.capApplied&&<p>표 값 {formatN(resolved.tableShearN)} N → 상한 {formatN(resolved.capN??0)} N 적용</p>}
+              {!resolved.capEligible&&<p className="input-warning" role="status" data-anchor-cap-ineligible>{anchorCapNotEligibleNote}</p>}
               <p>최소 두께/연단/간격: {mmOrDash(product.min_concrete_thickness_mm)} / {mmOrDash(product.min_edge_mm)} / {mmOrDash(product.min_spacing_mm)}{product.shank_diameter_mm!==null?` · 축경 ${product.shank_diameter_mm} mm`:""}</p>
               <p>출처: {product.source}{product.approvals?` · 승인: ${product.approvals}`:""}</p>
               {product.basis==="rec"&&<p className="anchor-reference-note">{anchorRecBasisNote}</p>}

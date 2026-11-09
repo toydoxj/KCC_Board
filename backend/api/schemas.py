@@ -278,6 +278,8 @@ class WallCheckResultData(ApiModel):
       intermediate["anchor_capacity_resolved_N"] = anchor.allowable_shear_N
       intermediate["anchor_table_shear_N"] = anchor.table_shear_N
       intermediate["anchor_seismic_cap_applied"] = 1.0 if anchor.cap_applied else 0.0
+      # 제품군이 상한 적용 대상(dx·gx)인지. 0이면 screw 등 — 내진 적격성 별도 확인(결정 2)
+      intermediate["anchor_seismic_cap_eligible"] = 1.0 if anchor.cap_eligible else 0.0
       intermediate["anchor_allowable_tension_N"] = anchor.allowable_tension_kN * 1000.0
       if anchor.cap_N is not None:
         intermediate["anchor_seismic_cap_N"] = anchor.cap_N
@@ -511,6 +513,8 @@ class AnchorProductCatalogData(ApiModel):
 
   seismic_shear_cap_N: float
   seismic_shear_cap_note: str
+  # 상한 적용 대상 제품군(dx·gx). 그 외 family는 체크박스 비활성·비적용 안내
+  seismic_shear_cap_families: list[str]
   items: list[AnchorProductData]
 
   @classmethod
@@ -518,6 +522,7 @@ class AnchorProductCatalogData(ApiModel):
     return cls(
       seismic_shear_cap_N=cap.cap_N,
       seismic_shear_cap_note=cap.note,
+      seismic_shear_cap_families=list(cap.families),
       items=[AnchorProductData.from_repository(product) for product in products],
     )
 

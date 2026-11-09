@@ -13,6 +13,8 @@ export interface AnchorClientResolution {
   shearN: number;
   tensionN: number;
   capApplied: boolean;
+  // 제품 family가 상한 적용 대상(dx·gx)인지. false(screw)면 내진이어도 표 값 그대로
+  capEligible: boolean;
   capN: number | null;
   capacityKn: number;
   tensionKn: number;
@@ -65,7 +67,12 @@ function familyRank(family: string) {
   return index === -1 ? FAMILY_ORDER.length : index;
 }
 
-/** 서버 규칙과 동일: rec 제품은 hET 이하 최대 행, asd 제품은 (hET, f'c) 정확 일치, 보간 금지, 내진 cap. */
+/** 제품 family가 내진 상한 적용 대상(시드 seismic_shear_cap_families)인지. */
+export function isCapEligibleFamily(product: AnchorProduct | undefined, capFamilies: readonly string[]) {
+  return product !== undefined && capFamilies.includes(product.family);
+}
+
+/** 서버 규칙과 동일: rec 제품은 hET 이하 최대 행, asd 제품은 (hET, f'c) 정확 일치, 보간 금지, 내진 cap(dx·gx 한정). */
 export function resolveAnchorClient(
   product: AnchorProduct,
   embedmentMm: number | null | undefined,
@@ -73,6 +80,7 @@ export function resolveAnchorClient(
   designCase: DesignCase,
   applySeismicCap: boolean,
   capN: number | null,
+  capFamilies: readonly string[],
 ): AnchorClientResult {
   if (isCustomAnchor(product.anchor_id, product)) {
     return { ok: false, message: "사용자 정의 항목은 허용내력을 직접 입력합니다." };
@@ -105,7 +113,8 @@ export function resolveAnchorClient(
   const tableShearN = row.allowable_shear_N;
   let shearN = tableShearN;
   let capApplied = false;
-  if (designCase === "seismic" && applySeismicCap && capN !== null && shearN > capN) {
+  const capEligible = isCapEligibleFamily(product, capFamilies);
+  if (designCase === "seismic" && applySeismicCap && capEligible && capN !== null && shearN > capN) {
     shearN = capN;
     capApplied = true;
   }
@@ -117,6 +126,7 @@ export function resolveAnchorClient(
       shearN,
       tensionN: row.allowable_tension_N,
       capApplied,
+      capEligible,
       capN,
       capacityKn: roundKn(shearN),
       tensionKn: roundKn(row.allowable_tension_N),
