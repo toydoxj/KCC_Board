@@ -21,6 +21,8 @@ from backend.engine.constants import (
   DEFAULT_DEFLECTION_LIMIT_DENOM,
   DEFAULT_HORIZONTAL_LOAD_KG_M2,
   DEFAULT_OMEGA,
+  CONNECTION_MODE_SCREW,
+  CONNECTION_MODE_SLOT,
   FIXED_REAR_BOARD_SCREW_COUNT,
   FIXED_REAR_BOARD_SCREW_PITCH_MM,
   GRAVITY,
@@ -114,6 +116,8 @@ class _Layer:
   connection_count: float | None = None
   # 비대칭 단독 1P의 마감행 간격 기준. 개수는 connection_count로 별도 지정 가능.
   connection_order: int | None = None
+  # 연결 방식: "screw"(피스 체결) / "slot"(CH 홈 끼움 — 피스 없음. 전단 연결 산정은 screw와 같고 피스 인장 검토에서만 제외)
+  connection_mode: str = CONNECTION_MODE_SCREW
 
 
 @dataclass(frozen=True)
@@ -413,6 +417,8 @@ def _calculate_wall_check_once(
         "fixed_rear_board_screw_pitch_mm": FIXED_REAR_BOARD_SCREW_PITCH_MM,
         "fixed_rear_board_screw_count": FIXED_REAR_BOARD_SCREW_COUNT,
       } if _fixed_rear_board_for_group(group) is not None else {}),
+      # CH 끼움 보드 표시(계산서: 피스 없음 → 피스 인장 검토 제외)
+      **({"ch_slot_rear_board": 1.0} if _is_ch_stud_group(group) else {}),
       **_reaction_intermediate(request, reaction),
       **screw_tension,
     },
@@ -514,6 +520,7 @@ def _build_section(request: WallCheckRequest, repo: MaterialRepository) -> _Sect
       request,
       repo,
       fixed_rear_board=fixed_rear_board is not None,
+      slot_connection=_is_ch_stud_group(group),
     )
     layers.append(layer)
     if fixed_rear_board is None:
@@ -587,6 +594,7 @@ def _board_layer(
   request: WallCheckRequest,
   repo: MaterialRepository,
   fixed_rear_board: bool = False,
+  slot_connection: bool = False,
 ) -> tuple[_Layer, float]:
   prop = repo.get_board(board.kind, board.thickness)
   elastic_ratio = prop.E_GPa * 1000.0 / STUD_ELASTIC_MODULUS
@@ -611,6 +619,7 @@ def _board_layer(
       board_property=prop,
       connection_pitch_mm=FIXED_REAR_BOARD_SCREW_PITCH_MM if fixed_rear_board else None,
       connection_count=FIXED_REAR_BOARD_SCREW_COUNT if fixed_rear_board else None,
+      connection_mode=CONNECTION_MODE_SLOT if slot_connection else CONNECTION_MODE_SCREW,
     ),
     y_bottom + board.thickness,
   )
@@ -1431,6 +1440,7 @@ def _screw_tension_result(
        E = c·SDS·Ip × (해당 면 보드 자중), c = _fp_coefficient(z/h) (z/h = 1.0 → 0.48). 면의 전체 하중을 피스가 가장 성긴 층이 부담한다고 가정(보수측).
   - 풀아웃 Pnot = 0.85·tc·d·Fu2 (Eq. J4.4.1-1), tc = 스터드 두께, Ω = 3.0
   - 풀스루(석고보드) = 입력 공칭값 / Ω (AISI 강판식 J4.4.2는 석고보드에 적용 불가)
+  - CH 홈 끼움 후면 보드(피스 없음)는 홈이 면외 이탈을 구속하므로 검토 대상에서 제외한다(2026-11-09). 피스 체결층만 검토한다.
   벽 높이와 무관한 검토이다.
   """
   stud = section.stud_section
@@ -1438,8 +1448,14 @@ def _screw_tension_result(
     raise ValueError(f"스터드 두께 t가 등록되지 않아 피스 풀아웃 검토를 할 수 없습니다: {stud.group} {stud.name}")
   stud_index = next(index for index, layer in enumerate(section.layers) if layer.layer_type == "stud")
   faces = (
-    tuple(layer for layer in section.layers[:stud_index] if layer.layer_type == "board"),
-    tuple(layer for layer in section.layers[stud_index + 1 :] if layer.layer_type == "board"),
+    tuple(
+      layer for layer in section.layers[:stud_index]
+      if layer.layer_type == "board" and layer.connection_mode == CONNECTION_MODE_SCREW
+    ),
+    tuple(
+      layer for layer in section.layers[stud_index + 1 :]
+      if layer.layer_type == "board" and layer.connection_mode == CONNECTION_MODE_SCREW
+    ),
   )
   demand_N = 0.0
   governing_pressure = 0.0

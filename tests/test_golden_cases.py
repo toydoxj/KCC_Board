@@ -12,10 +12,12 @@ from typing import Mapping, cast
 from backend.engine.calculator import (
   _build_section,
   _calculate_wall_check_once,
+  _composite_ratio,
   _connection_capacity_kN,
   _count_for_order,
   _effective_inertia_correction_factor,
   _gypsum_screw_design_shear_N,
+  _neutral_axis,
   _nominal_moment,
   _pitch_for_order,
   _screw_stud_side_shear_N,
@@ -27,6 +29,8 @@ from backend.engine.calculator import (
 )
 from backend.api.schemas import BoltPayload
 from backend.engine.constants import (
+  CONNECTION_MODE_SCREW,
+  CONNECTION_MODE_SLOT,
   FIXED_REAR_BOARD_SCREW_COUNT,
   FIXED_REAR_BOARD_SCREW_PITCH_MM,
   SCREW_SHEAR_OMEGA,
@@ -581,6 +585,74 @@ class GoldenCaseTest(unittest.TestCase):
 
     with self.assertRaisesRegex(ValueError, "25T"):
       _build_section(request, self.repository)
+
+  def test_ch_stud_slot_rear_board_is_excluded_from_screw_tension_only(self) -> None:
+    # 2026-11-09 사용자 결정(A안): CH 후면 끼움 보드는 피스가 없어 풀아웃·풀스루 검토에서 제외한다.
+    # 전단 연결(η·Mn)·중립축·R은 종전(피스 300 mm/4개 상당) 그대로이다.
+    for group, thickness in (("CH-STUD", 25.0), ("CH-STUD(개량형)", 12.5)):
+      with self.subTest(group=group):
+        request = replace(
+          request_from_golden_case(dict(self.cases[0])),
+          rear_boards=(BoardLayer("방화", thickness),),
+          front_boards=(BoardLayer("방화", 19.0), BoardLayer("방화", 19.0)),
+          stud=StudInput(stud_type=group, spec="102CHS-08", method="기본"),
+        )
+        section = _build_section(request, self.repository)
+        rear = section.layers[0]
+        self.assertEqual(rear.connection_mode, CONNECTION_MODE_SLOT)
+        self.assertEqual((rear.connection_pitch_mm, rear.connection_count), (FIXED_REAR_BOARD_SCREW_PITCH_MM, FIXED_REAR_BOARD_SCREW_COUNT))
+        self.assertTrue(all(layer.connection_mode == CONNECTION_MODE_SCREW for layer in section.layers[1:]))
+
+        result = _calculate_wall_check_once(request, self.repository)
+        # 인장 지배 간격은 전면 피스 체결층(2P 구성: 내측 600 / 외측 300 → 600)에서만 나온다
+        self.assertEqual(result.intermediate["screw_tension_spacing_mm"], max(request.bolt.pitch[0], request.bolt.pitch[2]))
+        self.assertEqual(result.intermediate["ch_slot_rear_board"], 1.0)
+        self.assertEqual(result.intermediate["fixed_rear_board_screw_pitch_mm"], FIXED_REAR_BOARD_SCREW_PITCH_MM)
+
+        # 종전에는 후면 끼움 보드(300 mm)가 지배하던 입력(전면 피치 200 mm)에서도 전면 층만 본다
+        tight = replace(request, bolt=replace(request.bolt, pitch=(200.0, 200.0, 200.0)))
+        tight_result = _calculate_wall_check_once(tight, self.repository)
+        self.assertEqual(tight_result.intermediate["screw_tension_spacing_mm"], 200.0)
+        self.assertLess(tight_result.intermediate["screw_tension_demand_N"], result.intermediate["screw_tension_demand_N"])
+
+        # 인장 외 경로는 slot 표시와 무관하다: 중립축은 전 층, η는 끼움 보드 비율을 포함한 전 층 최솟값(피스 체결 상당)
+        shear = _shear_connection_by_layer(section, request)
+        self.assertAlmostEqual(result.neutral_axis_mm, _neutral_axis(section.layers))
+        self.assertAlmostEqual(result.eta, _composite_ratio(section.layers, shear))
+        self.assertGreater(shear[rear.name], 0.0)
+        self.assertAlmostEqual(
+          result.intermediate["I_eff_raw_mm4"],
+          next(l for l in result.layers if l.layer_type == "stud").inertia_about_neutral_axis_mm4
+          + math.sqrt(result.eta) * sum(l.inertia_about_neutral_axis_mm4 for l in result.layers if l.layer_type == "board"),
+        )
+
+  def test_ch_stud_slot_rear_board_alone_has_no_screw_tension_demand(self) -> None:
+    # 전면 보드가 없으면 피스 체결층이 없어 인장 요구력 0(검토 대상 없음). 종전에는 후면 끼움 보드(300 mm)로 검토했다
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 25.0),),
+      front_boards=(),
+      stud=StudInput(stud_type="CH-STUD", spec="102CHS-08", method="기본"),
+    )
+    result = _calculate_wall_check_once(request, self.repository)
+    self.assertEqual(result.intermediate["screw_tension_demand_N"], 0.0)
+    self.assertEqual(result.intermediate["screw_tension_spacing_mm"], 0.0)
+    self.assertEqual(result.screw_tension_verdict, "O.K")
+
+  def test_i_stud_rear_board_remains_screw_connected_for_tension(self) -> None:
+    # I-STUD 후면 보드는 끼움이 아니므로 피스 인장 검토 대상(간격 300)이다
+    request = replace(
+      request_from_golden_case(dict(self.cases[0])),
+      rear_boards=(BoardLayer("방화", 25.0),),
+      front_boards=(),
+      stud=StudInput(stud_type="I-STUD", spec="I-STUD 102-08", method="기본"),
+    )
+    section = _build_section(request, self.repository)
+    self.assertEqual(section.layers[0].connection_mode, CONNECTION_MODE_SCREW)
+    result = _calculate_wall_check_once(request, self.repository)
+    self.assertEqual(result.intermediate["screw_tension_spacing_mm"], FIXED_REAR_BOARD_SCREW_PITCH_MM)
+    self.assertGreater(result.intermediate["screw_tension_demand_N"], 0.0)
+    self.assertNotIn("ch_slot_rear_board", result.intermediate)
 
   def test_i_stud_uses_fixed_fire_rated_25mm_rear_board_without_offsetting_stud(self) -> None:
     request = replace(
