@@ -54,8 +54,9 @@ repo/
 - `bolt_material.json`, `stud_method.json`.
 - 시험 구성 대조(2차 심사의견 A-1·F-2): KCC 11종 시험 시편 구성의 단일 출처는 `stud_method.json`의 `tested_configurations`(시편 번호·스터드 형식·규격·시공방식·간격·전·후면 보드, 시험 높이 `tested_height_mm` 2,400). R 보정 시편 입력(`tests/golden/requested_shape_cases.json`)과 일치해야 한다(`tests/test_review_round2.py` 검사). 엔진 `_tested_configuration_match`는 판정에 영향하지 않으며, 결과 intermediate `tested_configuration_match`·`matched_specimen_no`와 응답 `tested_configuration_mismatch_fields`(문자열 목록)를 반환한다.
 - SQLite schema 8: `specimen_configuration` 테이블. 구 DB(schema 7 이하)는 seed 경로가 있으면 이관 시 채우고, 없으면 명시적 오류(롤백).
-- `anchor_product.json`(v0.9.0): 런너 고정 앵커 제품 허용하중 DB의 단일 출처(제품 12 + 사용자 정의 `custom` 1, 허용하중 표 74행, 제조사 Data Sheet·ICC-ES 전재 — 초안, 국내 인증값 아님). `anchor_id`는 안정 키(변경 금지), `is_default` 정확히 1개(`hilti_x_u`, hET 22 → 300 N), 최상위 `seismic_shear_cap_N` 400. 조회 규칙(rec: hET 이하 최대 행, asd: (hET, f'c) 정확 일치, 보간 금지, 내진 cap)은 `backend/engine/anchor.py`에 두고 **API 계층이 `anchor_capacity_kN`을 채운다 — 엔진은 kN 값만 사용**(판정 로직 불변). 기본 제품 적용으로 화면 기본 허용내력이 0.4 → 0.3 kN/개로 바뀌어 내진 anchorHeight가 낮아진다(`docs/anchor_product_db_changes.md`). `default_embedment_mm` 변경은 사용자 결정 사항.
+- `anchor_product.json`(v0.9.0): 런너 고정 앵커 제품 허용하중 DB의 단일 출처(제품 12 + 사용자 정의 `custom` 1, 허용하중 표 74행, 제조사 Data Sheet·ICC-ES 전재 — 초안, 국내 인증값 아님). `anchor_id`는 안정 키(변경 금지), `is_default` 정확히 1개(`hilti_x_u`, `default_embedment_mm` 27 → 400 N = 0.4 kN — 2026-11-09 사용자 확정, v0.8.0 기본값과 동일; hET 22는 300 N), 최상위 `seismic_shear_cap_N` 400과 적용 대상 제품군 `seismic_shear_cap_families` ["dx","gx"](v0.9.3 결정 2: ICC-ES PAF 평가서 §4.1 Item 2가 타정못·가스핀 전용. `screw`는 상한 비적용 + "내진 적격성 ACI 318 Ch.17 / KDS 14 20 54 별도 확인" 안내, 확인 필요). 조회 규칙(rec: hET 이하 최대 행, asd: (hET, f'c) 정확 일치, 보간 금지, 내진 cap은 대상 family만)은 `backend/engine/anchor.py`에 두고 **API 계층이 `anchor_capacity_kN`을 채운다 — 엔진은 kN 값만 사용**(판정 로직 불변). v0.9.0~0.9.2에서는 기본 매입 22 mm로 화면 기본 허용내력이 0.3 kN/개였고, v0.9.3에서 27 mm로 확정되어 기본 경로 anchorHeight가 v0.8.0과 같다(`docs/anchor_product_db_changes.md`). `anchor_seismic_cap_eligible`(0/1)이 응답 intermediate에 실린다.
 - SQLite schema 9: `anchor_product`(메타, `seq` 시드 순서) + `anchor_load_row` 테이블, metadata `anchor_seismic_shear_cap_N`·`_note`. 구 DB(schema 8 이하)는 seed 경로가 있으면 이관, 없으면 명시적 오류(롤백). ADR-002.
+- SQLite schema 10(v0.9.3): metadata `anchor_seismic_shear_cap_families`(JSON 배열 문자열). schema 9 DB는 seed 경로가 있으면 이관(note도 갱신), 없으면 명시적 오류(롤백).
 - DB 조회는 **그룹+단면명 키** 사용(엑셀 VLOOKUP 인덱스 의존 제거). 미스 시 **명시적 예외**(silent #N/A 금지).
 
 ## 7. 검증 규칙 (필수)
@@ -78,6 +79,8 @@ KDS/AISC 인용 시 기준명+조항번호를 코드 주석·계산서에 명시
 - OI-02 지진력 Sds 2.5·Fp (KDS 41 17 00 — 확인 필요). Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp, ap 1.0·Rp 2.5, 계수 상·하한 0.3·1.6(2차 심사의견 D-2). 설치높이비 z/h는 선택 입력(기본 1.0 → 계수 0.48, 종전과 같음). 모멘트·피스 인장 경로는 `_fp_coefficient`만 경유한다. 18장 식·조항 번호, ap·Rp 표 번호 확인 필요
 - 동적 포트(2차 심사의견 E-3): Electron main이 OS 할당 빈 포트로 백엔드를 띄우고 preload `getApiBaseUrl`로 렌더러에 전달한다. 백엔드는 `KCC_BOARD_PARENT_PID` 감시로 부모 소멸 시 종료한다. 고정 포트 8000은 브라우저 개발 모드 기본값으로만 남는다
 - OI-08 박판 유효폭 (KDS 41 30 30 — 반영 여부 확인 필요)
+- OI-11 CH 끼움 보드 연결 모델: A안(피스 300 mm/피치당 4개 체결 상당 + 피스 인장 검토 제외, R 0.66) 채택. γ안(비합성, R 0.82) 보류. 12.5T형 시편 없음 — 확인 필요
+- OI-12 I-STUD M* 0.890(시험 최대모멘트 1.690 대비 급감): 시험 M–δ 곡선 대조 전 값 유지. 민감도 `backend/tools/kl_sensitivity.py`(75-08 부분합성 +50 mm) — 확인 필요
 
 ## 10. 코드 스타일 / 금지사항
 - 한국어 주석 허용(기술용어·변수명 영문). 응답·문서는 보고서체(~이다/~임).

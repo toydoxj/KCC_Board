@@ -1,6 +1,6 @@
 # 런너 고정 앵커 제품 DB 도입 — 변경 내역 (2026-11-08)
 
-브랜치: `feat/anchor-product-db` (기준: main 0b2970c, v0.8.0 → v0.9.0). ADR-002(DevVault).
+브랜치: `feat/anchor-product-db` (기준: main 0b2970c, v0.8.0 → v0.9.0 → v0.9.3). ADR-002(DevVault). v0.9.3 결정 반영은 §7.
 
 내진 런너 고정못 허용내력을 제품 DB에서 자동 입력한다. 제품 + 매입깊이(hET) + 콘크리트 강도(f'c)를 고르면 허용 전단값이 기존 `anchor_capacity_kN`에 들어가고, 입력 화면과 계산서에 조건·출처가 표기된다. 사용자 정의(직접 입력) 경로는 그대로 유지한다. 엔진 `calculate_wall_check`와 판정 로직은 변경하지 않았다.
 
@@ -59,9 +59,9 @@ v0.9.0~0.9.2에서는 화면 기본값이 "0.4 kN/개 직접 입력"에서 "기�
 
 | 항목 | 결과 |
 |---|---|
-| `python -m pytest` | 339 passed, 465 subtests passed |
+| `python -m pytest` | 358 passed, 478 subtests passed (v0.9.3) |
 | 골든 회귀(상대오차 ≤ 0.1%) | 통과, 골든 파일 수정 없음 |
-| 신규 테스트 | test_anchor_product 7, test_anchor_resolution 15, test_api_anchor 7, test_anchor_height_impact 4 |
+| 신규 테스트 | test_anchor_product 8, test_anchor_resolution 20, test_api_anchor 9, test_anchor_height_impact 6 (v0.9.3 기준) |
 | `tsc --noEmit` / `npm run build` | 성공 |
 | 브라우저 스모크 | 미실시(개발 PC의 브라우저 확장이 맥북 Chrome에 연결되어 Windows 개발 서버를 볼 수 없었음). 맥북 Electron 배포 후 확인 예정 |
 
@@ -78,3 +78,26 @@ v0.9.0~0.9.2에서는 화면 기본값이 "0.4 kN/개 직접 입력"에서 "기�
 - 제품 DB 수치는 제조사·ICC-ES 전재값(1 lbf = 4.448 N 환산)이며 국내 인증값이 아니다.
 - 매뉴얼 캡처 이미지는 v0.7.3 화면이다. 앵커 제품 선택 UI·참조 카드 캡처 갱신이 필요하다.
 - `dev_servers.py` POSIX 전용 문제는 별도 작업 항목(CLAUDE.md §3).
+
+## 7. v0.9.3 결정 반영 (2026-11-09)
+
+검토 완료된 확정값 4건을 반영하였다. 결과(판정)에 영향하는 변경은 결정 1(기본 매입깊이)과 결정 2(스크류 상한 해제) 두 가지이다.
+
+| No | 결정 | 반영 | 변경 파일 |
+|---|---|---|---|
+| 1 | 기본 제품 Hilti X-U P8 유지, `default_embedment_mm` 22 → **27** → 자동 입력 0.4 kN/개 | 시드 label·_status, 참조 카드 기본값 안내, 정적 폴백 0.4/27, 판정 영향 테스트 재구성(0.4 경로 = v0.8.0 고정, hET 22 → 0.3 경로 보존) | `data/seed/anchor_product.json`, `renderer/src/components/input-workspace.tsx`, `renderer/src/app/page.tsx`, `tests/test_anchor_height_impact.py`, `tests/test_api_anchor.py` |
+| 2 | 내진 상한 400 N 적용 대상을 **dx·gx**로 한정, `screw` 비적용 + 별도 안내 | 시드 `seismic_shear_cap_families`, `AnchorSeismicCap.families`, SQLite schema 9 → 10(metadata, 이관·롤백), `resolve_anchor_capacity(cap_families)`·`cap_eligible`, intermediate `anchor_seismic_cap_eligible`, summary 문구, UI 체크박스 비활성·스크류 경고, 계산서·요약 분기 | `backend/engine/{models,repository,anchor}.py`, `backend/api/schemas.py`, `renderer/src/lib/{api,anchor}.ts`, `renderer/src/app/page.tsx`, `renderer/src/components/{input-workspace,calculation-report}.tsx`, 테스트 3파일 |
+| 3 | CH 끼움 보드 모델 A안 유지, 용어·문서 정합화 | "피스 300 mm/피치당 4개 체결 상당(등가)" 서술 통일, PRD OI-11 | 렌더러 3파일, `docs/{var_formula_spec,user_manual,screw_count_changes,PRD}.md` |
+| 4 | I-STUD M* 0.890 유지, 민감도 표·확인 필요 | `backend/tools/kl_sensitivity.py`(임시 주입, 상수 불변), screw_count_changes §6.1, PRD OI-12 | 도구 1, 문서 2 |
+| 5 | 버전 0.9.2 → 0.9.3 | package.json·lock, pyproject.toml, About(동적), 매뉴얼 부록 B(캡처 갱신 목록) | — |
+
+### 7.1 판정 영향
+
+| 경로 | v0.8.0 | v0.9.2 | v0.9.3 | 비고 |
+|---|---|---|---|---|
+| 기본 제품·기본 매입(내진, 11개 시편 anchorHeight) | 0.4 kN 값(2,600~4,100) | 0.3 kN 값(1,950~3,050) | 0.4 kN 값(= v0.8.0) | 결정 1. §2 표 마지막 열 |
+| ICC-ES PAF 제품(dx·gx) + 내진 | — | min(표, 400) | min(표, 400) | 불변 |
+| 콘크리트 스크류(screw) + 내진 | — | 400 N | 표 값(cap 비적용) | 결정 2. 허용내력 증가 → anchorHeight 증가. 예: Titen 1/4 hET 38·f'c 27.6 → 1,779 N |
+| CH 구성 허용높이 | 종전 | R 0.66 | R 0.66(불변) | 결정 3, 문구만 |
+| I-STUD 허용높이 | — | M* 0.890 | M* 0.890(불변) | 결정 4, 민감도 기록만 |
+| 골든 3파일 | — | 불변 | 불변 | `git diff --stat tests/golden` 비어 있음 |
