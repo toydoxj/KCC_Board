@@ -412,6 +412,7 @@ class ReportWordingTest(unittest.TestCase):
         cwd=RENDERER,
         capture_output=True,
         text=True,
+        encoding="utf-8",  # Windows 기본 코드페이지(cp949)로 node UTF-8 출력을 읽지 않도록 고정
         timeout=180,
         check=False,
       )
