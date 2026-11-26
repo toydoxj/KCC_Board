@@ -14,6 +14,10 @@ interface ResultNoticesProps {
   result?: WallCheckResult;
   // 결과 화면: 적용 범위·제한사항을 본문 아래 주석 대신 버튼 → 팝업으로 표시한다(계산서는 본문 표기 유지)
   limitationsAsPopup?: boolean;
+  // "report": 계산서용 — 입력 조건 안내를 경고 아이콘 없이 사실 표기로만 보인다(item 182)
+  variant?: "screen" | "report";
+  // 화면 전용 조치 안내(입력 조건 안내가 있을 때 마지막 줄에 표시). 계산서에는 넘기지 않는다
+  screenGuidance?: string;
 }
 
 // 시험 구성 대조 배지. 판정(O.K/N.G)과 구분하여 표시한다
@@ -57,16 +61,25 @@ function LimitationsPopupRow() {
 }
 
 // 실험 검증 범위 안내(F-2)와 입력 경고(F-4, 표준 외 피스 간격 등). 판정에는 영향하지 않는다.
-export function ResultNotices({ notices, showProductScope = false, result, limitationsAsPopup = false }: ResultNoticesProps) {
+export function ResultNotices({ notices, showProductScope = false, result, limitationsAsPopup = false, variant = "screen", screenGuidance }: ResultNoticesProps) {
+  const report = variant === "report";
+  const NoticeIcon = report ? Info : AlertTriangle;
   return (
     <div className="grid gap-2 text-sm">
       {result ? <TestedConfigurationBadge result={result} /> : null}
       {notices.map((notice) => (
-        <div key={notice} className="flex items-start gap-2 rounded-md border border-amber-400 bg-amber-50 p-3 text-amber-900">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <div
+          key={notice}
+          data-notice={variant}
+          className={`flex items-start gap-2 rounded-md border p-3 ${report ? "border-slate-300 bg-slate-50 text-slate-700" : "border-amber-400 bg-amber-50 text-amber-900"}`}
+        >
+          <NoticeIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{notice}</span>
         </div>
       ))}
+      {!report && screenGuidance && notices.length > 0 ? (
+        <p className="px-1 text-xs text-amber-900" data-notice-guidance="screen">{screenGuidance}</p>
+      ) : null}
       {limitationsAsPopup ? (
         <LimitationsPopupRow />
       ) : (

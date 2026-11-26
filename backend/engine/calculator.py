@@ -942,9 +942,9 @@ def _neutral_axis_notices(section: _Section, neutral_axis: float) -> tuple[str, 
     far = None if inner is None else neutral_axis - (inner.y_centroid_mm - inner.thickness_mm / 2.0)
   location = f"중립축({neutral_axis:.1f} mm)이 스터드 범위({bottom:.1f}~{top:.1f} mm)를 {side} 보드 쪽으로 {excess:.1f} mm 벗어남"
   if near is not None and near > 0.0:
-    return (f"{location} — 스터드와 {side} 1번(내측) 보드 사이 이격 간극 안이므로 계산하나, 결과 적용에 유의할 것",)
+    return (f"{location} — 스터드와 {side} 1번(내측) 보드 사이 이격 간극 안이며, 이 중립축 위치로 계산함",)
   if far is not None and far >= 0.0:
-    return (f"{location} — {side} 1번(내측) 보드 두께 안이므로 계산하나, 부분합성 전단 누계 전제와 차이가 있어 결과 적용에 유의할 것",)
+    return (f"{location} — {side} 1번(내측) 보드 두께 안이며, 부분합성 전단 누계는 보드 경계 기준 전제로 계산함",)
   raise ValueError(
     f"{location}. {side} 1번(내측) 보드도 넘어 부분합성 전단 누계 전제가 성립하지 않는 적용 범위 밖 구성입니다. "
     f"{side} 보드를 줄이거나 반대면 보드를 추가하십시오."
@@ -1127,7 +1127,7 @@ def _screw_pitch_notices(section: _Section, bolt: BoltInput) -> tuple[str, ...]:
       continue
     label = BOARD_ORDER_LABELS[order]
     notices.append(
-      f"{label} 피스 간격 {pitch:g} mm는 표준 간격 {standard:g} mm와 다름 — 실험 검증 범위 밖의 입력이므로 결과 적용에 유의할 것"
+      f"{label} 피스 간격 {pitch:g} mm는 표준 간격 {standard:g} mm와 다름 — 시험 시편 외 입력값으로 계산함"
     )
   return tuple(notices)
 

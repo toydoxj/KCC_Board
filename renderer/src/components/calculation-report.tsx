@@ -6,6 +6,7 @@ import { displayStudGroup } from "@/lib/visual-assets";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 import { ResultNotices } from "@/components/result-notices";
 import { APP_FULL_TITLE } from "@/lib/app-info";
+import { screwTensionScope } from "@/lib/report-wording";
 
 export interface ReportBoardSlot {
   label: string;
@@ -123,6 +124,9 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
   const screwTensionOk = data.result.screw_tension_verdict === "O.K";
   const isSeismic = data.result.design_case !== "non_seismic";
   const runnerOk = heightReview(data.result,data.calculationMode,data.geometry.spanMm).anchorOk;
+  // 피스 인장 검토 범위(item 182): 피스 체결층이 없으면 "O.K (피스 인장 검토 생략)", CH 일부 체결이면 범위 표기
+  const hasBoardLayer = (boards: ReportBoardSlot[]) => boards.some((board) => board.thickness !== null && board.thickness > 0);
+  const screwScope = screwTensionScope(data.result, hasBoardLayer(data.frontBoards), hasBoardLayer(data.rearBoards));
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
   const strengthCheckModeLabel = strengthCheckModeLabels[data.result.strength_check_mode] ?? data.result.strength_check_mode;
   const isStudOnlyStrengthCheck = data.result.strength_check_mode === "stud_only";
@@ -167,7 +171,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
       </header>
 
       <section className="mt-4">
-        <ResultNotices notices={data.result.notices ?? []} showProductScope result={data.result} />
+        <ResultNotices notices={data.result.notices ?? []} showProductScope result={data.result} variant="report" />
       </section>
 
       <section className={`mt-5 grid gap-3 md:grid-cols-2 ${isHeightSearchMode&&isSeismic?"report-overview-anchor-height":""}`}>
@@ -184,7 +188,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <Verdict label="산정 응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="산정 처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
                 {isSeismic&&<Verdict label="런너 고정못" ok={runnerOk} value={runnerOk?"O.K":"N.G"}/>}
-                <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
+                <Verdict label="피스 인장" ok={screwTensionOk} value={screwScope.verdictLabel} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
@@ -200,7 +204,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
                 <Verdict label="응력" ok={stressOk} value={data.result.stress_verdict} />
                 <Verdict label="처짐" ok={deflectionOk} value={data.result.deflection_verdict} />
                 {isSeismic&&<Verdict label="런너 고정못" ok={runnerOk} value={runnerOk?"O.K":"N.G"}/>}
-                <Verdict label="피스 인장" ok={screwTensionOk} value={data.result.screw_tension_verdict} />
+                <Verdict label="피스 인장" ok={screwTensionOk} value={screwScope.verdictLabel} />
               </div>
               <div className="mt-3 grid gap-1 text-sm">
                 <KeyValue label="계산 방향" value={calculationModeLabel} />
@@ -507,12 +511,13 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
             <div>풀아웃 Pnot = 0.85 × tc × d × Fu2 (Eq. J4.4.1-1), Ω = 3.0</div>
             <div>풀스루(석고보드) = 입력 공칭값 / Ω (기본 343 N — ASTM C1396 nail pull 참고값)</div>
           </div>
-          {data.result.intermediate.screw_tension_spacing_mm === 0 ? (
+          {!screwScope.checked ? (
             <p className="text-sm text-slate-700" data-screw-tension="not-applicable">
-              해당 없음(끼움 보드 — 피스 없음). 피스 체결층이 없는 구성(CH 끼움 보드만 있음)으로, 끼움 보드는 홈이 면외 이탈을 구속하므로 피스 인장 검토 대상이 아님.
+              피스 인장 검토 생략(끼움 보드 — 피스 없음). 피스 체결층이 없는 구성(CH 끼움 보드만 있음)으로, 끼움 보드는 홈이 면외 이탈을 구속하므로 피스 인장 검토 대상이 아님.
             </p>
           ) : (
-          <div className="grid gap-1 text-sm md:grid-cols-2">
+          <div className="grid gap-1 text-sm md:grid-cols-2" data-screw-tension={screwScope.partial ? "partial" : "all"}>
+            <KeyValue label="검토 범위" value={screwScope.scopeLabel} />
             <KeyValue label="횡압력 q" value={`${formatNumber(data.result.intermediate.screw_tension_pressure_kN_m2 ?? Number.NaN)} kN/m²`} />
             <KeyValue label="피스 부담 피치" value={`${formatNumber(data.result.intermediate.screw_tension_spacing_mm ?? Number.NaN)} mm`} />
             <KeyValue label="피스 인장 T" value={`${formatNumber(data.result.intermediate.screw_tension_demand_N ?? Number.NaN)} N/개`} />
@@ -556,10 +561,9 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
         <section className="mt-5">
           <ReportBlock title={`참고 부록 — 선택 앵커 제품의 허용하중 표 (${anchorProductLabel(data.anchorProduct)})`}>
             <p className="mb-2 text-xs text-slate-600">
-              {data.anchorProduct.basisLabel} — {data.anchorProduct.source}
-              {data.anchorProduct.approvals ? `; ${data.anchorProduct.approvals}` : ""}. 조건: {data.anchorProduct.concreteCondition}.
+              {anchorBasisSourceLabel(data.anchorProduct)}. 조건: {data.anchorProduct.concreteCondition}.
               최소 콘크리트 두께 / 연단거리 / 간격: {mmOrDash(data.anchorProduct.minConcreteThicknessMm)} / {mmOrDash(data.anchorProduct.minEdgeMm)} / {mmOrDash(data.anchorProduct.minSpacingMm)}.
-              {data.anchorProduct.basis === "rec" ? " 제조사 권장하중 — 안전율 미기재(확인 필요)." : ""}
+              {data.anchorProduct.basis === "rec" ? " 제조사 권장하중 — 안전율 원문 미기재." : ""}
               {" "}DB 수치는 제조사 Data Sheet·ICC-ES 평가서 전재값이며 국내 인증값이 아님.
             </p>
             <table className="w-full border-collapse text-xs">
@@ -611,7 +615,7 @@ export function anchorConditionLabel(product: ReportAnchorProduct) {
 }
 
 // 내진 상한 비적용 제품군(screw) 안내(결정 2, 2026-11-09). 내진 CASE에서만 표기
-const anchorCapNotEligibleReportNote = "내진 상한 비적용 — 스크류 앵커 내진 적격성(ACI 318 Ch.17 / KDS 14 20 54) 별도 확인";
+const anchorCapNotEligibleReportNote = "내진 상한 비적용(스크류 앵커 — ICC-ES PAF 상한 대상 아님)";
 
 // 내진 상한 적용 여부 상태: "applied" | "not-eligible"(내진·비대상 family) | null
 function anchorCapStatus(result: WallCheckResult): "applied" | "not-eligible" | null {
@@ -645,6 +649,7 @@ export function anchorShearTensionLabel(result: WallCheckResult) {
   return `${formatNumber(shear)} N / ${formatNumber(tension)} N${capNote}`;
 }
 
+// 식별·출처 필드는 원문 그대로 인쇄한다(소유자 결정 2026-11-26). 유보 문구는 PDF 출력 전 화면 경고로 알린다
 export function anchorBasisSourceLabel(product: ReportAnchorProduct) {
   return `${product.basisLabel} — ${product.source}${product.approvals ? `; ${product.approvals}` : ""}`;
 }
@@ -717,6 +722,7 @@ function FpRows({ result }: { result: WallCheckResult }) {
 }
 
 // 고정못 허용내력 출처 표기. 미입력이면 "—"
+// 자유입력 출처는 원문 그대로 인쇄한다(소유자 결정 2026-11-26). 유보 문구는 PDF 출력 전 화면 경고로 알린다
 export function anchorSourceLabel(source: string | undefined) {
   return source && source.trim() ? source.trim() : "—";
 }

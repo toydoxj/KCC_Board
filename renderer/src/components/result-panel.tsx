@@ -5,6 +5,9 @@ import { governingHeight, heightReview } from "@/lib/height-review";
 import { strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 import { ResultNotices } from "@/components/result-notices";
 
+// 화면 전용 조치 안내(item 182): 계산서에는 엔진 안내의 사실 문장만 싣고, 적용 판단 안내는 결과 화면에만 둔다
+const inputConditionGuidance = "위 입력 조건은 실험 검증 범위 밖이므로 결과 적용 시 설계자가 공학적으로 판단할 것(계산서에는 조건과 계산 범위만 표기됨).";
+
 interface ResultPanelProps {
   result: WallCheckResult | null;
   mode: CalculationMode;
@@ -57,7 +60,7 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
           {isSeismic&&<VerdictBadge label="런너 고정못" ok={review.anchorOk} value={review.anchorOk?"O.K":"N.G"}/>}
           <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
         </div>
-        <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup />
+        <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup screenGuidance={inputConditionGuidance} />
         <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
           <CaseMetric label="검토 CASE" value={designCaseLabel} />
           <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />
@@ -96,7 +99,7 @@ export function ResultPanel({ result, mode, spanMm=0 }: ResultPanelProps) {
         {isSeismic&&<VerdictBadge label="런너 고정못" ok={review.anchorOk} value={review.anchorOk?"O.K":"N.G"}/>}
         <VerdictBadge label="피스 인장" ok={screwTensionOk} value={result.screw_tension_verdict} />
       </div>
-      <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup />
+      <ResultNotices notices={result.notices ?? []} result={result} limitationsAsPopup screenGuidance={inputConditionGuidance} />
       <div className="grid gap-2 rounded-md border border-border bg-white p-4 shadow-panel">
         <CaseMetric label="검토 CASE" value={designCaseLabel} />
         <CaseMetric label="강도 기준" value={strengthCheckModeLabel} />

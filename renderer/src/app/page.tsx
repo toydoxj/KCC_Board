@@ -43,6 +43,7 @@ import {
 } from "@/lib/calculation-mode";
 import { APP_SHORT_NAME, APP_TITLE, APP_VERSION } from "@/lib/app-info";
 import { cn } from "@/lib/utils";
+import { findReservationFields, type PrintedTexts, type ReportKind, reservationFieldText, reservationWarningTitle, runGuardedReportOutput } from "@/lib/report-reservation";
 import { useCheckStore } from "@/store/check-store";
 
 const noneBoardValue = "NONE";
@@ -459,6 +460,16 @@ export default function Home() {
   const calculationModeRegister = register("calculationMode");
   const studGroupRegister = register("studGroup");
   const [reportData, setReportData] = useState<CalculationReportData | null>(null);
+  // PDF 출력 전 화면 경고(소유자 결정 2026-11-26): 유보 문구가 있는 필드 목록. 문서에는 원문 그대로 인쇄됨
+  // 실제로 인쇄되는 필드만: 인쇄용 DOM(.print-report·.print-summary)의 텍스트에 원문이 있는지로 판별
+  const printReportRef = useRef<HTMLDivElement | null>(null);
+  const printSummaryRef = useRef<HTMLDivElement | null>(null);
+  const [printedTexts, setPrintedTexts] = useState<PrintedTexts>({});
+  useEffect(() => {
+    setPrintedTexts(reportData ? { detail: printReportRef.current?.textContent ?? "", summary: printSummaryRef.current?.textContent ?? "" } : {});
+  }, [reportData]);
+  const reservationFields = useMemo(() => (reportData ? findReservationFields(reportData, printedTexts) : []), [reportData, printedTexts]);
+  const reservationTitle = reservationWarningTitle(reservationFields);
   const [savingPdf, setSavingPdf] = useState(false);
   const [mirrorRear, setMirrorRear] = useState(false);
   const [pdfMessage, setPdfMessage] = useState<string | null>(null);
@@ -629,10 +640,20 @@ export default function Home() {
     setPdfMessage(null);
   }
 
-  async function handlePrintReport(kind: "detail" | "summary" = "detail") {
+  async function handlePrintReport(kind: ReportKind = "detail") {
     if (!reportData) {
       return;
     }
+    // 출력 직전 재확인: 저장할 문서의 현재 인쇄용 DOM 텍스트로 다시 판별(유보 문구 필드는 원문 그대로 인쇄됨)
+    const fields = findReservationFields(reportData, {
+      detail: printReportRef.current?.textContent ?? "",
+      summary: printSummaryRef.current?.textContent ?? "",
+    });
+    await runGuardedReportOutput({ kind, fields, confirm: (message) => window.confirm(message), save: () => saveReportPdf(reportData, kind) });
+  }
+
+  // 앱 확인 절차를 통과한 뒤에만 호출한다. data-print-kind 가 있을 때만 인쇄용 문서 DOM이 인쇄된다(globals.css)
+  async function saveReportPdf(reportData: CalculationReportData, kind: ReportKind) {
     setSavingPdf(true);
     setPdfMessage(null);
     document.documentElement.dataset.printKind = kind;
@@ -830,6 +851,16 @@ export default function Home() {
               </Button>
               </div>
             </div>
+            {reservationTitle ? (
+              <div className="input-warning mb-3" role="status" data-reservation-warning="before-print">
+                <p>{reservationTitle}</p>
+                <ul className="mt-1 list-disc pl-5">
+                  {reservationFields.map((field) => (
+                    <li key={field.path}>{reservationFieldText(field)}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <ResultPanel result={result} mode={selectedCalculationMode} spanMm={reportData?.geometry.spanMm} />
           </section>
         </aside>
@@ -857,13 +888,14 @@ export default function Home() {
         </div>
       ) : null}
       {reportData ? (
-        <div className="print-summary"><SummaryReport data={reportData}/></div>
+        <div className="print-summary" ref={printSummaryRef}><SummaryReport data={reportData}/></div>
       ) : null}
       {reportData ? (
-        <div className="print-report">
+        <div className="print-report" ref={printReportRef}>
           <CalculationReport data={reportData} />
         </div>
       ) : null}
+      <div className="print-guard">계산서·요약페이지 PDF는 화면의 「계산서PDF저장」·「요약페이지 PDF 저장」 버튼으로 저장함.</div>
     </main>
   );
 }

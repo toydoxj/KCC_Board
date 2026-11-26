@@ -31,7 +31,7 @@ ANCHOR_FAMILY_CUSTOM = "custom"
 _DESIGN_CASE_SEISMIC = "seismic"
 # 조회 요약(summary) 뒤에 붙는 내진 상한 적용 여부 문구
 SUMMARY_CAP_APPLIED_SUFFIX = " (내진 상한 {cap_N:g} N 적용)"
-SUMMARY_CAP_NOT_ELIGIBLE_SUFFIX = " (내진 상한 비적용 — 스크류 앵커 내진 적격성 별도 확인)"
+SUMMARY_CAP_NOT_ELIGIBLE_SUFFIX = " (내진 상한 비적용 — 스크류 앵커는 ICC-ES PAF 상한 대상 아님)"
 # N → kN 환산: N을 정수로 반올림(0.5는 올림, math.floor(x + 0.5))한 뒤 1000으로 나눈다.
 # 클라이언트 renderer/src/lib/anchor.ts roundKn(Math.round(N) / 1000)과 같은 규칙이어야 서버 덮어쓰기가 생기지 않는다.
 _NEWTON_PER_KILONEWTON = 1000.0

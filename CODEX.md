@@ -54,9 +54,10 @@ repo/
 - `bolt_material.json`, `stud_method.json`.
 - 시험 구성 대조(2차 심사의견 A-1·F-2): KCC 11종 시험 시편 구성의 단일 출처는 `stud_method.json`의 `tested_configurations`(시편 번호·스터드 형식·규격·시공방식·간격·전·후면 보드, 시험 높이 `tested_height_mm` 2,400). R 보정 시편 입력(`tests/golden/requested_shape_cases.json`)과 일치해야 한다(`tests/test_review_round2.py` 검사). 엔진 `_tested_configuration_match`는 판정에 영향하지 않으며, 결과 intermediate `tested_configuration_match`·`matched_specimen_no`와 응답 `tested_configuration_mismatch_fields`(문자열 목록)를 반환한다.
 - SQLite schema 8: `specimen_configuration` 테이블. 구 DB(schema 7 이하)는 seed 경로가 있으면 이관 시 채우고, 없으면 명시적 오류(롤백).
-- `anchor_product.json`(v0.9.0): 런너 고정 앵커 제품 허용하중 DB의 단일 출처(제품 12 + 사용자 정의 `custom` 1, 허용하중 표 74행, 제조사 Data Sheet·ICC-ES 전재 — 초안, 국내 인증값 아님). `anchor_id`는 안정 키(변경 금지), `is_default` 정확히 1개(`hilti_x_u`, `default_embedment_mm` 27 → 400 N = 0.4 kN — 2026-11-09 사용자 확정, v0.8.0 기본값과 동일; hET 22는 300 N), 최상위 `seismic_shear_cap_N` 400과 적용 대상 제품군 `seismic_shear_cap_families` ["dx","gx"](v0.9.3 결정 2: ICC-ES PAF 평가서 §4.1 Item 2가 타정못·가스핀 전용. `screw`는 상한 비적용 + "내진 적격성 ACI 318 Ch.17 / KDS 14 20 54 별도 확인" 안내, 확인 필요). 조회 규칙(rec: hET 이하 최대 행, asd: (hET, f'c) 정확 일치, 보간 금지, 내진 cap은 대상 family만)은 `backend/engine/anchor.py`에 두고 **API 계층이 `anchor_capacity_kN`을 채운다 — 엔진은 kN 값만 사용**(판정 로직 불변). v0.9.0~0.9.2에서는 기본 매입 22 mm로 화면 기본 허용내력이 0.3 kN/개였고, v0.9.3에서 27 mm로 확정되어 기본 경로 anchorHeight가 v0.8.0과 같다(`docs/anchor_product_db_changes.md`). `anchor_seismic_cap_eligible`(0/1)이 응답 intermediate에 실린다.
+- `anchor_product.json`(v0.9.0): 런너 고정 앵커 제품 허용하중 DB의 단일 출처(제품 12 + 사용자 정의 `custom` 1, 허용하중 표 74행, 제조사 Data Sheet·ICC-ES 전재 — 초안, 국내 인증값 아님). `anchor_id`는 안정 키(변경 금지), `is_default` 정확히 1개(`hilti_x_u`, `default_embedment_mm` 27 → 400 N = 0.4 kN — 2026-11-09 사용자 확정, v0.8.0 기본값과 동일; hET 22는 300 N), 최상위 `seismic_shear_cap_N` 400과 적용 대상 제품군 `seismic_shear_cap_families` ["dx","gx"](v0.9.3 결정 2: ICC-ES PAF 평가서 §4.1 Item 2가 타정못·가스핀 전용. `screw`는 상한 비적용. 계산서 표기는 "내진 상한 비적용(스크류 앵커 — ICC-ES PAF 상한 대상 아님)"이고, 내진 적격성(ACI 318 Ch.17 / KDS 14 20 54) 안내는 입력 화면 전용). 조회 규칙(rec: hET 이하 최대 행, asd: (hET, f'c) 정확 일치, 보간 금지, 내진 cap은 대상 family만)은 `backend/engine/anchor.py`에 두고 **API 계층이 `anchor_capacity_kN`을 채운다 — 엔진은 kN 값만 사용**(판정 로직 불변). v0.9.0~0.9.2에서는 기본 매입 22 mm로 화면 기본 허용내력이 0.3 kN/개였고, v0.9.3에서 27 mm로 확정되어 기본 경로 anchorHeight가 v0.8.0과 같다(`docs/anchor_product_db_changes.md`). `anchor_seismic_cap_eligible`(0/1)이 응답 intermediate에 실린다.
 - SQLite schema 9: `anchor_product`(메타, `seq` 시드 순서) + `anchor_load_row` 테이블, metadata `anchor_seismic_shear_cap_N`·`_note`. 구 DB(schema 8 이하)는 seed 경로가 있으면 이관, 없으면 명시적 오류(롤백). ADR-002.
 - SQLite schema 10(v0.9.3): metadata `anchor_seismic_shear_cap_families`(JSON 배열 문자열). schema 9 DB는 seed 경로가 있으면 이관(note도 갱신), 없으면 명시적 오류(롤백).
+- SQLite schema 11(item 182, 2026-11-26): 수치 변경 없음. 앵커 카탈로그 출력 문자열(`hilti_x_c.approvals`, `simpson_pdpa.concrete_condition`)에서 내부 검토 문구를 뺐다. schema 10 이하 DB는 두 필드가 구버전 문자열과 정확히 같을 때만 seed 값으로 갱신(`_migrate_anchor_schema_11`, 로컬 편집 수치·문자열 보존). 갱신 대상이 있는데 seed 경로가 없으면 명시적 오류(롤백).
 - DB 조회는 **그룹+단면명 키** 사용(엑셀 VLOOKUP 인덱스 의존 제거). 미스 시 **명시적 예외**(silent #N/A 금지).
 
 ## 7. 검증 규칙 (필수)
@@ -74,7 +75,7 @@ repo/
 - **결과(판정)에 영향하는 변경은 사용자 승인 후 반영한다. 무단 변경 금지.**
 
 ## 9. 출처 표기 의무 (Open Issues)
-KDS/AISC 인용 시 기준명+조항번호를 코드 주석·계산서에 명시한다. 미확정 항목은 "확인 필요" 표기.
+KDS/AISC 인용 시 기준명+조항번호를 코드 주석·계산서에 명시한다. 미확정 항목의 "확인 필요" 표기는 코드 주석·내부 문서(PRD·docs·DevVault)에만 쓰고, **산출 문서(계산서·요약페이지 PDF·인쇄)에는 쓰지 않는다**(§11).
 - OI-01 부분합성 √η (AISC 360 / KDS 41 30 30 — 확인 필요)
 - OI-02 지진력 Sds 2.5·Fp (KDS 41 17 00 — 확인 필요). Fp = 0.4·ap·SDS·Ip·Wp·(1+2z/h)/Rp, ap 1.0·Rp 2.5, 계수 상·하한 0.3·1.6(2차 심사의견 D-2). 설치높이비 z/h는 선택 입력(기본 1.0 → 계수 0.48, 종전과 같음). 모멘트·피스 인장 경로는 `_fp_coefficient`만 경유한다. 18장 식·조항 번호, ap·Rp 표 번호 확인 필요
 - 동적 포트(2차 심사의견 E-3): Electron main이 OS 할당 빈 포트로 백엔드를 띄우고 preload `getApiBaseUrl`로 렌더러에 전달한다. 백엔드는 `KCC_BOARD_PARENT_PID` 감시로 부모 소멸 시 종료한다. 고정 포트 8000은 브라우저 개발 모드 기본값으로만 남는다
@@ -88,3 +89,16 @@ KDS/AISC 인용 시 기준명+조항번호를 코드 주석·계산서에 명시
 - 기존 아키텍처 패턴을 사전 파악하고, 불명확하면 질문한다. **무단 아키텍처 변경 금지.**
 - 하드코딩 금지(상수는 설정 분리). silent 실패 금지(예외 명시).
 - 작업 전 단계별 계획 제시 후 진행.
+
+## 11. 산출 문서 문구 규칙 (소유자 상시 지시, APP_DEV item 182 · 2026-11-26)
+- 산출 문서(상세 계산서·요약페이지 PDF·인쇄 등 프로그램이 만드는 문서)에 「확인 필요」「확인이 필요」「근거 없음」「미검증」「검증하지 않음」「초안」「보류」「확정 필요」「검토 필요」「추후 확인」「별도 확인」「확인하시기 바랍니다」「주의」「WARN」류 문구를 쓰지 않는다. 시드 출력 필드(`anchor_product.json`의 `approvals`·`concrete_condition`·`source` 등)도 같다.
+- 판정은 계산값 기준이다. 행은 O.K / N.G, 검토의견·종합은 적합 / 부적합 둘만 쓴다. 엔진의 보류·WARN 성격 판정도 계산값 비 ≤ 1.0 이면 O.K, 초과면 N.G로 적는다.
+- 일부 검토를 계산하지 않은 행은 O.K만 적지 않고 계산한 범위를 붙인다(예: 'O.K (휨·전단)', '(…검토 생략)'). 계산값이 전혀 없는 '판정 불가' 행은 산출 문서에서 빼고 화면 메시지로만 알린다.
+- 판정 로직·출력 차단·계산 한계는 바꾸지 않는다. 안내 사유(원문 미확보·국내 적용 타당성 등)는 입력·결과 화면 메시지로 옮긴다. KDS 조항번호 인용은 그대로 둔다.
+- 화면 경고 검출식(유보 문구 검출)은 `renderer/src/lib/report-wording.ts`(`reportForbiddenPatternSource`, 영문 대소문자 무관)이다. 한국어 조사·어미 변형(확인이/확인을/검토가 필요합니다, 요망·요청·바람), 경고·잠정·추후·미확인·미확정, 영문 WARN·CAUTION·DRAFT·TBD·TBC·PENDING·PRELIMINARY·UNVERIFIED·TO BE CONFIRMED·REVIEW REQUIRED 등을 포함한다. 확인·검토 요청 어미(확인해 주시기 바랍니다, 검토해 주십시오, Please verify, verify before use)도 포함한다. 화면 경고는 과탐이 무해하므로 넓게, 낱말이 아니라 형태로 잡는다: '…주의' 합성어 전부("취급주의", "폭발주의"), '확인|검토|검증|확정' 뒤 8자 안의 '필요·요망·요청·바람'("확인할 필요가 있음"), '미'+'확인|검토|검증|확정|승인'("성능미검증")과 공백 변형을 경고한다. 예외는 앞 두 글자 고유 어휘 목록('건축주의' = 건축주+의, '민주주의' 등 '…주의(ism)')과 "기초안"뿐이며, 영문 단어는 앞 글자가 영문이 아닐 때만 잡는다("DEPENDING" 제외). 검사는 NFKC·폭 없는 문자 제거·공백/줄바꿈 정규화 후 원문형과 공백 제거형으로 한다(`findForbiddenWording`).
+- 사용자 자유입력·식별 필드(허용내력 출처·제품명·자재명·앵커 source·approvals·concrete_condition 등 입력·로컬 자재 DB 값)는 유보 문구가 있어도 산출 문서에서 지우거나 바꾸지 않고 원문 그대로 인쇄한다(소유자 결정 2026-11-26, Curtainwall item 177 공통 방식). 대신 PDF 출력 전 결과 화면에 「유보 문구가 있는 필드」 목록을 경고로 보이고(`findReservationFields`·`reservationWarningTitle`, `renderer/src/lib/report-reservation.ts`), 계산서·요약페이지 PDF 저장 직전에 해당 문서에 인쇄되는 항목으로 확인 창을 띄우고, 거절하면 저장하지 않는다(`runGuardedReportOutput`, `page.tsx`). 목록은 원본 필드 경로별로 따로 세고(출처·승인 분리), 문서 종류별 인쇄용 DOM 텍스트에 원문이 실제로 있는 필드만 넣는다(비내진 문서의 앵커 출처 등 제외). 레이어 이름 같은 파생 표기는 원본 보드 종류 항목에 합친다. 인쇄용 문서 DOM은 앱 확인 절차를 통과해 `data-print-kind`가 설정됐을 때만 인쇄되고, 브라우저 인쇄 명령을 직접 쓰면 저장 버튼 안내만 인쇄된다(`globals.css`). 입력 화면은 허용내력 출처 필드 옆에 같은 경고를 보인다(`input-workspace.tsx`). 대체 표기("등록명 n")·문서 범례·인쇄 필터는 쓰지 않는다.
+- 피스 인장: 피스 체결층은 실제 보드 구성으로 판별한다(전면 보드 = 피스 체결, 후면 보드는 CH-STUD만 끼움). 체결층이 없으면(CH 끼움 보드만) 'O.K (피스 인장 검토 생략)', CH 일부 체결이면 'O.K (전면 피스 체결층)'으로 적는다(`screwTensionScope`). 하중 0으로 엔진 지배 피치가 0이어도 체결층이 있으면 생략으로 적지 않는다. 엔진 판정은 그대로다.
+- 엔진 입력 조건 안내(notices: 중립축 위치·표준 외 피스 간격)는 사실과 계산 범위만 쓴다. 적용 판단 안내는 결과 화면(`result-panel.tsx` screenGuidance)에만 둔다.
+- 프로그램이 만든 문구(엔진·시드·고정 문자열)는 원천에서 사실 서술로 쓴다. 검사는 화면 경고 검출식과 독립된 검색식(`renderer/scripts/report-wording-check.mjs`의 `PROGRAM_TEXT_PATTERN`)으로, 렌더링 텍스트에서 사용자 입력 원문을 뺀 나머지가 0곳이어야 한다. 프로그램 문구만 있는 구성은 화면 경고 목록도 비어야 한다(시험 고정).
+- 산출 문서에서 뺀 확인 필요 사항은 DevVault `projects/KCC_board/unverified.md`에 기록한다.
+- 회귀 시험: `tests/test_report_wording.py`(API 출력 문자열·계산서 소스·표준 예제와 분기 예제의 실제 렌더링 텍스트, 사용자 입력 반례의 원문 인쇄·화면 경고 표시, `renderer/scripts/report-wording-check.mjs`). 렌더링 시험은 `renderer/node_modules`가 없으면 실패한다(의도적 생략만 `KCC_ALLOW_SKIP_RENDER=1`).
