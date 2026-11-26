@@ -8,7 +8,7 @@
 
 ## 1. 설치와 실행
 
-1. GitHub Release에서 `KCC.Board.Setup.0.9.3.exe`를 내려받는다.
+1. GitHub Release에서 `KCC.Board.Setup.0.9.4.exe`를 내려받는다.
 2. 설치 파일을 실행한다. 현재 사용자 계정에 설치된다.
 3. Windows SmartScreen 경고가 나오면 "추가 정보 → 실행"을 누른다. 코드서명 인증서가 없어서 나오는 경고이다.
 4. 시작 메뉴에서 KCC Board를 실행한다.
