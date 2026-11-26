@@ -181,11 +181,11 @@ class AnchorRepositoryTest(unittest.TestCase):
   def tearDown(self) -> None:
     self.temp_dir.cleanup()
 
-  def test_schema_version_is_10(self) -> None:
-    self.assertEqual(SCHEMA_VERSION, "10")
+  def test_schema_version_is_11(self) -> None:
+    self.assertEqual(SCHEMA_VERSION, "11")
     with closing(sqlite3.connect(self.db_path)) as connection:
       version = connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0]
-      self.assertEqual(version, "10")
+      self.assertEqual(version, "11")
       families = connection.execute("SELECT value FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'").fetchone()[0]
       self.assertEqual(json.loads(families), ["dx", "gx"])
       self.assertEqual(connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0], 13)
@@ -216,7 +216,7 @@ class AnchorRepositoryTest(unittest.TestCase):
     self.assertEqual(migrated.get_anchor_seismic_cap().cap_N, 400.0)
     self.assertEqual(migrated.get_anchor_seismic_cap().families, ("dx", "gx"))
     with closing(sqlite3.connect(self.db_path)) as connection:
-      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
+      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "11")
 
   def test_schema_9_db_is_migrated_with_seed_dir(self) -> None:
     # schema 9(v0.9.0~0.9.2) DB: 앵커 표는 있으나 상한 적용 대상(families)이 없고 기본 매입깊이가 22였다
@@ -233,7 +233,7 @@ class AnchorRepositoryTest(unittest.TestCase):
     self.assertEqual(migrated.get_anchor_product("hilti_x_u").default_embedment_mm, 27.0)
     self.assertEqual(migrated.list_anchor_products(), self.json_repo.list_anchor_products())
     with closing(sqlite3.connect(self.db_path)) as connection:
-      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
+      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "11")
 
   def test_schema_9_db_without_seed_dir_rolls_back(self) -> None:
     with closing(sqlite3.connect(self.db_path)) as connection:
@@ -246,6 +246,28 @@ class AnchorRepositoryTest(unittest.TestCase):
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "9")
       self.assertIsNone(connection.execute("SELECT value FROM metadata WHERE key = 'anchor_seismic_shear_cap_families'").fetchone())
       # 실패한 이관은 카탈로그 삭제까지 롤백되어야 한다
+      self.assertEqual(connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0], 13)
+
+  def test_schema_10_db_is_migrated_with_seed_dir(self) -> None:
+    # schema 10(v0.9.3) DB: 앵커 출력 문자열에 내부 검토 문구가 남아 있었다(item 182)
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute("UPDATE anchor_product SET approvals = '확인 필요 (Data Sheet 미기재); 미국판 ICC ESR-1663' WHERE anchor_id = 'hilti_x_c'")
+      connection.execute("UPDATE metadata SET value = '10' WHERE key = 'schema_version'")
+      connection.commit()
+    migrated = SqliteRepository(self.db_path, ROOT / "data/seed")
+    self.assertEqual(migrated.list_anchor_products(), self.json_repo.list_anchor_products())
+    self.assertNotIn("확인 필요", migrated.get_anchor_product("hilti_x_c").approvals or "")
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "11")
+
+  def test_schema_10_db_without_seed_dir_rolls_back(self) -> None:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute("UPDATE metadata SET value = '10' WHERE key = 'schema_version'")
+      connection.commit()
+    with self.assertRaises(RepositoryLookupError):
+      SqliteRepository(self.db_path)
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
       self.assertEqual(connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0], 13)
 
   def test_schema_8_db_without_seed_dir_rolls_back(self) -> None:

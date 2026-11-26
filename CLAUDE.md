@@ -45,8 +45,9 @@ cd renderer; npm run dist
 - 미커밋 버전 변경(렌더러 0.5.0)은 의도된 것이므로 되돌리지 않는다.
 - 하드코딩 금지(상수는 설정 분리), silent 실패 금지(예외 명시), 작업 전 단계별 계획 제시(`CODEX.md` §10).
 - 응답·문서는 보고서체(~이다/~임), 한국어 주석 허용(기술용어·변수명 영문).
+- **산출 문서(계산서·요약페이지 PDF·인쇄)에 「확인 필요」「미검증」「주의」「WARN」류 내부 검토 문구를 쓰지 않는다.** 판정은 계산값 기준 O.K / N.G(종합은 적합 / 부적합)만 쓰고, 안내 사유는 화면 메시지로 옮긴다(`CODEX.md` §11, item 182).
 
 ## 5. 검증 루프 (변경 후 반드시 실행)
 1. 계산엔진/API 변경 → `.\.venv-win\Scripts\python.exe -m pytest -v` (골든 회귀 상대오차 ≤ 0.1% 확인)
-2. 렌더러 변경 → `cd renderer; npm run build`
+2. 렌더러 변경 → `cd renderer; npm run build`. 계산서 문구 회귀는 pytest의 `tests/test_report_wording.py`가 `renderer/node_modules`로 실제 렌더링 텍스트까지 검사한다(`npm ci` 선행)
 3. DB 시드 변경 → `init_db` 재실행 후 pytest

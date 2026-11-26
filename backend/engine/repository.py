@@ -67,7 +67,7 @@ class BoardCatalogItem:
   yield_ratio_source: str = "기본값"
 
 
-SCHEMA_VERSION = "10"
+SCHEMA_VERSION = "11"
 STUD_STEEL_SEED_FILE = "stud_steel.json"
 # 시험 시편 구성은 stud_method.json의 tested_configurations에 등재한다(2차 심사의견 A-1·F-2)
 STUD_METHOD_SEED_FILE = "stud_method.json"
@@ -498,7 +498,7 @@ class SqliteRepository:
       return connection.execute(query, params).fetchone()
 
   def _ensure_board_property_rules(self) -> None:
-    """구 DB를 현재 규칙(schema 10)으로 이관한다. 한 트랜잭션으로 처리하며 실패하면 되돌린다."""
+    """구 DB를 현재 규칙(schema 11)으로 이관한다. 한 트랜잭션으로 처리하며 실패하면 되돌린다."""
     with closing(sqlite3.connect(self.db_path)) as connection:
       columns = _table_columns(connection, "board_property")
       if not columns:
@@ -552,6 +552,7 @@ class SqliteRepository:
     _migrate_specimen_configuration(connection, self.seed_dir)
     _migrate_anchor_product(connection, self.seed_dir)
     _migrate_anchor_schema_10(connection, self.seed_dir)
+    _migrate_anchor_schema_11(connection, self.seed_dir)
     connection.execute(
       "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
       ("schema_version", SCHEMA_VERSION),
@@ -958,6 +959,27 @@ def _migrate_anchor_schema_10(connection: sqlite3.Connection, seed_dir: Path | N
   if seed_dir is None:
     raise RepositoryLookupError(
       "구 자재 DB(schema 9)에 앵커 내진 전단 상한 적용 대상(anchor_seismic_shear_cap_families)이 없습니다. "
+      "seed 경로를 지정하거나 init_db를 다시 실행하십시오."
+    )
+  products, cap = _anchor_catalog_from_seed(seed_dir)
+  connection.execute("DELETE FROM anchor_load_row")
+  connection.execute("DELETE FROM anchor_product")
+  _insert_anchor_products(connection, products.values(), cap)
+
+
+def _migrate_anchor_schema_11(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
+  """schema 10 이하 DB를 schema 11로 이관한다 — 런너 고정 앵커 카탈로그를 seed로 다시 채운다(item 182, 2026-11-26).
+
+  schema 11에서 바뀐 것은 계산서 출력 문자열(hilti_x_c approvals, simpson_pdpa concrete_condition)뿐이며 수치는 같다.
+  판별: metadata schema_version이 11 미만(또는 없음)이면 이관한다. 한 트랜잭션 안이라 실패 시 전부 롤백되고,
+  seed 경로가 없으면 명시적 오류로 중단한다(schema 버전 유지).
+  """
+  row = connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
+  if row is not None and str(row[0]).isdigit() and int(row[0]) >= 11:
+    return
+  if seed_dir is None:
+    raise RepositoryLookupError(
+      "구 자재 DB(schema 10 이하)의 런너 고정 앵커 카탈로그 문구를 갱신해야 합니다. "
       "seed 경로를 지정하거나 init_db를 다시 실행하십시오."
     )
   products, cap = _anchor_catalog_from_seed(seed_dir)

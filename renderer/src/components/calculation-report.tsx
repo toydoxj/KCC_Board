@@ -559,7 +559,7 @@ export function CalculationReport({ data, className = "" }: CalculationReportPro
               {data.anchorProduct.basisLabel} — {data.anchorProduct.source}
               {data.anchorProduct.approvals ? `; ${data.anchorProduct.approvals}` : ""}. 조건: {data.anchorProduct.concreteCondition}.
               최소 콘크리트 두께 / 연단거리 / 간격: {mmOrDash(data.anchorProduct.minConcreteThicknessMm)} / {mmOrDash(data.anchorProduct.minEdgeMm)} / {mmOrDash(data.anchorProduct.minSpacingMm)}.
-              {data.anchorProduct.basis === "rec" ? " 제조사 권장하중 — 안전율 미기재(확인 필요)." : ""}
+              {data.anchorProduct.basis === "rec" ? " 제조사 권장하중 — 안전율 원문 미기재." : ""}
               {" "}DB 수치는 제조사 Data Sheet·ICC-ES 평가서 전재값이며 국내 인증값이 아님.
             </p>
             <table className="w-full border-collapse text-xs">
@@ -611,7 +611,7 @@ export function anchorConditionLabel(product: ReportAnchorProduct) {
 }
 
 // 내진 상한 비적용 제품군(screw) 안내(결정 2, 2026-11-09). 내진 CASE에서만 표기
-const anchorCapNotEligibleReportNote = "내진 상한 비적용 — 스크류 앵커 내진 적격성(ACI 318 Ch.17 / KDS 14 20 54) 별도 확인";
+const anchorCapNotEligibleReportNote = "내진 상한 비적용(스크류 앵커 — ICC-ES PAF 상한 대상 아님)";
 
 // 내진 상한 적용 여부 상태: "applied" | "not-eligible"(내진·비대상 family) | null
 function anchorCapStatus(result: WallCheckResult): "applied" | "not-eligible" | null {
