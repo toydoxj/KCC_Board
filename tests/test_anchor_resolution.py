@@ -261,7 +261,9 @@ class AnchorRepositoryTest(unittest.TestCase):
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "11")
 
   def test_schema_10_db_without_seed_dir_rolls_back(self) -> None:
+    legacy = "일반 콘크리트, 두께 ≥ 3×매입. 최소 간격·연단 원문 확인 필요"
     with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute("UPDATE anchor_product SET concrete_condition = ? WHERE anchor_id = 'simpson_pdpa'", (legacy,))
       connection.execute("UPDATE metadata SET value = '10' WHERE key = 'schema_version'")
       connection.commit()
     with self.assertRaises(RepositoryLookupError):
@@ -269,6 +271,31 @@ class AnchorRepositoryTest(unittest.TestCase):
     with closing(sqlite3.connect(self.db_path)) as connection:
       self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "10")
       self.assertEqual(connection.execute("SELECT COUNT(*) FROM anchor_product").fetchone()[0], 13)
+      self.assertEqual(
+        connection.execute("SELECT concrete_condition FROM anchor_product WHERE anchor_id = 'simpson_pdpa'").fetchone()[0], legacy
+      )
+
+  def test_schema_10_migration_preserves_local_edits(self) -> None:
+    # Codex 1차(item 182): 이관은 구버전 문자열 2개만 바꾸고 로컬 편집 수치·문자열은 보존한다
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute("UPDATE anchor_product SET approvals = '확인 필요 (Data Sheet 미기재); 미국판 ICC ESR-1663' WHERE anchor_id = 'hilti_x_c'")
+      connection.execute("UPDATE anchor_product SET approvals = '현장 승인서 2026-01' WHERE anchor_id = 'hilti_x_u'")
+      connection.execute("UPDATE anchor_load_row SET allowable_shear_N = 350 WHERE anchor_id = 'hilti_x_u' AND embedment_mm = 27")
+      connection.execute("UPDATE metadata SET value = '10' WHERE key = 'schema_version'")
+      connection.commit()
+    migrated = SqliteRepository(self.db_path, ROOT / "data/seed")
+    self.assertEqual(migrated.get_anchor_product("hilti_x_c").approvals, self.json_repo.get_anchor_product("hilti_x_c").approvals)
+    x_u = migrated.get_anchor_product("hilti_x_u")
+    self.assertEqual(x_u.approvals, "현장 승인서 2026-01")
+    self.assertEqual(next(row.allowable_shear_N for row in x_u.table if row.embedment_mm == 27), 350)
+
+  def test_schema_10_db_without_legacy_text_needs_no_seed(self) -> None:
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      connection.execute("UPDATE metadata SET value = '10' WHERE key = 'schema_version'")
+      connection.commit()
+    SqliteRepository(self.db_path)
+    with closing(sqlite3.connect(self.db_path)) as connection:
+      self.assertEqual(connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0], "11")
 
   def test_schema_8_db_without_seed_dir_rolls_back(self) -> None:
     with closing(sqlite3.connect(self.db_path)) as connection:

@@ -967,25 +967,46 @@ def _migrate_anchor_schema_10(connection: sqlite3.Connection, seed_dir: Path | N
   _insert_anchor_products(connection, products.values(), cap)
 
 
-def _migrate_anchor_schema_11(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
-  """schema 10 이하 DB를 schema 11로 이관한다 — 런너 고정 앵커 카탈로그를 seed로 다시 채운다(item 182, 2026-11-26).
+# schema 11(item 182): 계산서 출력 문자열 중 내부 검토 문구가 있던 구버전 값. (anchor_id, 열, 구버전 문자열)
+# 이 값과 정확히 같을 때만 seed 값으로 바꾼다 — 로컬에서 고친 값·수치는 보존한다
+_ANCHOR_SCHEMA_11_LEGACY_TEXT = (
+  ("hilti_x_c", "approvals", "확인 필요 (Data Sheet 미기재); 미국판 ICC ESR-1663"),
+  ("simpson_pdpa", "concrete_condition", "일반 콘크리트, 두께 ≥ 3×매입. 최소 간격·연단 원문 확인 필요"),
+)
 
-  schema 11에서 바뀐 것은 계산서 출력 문자열(hilti_x_c approvals, simpson_pdpa concrete_condition)뿐이며 수치는 같다.
-  판별: metadata schema_version이 11 미만(또는 없음)이면 이관한다. 한 트랜잭션 안이라 실패 시 전부 롤백되고,
-  seed 경로가 없으면 명시적 오류로 중단한다(schema 버전 유지).
+
+def _migrate_anchor_schema_11(connection: sqlite3.Connection, seed_dir: Path | None) -> None:
+  """schema 10 이하 DB를 schema 11로 이관한다 — 앵커 카탈로그의 구버전 출력 문자열 2개만 seed 값으로 바꾼다(item 182, 2026-11-26).
+
+  수치·다른 문자열·로컬 편집값은 건드리지 않는다. 구버전 문자열이 남아 있을 때만 seed가 필요하며,
+  seed 경로가 없으면 명시적 오류로 중단한다(트랜잭션 롤백, schema 버전 유지).
   """
   row = connection.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
   if row is not None and str(row[0]).isdigit() and int(row[0]) >= 11:
+    return
+  legacy = [
+    (anchor_id, column, text)
+    for anchor_id, column, text in _ANCHOR_SCHEMA_11_LEGACY_TEXT
+    if connection.execute(
+      f"SELECT COUNT(*) FROM anchor_product WHERE anchor_id = ? AND {column} = ?", (anchor_id, text)
+    ).fetchone()[0]
+  ]
+  if not legacy:
     return
   if seed_dir is None:
     raise RepositoryLookupError(
       "구 자재 DB(schema 10 이하)의 런너 고정 앵커 카탈로그 문구를 갱신해야 합니다. "
       "seed 경로를 지정하거나 init_db를 다시 실행하십시오."
     )
-  products, cap = _anchor_catalog_from_seed(seed_dir)
-  connection.execute("DELETE FROM anchor_load_row")
-  connection.execute("DELETE FROM anchor_product")
-  _insert_anchor_products(connection, products.values(), cap)
+  products, _ = _anchor_catalog_from_seed(seed_dir)
+  for anchor_id, column, text in legacy:
+    product = products.get(anchor_id)
+    if product is None:
+      raise RepositoryLookupError(f"seed에 앵커 제품 {anchor_id}가 없습니다. schema 11 이관을 중단합니다.")
+    connection.execute(
+      f"UPDATE anchor_product SET {column} = ? WHERE anchor_id = ? AND {column} = ?",
+      (getattr(product, column), anchor_id, text),
+    )
 
 
 def _sql_statements(script: str) -> list[str]:

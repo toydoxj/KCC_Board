@@ -7,12 +7,18 @@
 1. API 응답 중 계산서에 실리는 문자열(notices, 앵커 카탈로그 출력 필드, anchor_product_summary)
 2. 계산서 컴포넌트 소스의 문자열 리터럴(주석 제외)
 3. 표준 예제의 실제 렌더링 텍스트 — CalculationReport·SummaryReport 를 react-dom/server 로 렌더링
-   (renderer/scripts/report-wording-check.mjs). renderer/node_modules 가 없으면 명시적으로 건너뛴다.
+   (renderer/scripts/report-wording-check.mjs). renderer/node_modules 가 없으면 실패한다
+   (환경변수 KCC_ALLOW_SKIP_RENDER=1 일 때만 건너뜀 — 병합 전 시험에서는 반드시 실행).
+4. Codex 1차 반영 분기: 피스 체결층 없는 CH(검토 생략 표기), CH 일부 체결(범위 표기), 자유입력 출처 필터,
+   엔진 입력 조건 안내(중립축·표준 외 피스 간격), DB 문자열 필터.
+
+금지 문구 패턴 단일 출처: renderer/src/lib/report-wording.ts (reportForbiddenPatternSource, 대소문자 무관).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -33,11 +39,19 @@ ROOT = Path(__file__).resolve().parents[1]
 RENDERER = ROOT / "renderer"
 CHECK_SCRIPT = RENDERER / "scripts/report-wording-check.mjs"
 
-# renderer/scripts/report-wording-check.mjs FORBIDDEN_PATTERN 과 같은 목록을 유지한다
-FORBIDDEN_PATTERN = re.compile(
-  r"확인\s*필요|확인이\s*필요|근거\s*없음|미검증|검증하지\s*않|검증되지\s*않|초안|보류|확정\s*필요|검토\s*필요"
-  r"|추후\s*확인|별도\s*확인|확인하시기|주의|WARN|판정\s*불가"
-)
+WORDING_SOURCE = RENDERER / "src/lib/report-wording.ts"
+
+
+def _load_forbidden_pattern() -> re.Pattern[str]:
+  """renderer/src/lib/report-wording.ts 의 String.raw 패턴 원문을 읽는다(단일 출처)."""
+  match = re.search(r"reportForbiddenPatternSource\s*=\s*String\.raw`([^`]+)`", WORDING_SOURCE.read_text(encoding="utf-8"))
+  if match is None:
+    raise AssertionError(f"{WORDING_SOURCE}: reportForbiddenPatternSource 를 찾을 수 없음")
+  return re.compile(match.group(1), re.IGNORECASE)
+
+
+FORBIDDEN_PATTERN = _load_forbidden_pattern()
+FREE_INPUT_FORBIDDEN_SOURCE = "승인번호 확인 필요 / Warning"
 
 # 계산서·요약페이지에 텍스트를 내보내는 렌더러 소스(화면 전용 input-workspace 등은 대상 아님)
 REPORT_SOURCES = (
@@ -45,6 +59,7 @@ REPORT_SOURCES = (
   "renderer/src/components/summary-report.tsx",
   "renderer/src/components/result-notices.tsx",
   "renderer/src/lib/result-notice.ts",
+  "renderer/src/components/limitations-dialog.tsx",
 )
 
 # 앵커 카탈로그 중 계산서에 출력되는 필드(calculation-report.tsx 부록·검토 조건, anchor.ts anchorSourceText)
@@ -118,6 +133,44 @@ class ReportWordingTest(unittest.TestCase):
       cases.append({"name": f"seismic-{product['anchor_id']}", "mode": "anchorHeight", "payload": payload, "product": product})
     custom = {**cls.base_payload, "design_case": "seismic", "anchor_capacity_kN": 0.4}
     cases.append({"name": "seismic-custom", "mode": "anchorHeight", "payload": custom, "product": None})
+    # Codex 1차 반영 분기
+    free_input = {**custom, "anchor_capacity_source": FREE_INPUT_FORBIDDEN_SOURCE}
+    cases.append({"name": "free-input-source", "mode": "anchorHeight", "payload": free_input, "product": None})
+    ch_stud = {"stud_type": "CH-STUD", "spec": "102CHS-08", "method": "기본"}
+    rear_slot = [{"kind": "방화", "thickness": 25.0, "order": 1}]
+    cases.append({
+      "name": "ch-slot-only", "mode": "maxHeight", "product": None,
+      "payload": {**cls.base_payload, "stud": ch_stud, "rear_boards": rear_slot, "front_boards": []},
+    })
+    cases.append({
+      "name": "ch-partial", "mode": "maxHeight", "product": None,
+      "payload": {**cls.base_payload, "stud": ch_stud, "rear_boards": rear_slot},
+    })
+    # 로컬 DB에서 고친 카탈로그 문자열(금지 문구 포함)도 인쇄 전에 걸러져야 한다
+    x_c = next(product for product in cls.anchors if product["anchor_id"] == "hilti_x_c")
+    edited = {**x_c, "approvals": "승인번호 확인 필요", "concrete_condition": "Warning: 원문 대조", "source": x_c["source"]}
+    embedment, fc = _anchor_input(x_c)
+    cases.append({
+      "name": "db-edited-strings", "mode": "anchorHeight", "product": edited,
+      "payload": {
+        **cls.base_payload, "design_case": "seismic", "anchor_product_id": "hilti_x_c",
+        "anchor_embedment_mm": embedment, "anchor_concrete_fc_MPa": fc, "anchor_apply_seismic_cap": True,
+        "anchor_capacity_source": f"{edited['source']} ({edited['approvals']})",
+      },
+    })
+    c50_front = {
+      **cls.base_payload,
+      "stud": {"stud_type": "C-STUD", "spec": "50S-45-08", "method": "기본"},
+      "rear_boards": [],
+      "front_boards": [{"kind": "방화", "thickness": 19.0, "order": 1}, {"kind": "방화", "thickness": 19.0, "order": 2}],
+    }
+    bolt = dict(cast(Mapping[str, Any], cls.base_payload["bolt"]))
+    pitch = list(cast(list[float], bolt["pitch"]))
+    pitch[2] = 450.0
+    cases.append({
+      "name": "notice-neutral-axis-and-pitch", "mode": "maxHeight", "product": None,
+      "payload": {**c50_front, "bolt": {**bolt, "pitch": pitch}},
+    })
     for mode in ("maxHeight", "anchorHeight", "heightCheck"):
       payload = {**cls.base_payload, "design_case": "non_seismic"}
       cases.append({"name": f"non_seismic-{mode}", "mode": mode, "payload": payload, "product": None})
@@ -152,16 +205,24 @@ class ReportWordingTest(unittest.TestCase):
         self.assertEqual(lines, [])
 
   # ── 3. 실제 렌더링 텍스트 ──
-  def test_rendered_reports_have_no_forbidden_wording(self) -> None:
+  _render_cache: dict[str, Any] | None = None
+
+  def _render(self) -> dict[str, Any]:
+    """전 예제를 한 번 렌더링하고 결과(JSON)를 캐시한다."""
+    if ReportWordingTest._render_cache is not None:
+      return ReportWordingTest._render_cache
     node = shutil.which("node")
     if node is None or not (RENDERER / "node_modules/react-dom").is_dir() or not (RENDERER / "node_modules/typescript").is_dir():
-      self.skipTest("node 또는 renderer/node_modules 없음 — `cd renderer; npm ci` 후 다시 실행할 것")
+      message = "node 또는 renderer/node_modules 없음 — `cd renderer; npm ci` 후 다시 실행할 것"
+      if os.environ.get("KCC_ALLOW_SKIP_RENDER") == "1":
+        self.skipTest(message)
+      self.fail(message + " (렌더링 시험은 건너뛰지 않음. 의도적으로 건너뛰려면 KCC_ALLOW_SKIP_RENDER=1)")
     fixtures = [{"name": case["name"], "data": self._report_data(case)} for case in self.cases]
     with tempfile.TemporaryDirectory() as temp_dir:
       fixture_path = Path(temp_dir) / "fixtures.json"
       fixture_path.write_text(json.dumps(fixtures, ensure_ascii=False), encoding="utf-8")
       completed = subprocess.run(
-        [node, str(CHECK_SCRIPT), str(fixture_path)],
+        [node, str(CHECK_SCRIPT), str(fixture_path), "--dump-text"],
         cwd=RENDERER,
         capture_output=True,
         text=True,
@@ -170,11 +231,94 @@ class ReportWordingTest(unittest.TestCase):
       )
     if completed.returncode == 2 or not completed.stdout.strip():
       self.fail(f"렌더링 실패(exit {completed.returncode}): {completed.stderr[-2000:]}")
-    summary = json.loads(completed.stdout)
-    self.assertEqual(len(summary["report"]), 2 * len(fixtures))
-    hits = [entry for entry in summary["report"] if entry["hits"]]
+    summary = cast(dict[str, Any], json.loads(completed.stdout))
+    summary["returncode"] = completed.returncode
+    summary["texts"] = {(entry["name"], entry["kind"]): entry["text"] for entry in summary["report"]}
+    summary["screen_by_name"] = {entry["name"]: entry for entry in summary["screen"]}
+    ReportWordingTest._render_cache = summary
+    return summary
+
+  def _text(self, name: str, kind: str) -> str:
+    return cast(str, self._render()["texts"][(name, kind)])
+
+  def test_rendered_reports_have_no_forbidden_wording(self) -> None:
+    summary = self._render()
+    self.assertEqual(len(summary["report"]), 2 * len(self.cases))
+    hits = [{k: v for k, v in entry.items() if k != "text"} for entry in summary["report"] if entry["hits"]]
     self.assertEqual(hits, [], json.dumps(hits, ensure_ascii=False, indent=1))
-    self.assertEqual(completed.returncode, 0, completed.stderr)
+    self.assertEqual(summary["returncode"], 0)
+
+  # ── 4. Codex 1차 반영 분기 ──
+  def test_ch_slot_only_screw_tension_is_marked_skipped(self) -> None:
+    case = next(c for c in self.cases if c["name"] == "ch-slot-only")
+    # 엔진 판정은 그대로(O.K, 수요 0) — 문서 표기만 범위를 붙인다
+    self.assertEqual(case["result"]["screw_tension_verdict"], "O.K")
+    self.assertEqual(case["result"]["intermediate"]["screw_tension_spacing_mm"], 0.0)
+    for kind in ("detail", "summary"):
+      text = self._text("ch-slot-only", kind)
+      with self.subTest(kind=kind):
+        self.assertIn("O.K (피스 인장 검토 생략)", text)
+        self.assertIsNone(re.search(r"피스 인장\s+(O\.K|N\.G)(?!\s*\()", text), "범위 표기 없는 피스 인장 판정")
+    self.assertNotIn("피스 인장 조건 만족값", self._text("ch-slot-only", "summary"))
+    self.assertIn("응력·처짐·런너 고정못 조건 만족값 (피스 인장 검토 생략)", self._text("ch-slot-only", "summary"))
+
+  def test_ch_partial_screw_tension_shows_checked_layers(self) -> None:
+    case = next(c for c in self.cases if c["name"] == "ch-partial")
+    self.assertGreater(case["result"]["intermediate"]["screw_tension_spacing_mm"], 0.0)
+    verdict = case["result"]["screw_tension_verdict"]
+    for kind in ("detail", "summary"):
+      with self.subTest(kind=kind):
+        self.assertIn(f"{verdict} (전면 피스 체결층)", self._text("ch-partial", kind))
+    self.assertIn("전면 피스 체결층(후면 CH 끼움 보드는 피스 없음 — 검토 생략)", self._text("ch-partial", "detail"))
+
+  def test_free_input_source_is_filtered_from_documents_and_flagged_on_screen(self) -> None:
+    for kind in ("detail", "summary"):
+      with self.subTest(kind=kind):
+        text = self._text("free-input-source", kind)
+        self.assertNotIn("승인번호", text)
+        self.assertNotIn("Warning", text)
+    # 화면 안내 조건: 같은 함수(isReportSafeText)가 거짓이면 입력 화면에 생략 안내를 띄운다
+    self.assertFalse(self._render()["screen_by_name"]["free-input-source"]["anchorSourceReportSafe"])
+    self.assertTrue(self._render()["screen_by_name"]["seismic-hilti_x_u"]["anchorSourceReportSafe"])
+    screen_source = (RENDERER / "src/components/input-workspace.tsx").read_text(encoding="utf-8")
+    self.assertIn("isReportSafeText(values.anchorCapacitySource)", screen_source)
+    self.assertIn('reportOmittedTextNotice("허용내력 출처")', screen_source)
+    # 원문 보존: API 요청·계산은 입력값 그대로 받는다
+    case = next(c for c in self.cases if c["name"] == "free-input-source")
+    self.assertEqual(case["payload"]["anchor_capacity_source"], FREE_INPUT_FORBIDDEN_SOURCE)
+
+  def test_db_edited_strings_are_filtered(self) -> None:
+    for kind in ("detail", "summary"):
+      text = self._text("db-edited-strings", kind)
+      with self.subTest(kind=kind):
+        self.assertNotIn("승인번호", text)
+        self.assertNotIn("원문 대조", text)
+        self.assertIn("Hilti X-C", text)
+
+  def test_input_condition_notices_print_facts_only(self) -> None:
+    case = next(c for c in self.cases if c["name"] == "notice-neutral-axis-and-pitch")
+    notices = cast(list[str], case["result"]["notices"])
+    self.assertEqual(len(notices), 2, notices)
+    for kind in ("detail", "summary"):
+      text = self._text("notice-neutral-axis-and-pitch", kind)
+      with self.subTest(kind=kind):
+        self.assertIn("중립축", text)
+        self.assertIn("피스 간격 450 mm는 표준 간격 600 mm와 다름", text)
+        self.assertNotIn("결과 적용 시 설계자가 공학적으로 판단할 것", text)
+    # 조치 안내는 결과 화면 전용(result-panel.tsx → ResultNotices screenGuidance)
+    panel = (RENDERER / "src/components/result-panel.tsx").read_text(encoding="utf-8")
+    self.assertIn("screenGuidance={inputConditionGuidance}", panel)
+    report = (RENDERER / "src/components/calculation-report.tsx").read_text(encoding="utf-8")
+    self.assertIn('variant="report"', report)
+    self.assertNotIn("screenGuidance", report)
+
+  def test_forbidden_pattern_is_case_insensitive(self) -> None:
+    for text in ("Warning", "WARNING", "warn", "Caution", "tbd", "확인필요", "결과 적용에 유의할 것"):
+      with self.subTest(text=text):
+        self.assertTrue(_hits(text))
+    for text in ("O.K", "N.G", "적합", "부적합", "O.K (피스 인장 검토 생략)", "안전율 원문 미기재"):
+      with self.subTest(text=text):
+        self.assertEqual(_hits(text), [])
 
   # ── 계산서 데이터 구성(page.tsx createReportData 의 텍스트 관련 필드와 같은 규칙) ──
   def _board_slot(self, label: str, board: Mapping[str, Any] | None) -> dict[str, Any]:

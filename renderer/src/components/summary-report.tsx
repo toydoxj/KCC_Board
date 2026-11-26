@@ -14,6 +14,7 @@ import {
 import { boardColor, displayStudGroup, findStudAsset } from "@/lib/visual-assets";
 import type { StudSection } from "@/lib/api";
 import { APP_FULL_TITLE } from "@/lib/app-info";
+import { reportSafeText, screwTensionScope } from "@/lib/report-wording";
 import { productScopeNotice, resultScopeDisclaimer, supportScopeNotice, testedConfigurationStatus } from "@/lib/result-notice";
 
 const n=(v: number|null|undefined,d=3)=>v==null?"-":v.toLocaleString("ko-KR",{maximumFractionDigits:d});
@@ -67,8 +68,11 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
   const height=heightCheck?g.spanMm:governingHeight(r);
   const heightTitle=heightCheck?"현장 높이":anchorMode?"런너 고정못 기준 최대높이":"최대 가능 높이";
   const review=heightReview(r,data.calculationMode,g.spanMm);
-  const verdict=(label:string,ok:boolean)=><div data-verdict={label} className={`summary-verdict ${ok?"":"ng"}`}><span>{label}</span><b>{ok?"O.K":"N.G"}</b></div>;
-  const criteria=seismic?"응력·처짐·런너 고정못·피스 인장 조건 만족값":"응력·처짐·피스 인장 조건 만족값";
+  const verdict=(label:string,ok:boolean,text?:string)=><div data-verdict={label} className={`summary-verdict ${ok?"":"ng"}`}><span>{label}</span><b>{text??(ok?"O.K":"N.G")}</b></div>;
+  // 피스 인장 검토 범위(item 182): 피스 체결층이 없으면 만족 조건 목록에서 빼고 카드에 "검토 생략"을 붙인다
+  const screwScope=screwTensionScope(r,rearCount>0);
+  const criteria=`${["응력","처짐",...(seismic?["런너 고정못"]:[]),...(screwScope.checked?["피스 인장"]:[])].join("·")} 조건 만족값${screwScope.checked?"":" (피스 인장 검토 생략)"}`;
+  const notices=(r.notices??[]).filter((notice)=>reportSafeText(notice)!==null);
   const pitch=[b.innerPitch,b.middlePitch,b.outerPitch],screws=[b.innerCount,b.middleCount,b.outerCount];
   const tested=testedConfigurationStatus(r);
   return <article className="summary-document">
@@ -76,9 +80,9 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
     <p className="summary-program-title">{APP_FULL_TITLE}</p>
     <h1>석고보드 벽체 허용높이 검토 결과</h1>
     <Heading>1. 결과 요약</Heading>
-    <div data-verdict-group="summary" className={`summary-cards ${seismic?"with-anchor":""}`}><div className="summary-height"><strong>{heightTitle}</strong><b>{n(height,0)} mm</b><small>{heightCheck&&<>최대 가능 높이 {n(review.maximumMm,0)} mm<br/></>}{criteria}</small></div>{verdict("응력",r.stress_verdict==="O.K")}{verdict("처짐",r.deflection_verdict==="O.K")}{seismic&&verdict("런너 고정못",review.anchorOk)}{verdict("피스 인장",r.screw_tension_verdict==="O.K")}</div>
+    <div data-verdict-group="summary" className={`summary-cards ${seismic?"with-anchor":""}`}><div className="summary-height"><strong>{heightTitle}</strong><b>{n(height,0)} mm</b><small>{heightCheck&&<>최대 가능 높이 {n(review.maximumMm,0)} mm<br/></>}{criteria}</small></div>{verdict("응력",r.stress_verdict==="O.K")}{verdict("처짐",r.deflection_verdict==="O.K")}{seismic&&verdict("런너 고정못",review.anchorOk)}{verdict("피스 인장",r.screw_tension_verdict==="O.K",screwScope.verdictLabel)}</div>
     {tested&&<p className="summary-tested-config" data-tested-configuration={tested.matched?"match":"mismatch"}>{tested.text}</p>}
-    {r.notices?.length>0&&<div className="summary-notices">{r.notices.map((notice,i)=><p key={i}>{notice}</p>)}</div>}
+    {notices.length>0&&<div className="summary-notices">{notices.map((notice,i)=><p key={i}>{notice}</p>)}</div>}
     <Heading>검토 조건</Heading>
     <Table rows={[
       ["스터드",`${displayStudGroup(data.stud.group)} / ${data.stud.method} / ${data.stud.spec}`,"스터드 간격",unit(g.spacingMm,"mm")],

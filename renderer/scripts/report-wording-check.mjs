@@ -22,9 +22,8 @@ const nodeModulesDir = path.join(rendererDir, "node_modules");
 const isOwnFile = (filePath) => filePath.startsWith(rendererDir) && !filePath.startsWith(nodeModulesDir);
 const sourceExtensions = [".ts", ".tsx", ".json"];
 
-// tests/test_report_wording.py FORBIDDEN_PATTERN 과 같은 목록을 유지한다(소유자 상시 지시)
-export const FORBIDDEN_PATTERN =
-  /확인\s*필요|확인이\s*필요|근거\s*없음|미검증|검증하지\s*않|검증되지\s*않|초안|보류|확정\s*필요|검토\s*필요|추후\s*확인|별도\s*확인|확인하시기|주의|WARN|판정\s*불가/g;
+// 금지 문구 패턴은 src/lib/report-wording.ts 단일 출처를 쓴다(hook 등록 후 import)
+let forbiddenPattern = null;
 
 function resolveFile(basePath) {
   if (existsSync(basePath) && statSync(basePath).isFile()) return basePath;
@@ -93,14 +92,15 @@ function htmlToText(html) {
 function findHits(text) {
   const hits = [];
   for (const line of text.split("\n")) {
-    const matches = line.match(FORBIDDEN_PATTERN);
+    const matches = line.match(forbiddenPattern);
     if (matches) hits.push({ words: matches, line: line.trim().slice(0, 200) });
   }
   return hits;
 }
 
 async function main() {
-  const fixturePath = process.argv[2];
+  const fixturePath = process.argv.slice(2).find((arg) => !arg.startsWith("--"));
+  const dumpText = process.argv.includes("--dump-text");
   if (!fixturePath) {
     console.error("사용법: node scripts/report-wording-check.mjs <fixtures.json>");
     process.exit(2);
@@ -110,6 +110,8 @@ async function main() {
     console.error(`예제가 없음: ${fixturePath}`);
     process.exit(2);
   }
+  const wording = await import(pathToFileURL(path.join(srcDir, "lib/report-wording.ts")).href);
+  forbiddenPattern = wording.reportForbiddenPattern(true);
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
   const { CalculationReport } = await import(pathToFileURL(path.join(srcDir, "components/calculation-report.tsx")).href);
@@ -126,11 +128,17 @@ async function main() {
       }
       const hits = findHits(text);
       total += hits.length;
-      report.push({ name: item.name, kind, chars: text.length, hits });
+      report.push({ name: item.name, kind, chars: text.length, hits, ...(dumpText ? { text } : {}) });
     }
   }
-  console.log(JSON.stringify({ total, report }, null, 2));
-  process.exit(total === 0 ? 0 : 1);
+  // 화면 안내 판정: 자유입력 출처가 문서에서 생략되는지(입력 화면 안내 표시 조건과 같은 함수)
+  const screen = cases.map((item) => ({
+    name: item.name,
+    anchorSourceReportSafe: wording.isReportSafeText(item.data.geometry?.anchorCapacitySource ?? ""),
+  }));
+  // 큰 출력이 파이프에서 잘리지 않도록 process.exit 대신 exitCode 로 끝낸다
+  process.stdout.write(JSON.stringify({ total, report, screen }, null, 2) + "\n");
+  process.exitCode = total === 0 ? 0 : 1;
 }
 
 main().catch((error) => {

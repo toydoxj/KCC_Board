@@ -49,5 +49,5 @@ cd renderer; npm run dist
 
 ## 5. 검증 루프 (변경 후 반드시 실행)
 1. 계산엔진/API 변경 → `.\.venv-win\Scripts\python.exe -m pytest -v` (골든 회귀 상대오차 ≤ 0.1% 확인)
-2. 렌더러 변경 → `cd renderer; npm run build`. 계산서 문구 회귀는 pytest의 `tests/test_report_wording.py`가 `renderer/node_modules`로 실제 렌더링 텍스트까지 검사한다(`npm ci` 선행)
+2. 렌더러 변경 → `cd renderer; npm run build`. 계산서 문구 회귀는 pytest의 `tests/test_report_wording.py`가 `renderer/node_modules`로 실제 렌더링 텍스트까지 검사한다(`npm ci` 선행). node_modules가 없으면 이 시험은 실패한다
 3. DB 시드 변경 → `init_db` 재실행 후 pytest
