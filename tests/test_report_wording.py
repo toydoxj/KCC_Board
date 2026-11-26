@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import unicodedata
 import unittest
 from dataclasses import asdict
 from pathlib import Path
@@ -53,6 +54,56 @@ def _load_forbidden_pattern() -> re.Pattern[str]:
 FORBIDDEN_PATTERN = _load_forbidden_pattern()
 FREE_INPUT_FORBIDDEN_SOURCE = "승인번호 확인 필요 / Warning"
 
+# 소유자 금지어 각각과 동의·변형 표현의 독립 반례 목록(Codex 2차). 검사 패턴과 별개로 문서 생략을 직접 단언한다.
+# 각 항목: (자유입력 원문, 문서에 나오면 안 되는 고유 조각)
+FORBIDDEN_EXAMPLES: tuple[tuple[str, str], ...] = (
+  ("확인필요 자료", "확인필요"),
+  ("시험성적서 확인 필요", "시험성적서"),
+  ("승인번호는 확인이 필요함", "승인번호는"),
+  ("값 확인을 요망", "요망"),
+  ("근거 없음 값", "없음 값"),
+  ("근거가 없는 값", "근거가 없는"),
+  ("미검증 자료", "미검증"),
+  ("검증하지 않은 값", "검증하지"),
+  ("검증되지 않음", "검증되지"),
+  ("초안 자료", "초안"),
+  ("보류 항목", "보류"),
+  ("확정 필요 값", "확정"),
+  ("확정이 필요한 값", "확정이"),
+  ("검토 필요", "검토 필요"),
+  ("검토가 필요합니다", "검토가"),
+  ("검토를 요청함", "요청함"),
+  ("추후 확인", "추후"),
+  ("별도 확인", "별도"),
+  ("별도 검토", "별도"),
+  ("확인하시기 바랍니다", "확인하시기"),
+  ("주의 제품", "주의"),
+  ("결과 적용에 유의할 것", "유의할"),
+  ("경고 / DRAFT / 검토가 필요합니다", "DRAFT"),
+  ("WARN 표기", "WARN"),
+  ("Warning: 원문 대조", "원문 대조"),
+  ("warning lowercase", "lowercase"),
+  ("CAUTION tag", "tag"),
+  ("Draft copy", "copy"),
+  ("TBD value", "value"),
+  ("TBC value", "value"),
+  ("Pending approval", "approval"),
+  ("To be confirmed", "confirmed"),
+  ("Review required", "Review"),
+  ("Needs check", "Needs"),
+  ("Unverified data", "data"),
+  ("Preliminary data", "data"),
+  ("판정 불가", "판정 불가"),
+  ("확 인 필 요", "확 인"),
+  ("확인\n필요 (줄바꿈)", "줄바꿈"),
+  ("W A R N spaced", "spaced"),
+  ("ｗａｒｎｉｎｇ fullwidth", "fullwidth"),
+  ("확인\u200b필요 zero-width", "zero-width"),
+)
+# 독립 단언용: 문서 본문에 나오면 안 되는 영문 경고 토큰(대소문자 무관 비교)
+LITERAL_TOKENS = ("WARN", "CAUTION", "DRAFT", "TBD", "PENDING", "경고", "확인 필요", "확인필요", "검토가 필요")
+BOARD_WARN_KIND = "방화 WARN"
+
 # 계산서·요약페이지에 텍스트를 내보내는 렌더러 소스(화면 전용 input-workspace 등은 대상 아님)
 REPORT_SOURCES = (
   "renderer/src/components/calculation-report.tsx",
@@ -68,8 +119,18 @@ ANCHOR_REPORT_FIELDS = ("maker", "product", "basis_label", "source", "approvals"
 CUSTOM_ANCHOR_ID = "custom"
 
 
+def _normalize(text: str) -> str:
+  """report-wording.ts normalizeReportText 와 같은 정규화(NFKC·폭 없는 문자 제거·공백 1칸)."""
+  text = unicodedata.normalize("NFKC", text)
+  text = re.sub("[\u200b-\u200d\u2060\ufeff\u00ad]", "", text)
+  return re.sub(r"\s+", " ", text).strip()
+
+
 def _hits(text: str) -> list[str]:
-  return FORBIDDEN_PATTERN.findall(text)
+  """정규화형과 공백 제거형 모두에서 금지 표현을 찾는다(report-wording.ts findForbiddenWording 과 같은 규칙)."""
+  normalized = _normalize(text)
+  compact = re.sub(r"\s+", "", normalized)
+  return [m.group(0) for candidate in (normalized, compact) for m in FORBIDDEN_PATTERN.finditer(candidate)]
 
 
 def _strip_comments(source: str) -> str:
@@ -174,9 +235,55 @@ class ReportWordingTest(unittest.TestCase):
     for mode in ("maxHeight", "anchorHeight", "heightCheck"):
       payload = {**cls.base_payload, "design_case": "non_seismic"}
       cases.append({"name": f"non_seismic-{mode}", "mode": mode, "payload": payload, "product": None})
+    # 자유입력 반례(독립 목록)
+    for index, (text, _) in enumerate(FORBIDDEN_EXAMPLES):
+      cases.append({
+        "name": f"free-example-{index:02d}", "mode": "anchorHeight", "product": None,
+        "payload": {**custom, "anchor_capacity_source": text},
+      })
+    # 하중 0(비내진·활하중 0): 피스 체결층이 있어도 엔진 지배 피치가 0 — 검토 생략으로 적으면 안 됨
+    cases.append({
+      "name": "zero-load-c-stud", "mode": "maxHeight", "product": None,
+      "payload": {**cls.base_payload, "design_case": "non_seismic", "live_load_kN_m2": 0.0},
+    })
     for case in cases:
       case["result"] = cls._check(case["payload"])
+    # 로컬 보드 카탈로그 반례: 임시 seed에 '방화 WARN'(방화와 같은 물성) 추가
+    cases.append(cls._board_warn_case())
     return cases
+
+  @classmethod
+  def _board_warn_case(cls) -> dict[str, Any]:
+    temp_dir = tempfile.mkdtemp(prefix="kcc-board-warn-")
+    cls._temp_dirs = [*getattr(cls, "_temp_dirs", []), temp_dir]
+    seed = Path(temp_dir) / "seed"
+    shutil.copytree(ROOT / "data/seed", seed)
+    board_file = seed / "board_property.json"
+    boards = json.loads(board_file.read_text(encoding="utf-8"))
+    source = next(item for item in boards["items"] if item["kind"] == "방화" and float(item["thickness"]) == 19.0)
+    boards["items"].append({**source, "kind": BOARD_WARN_KIND})
+    board_file.write_text(json.dumps(boards, ensure_ascii=False), encoding="utf-8")
+    client = TestClient(create_app(JsonSeedRepository(seed)))
+    catalog = client.get("/api/db/boards").json()["data"]
+    warn_board = next(item for item in catalog if item["kind"] == BOARD_WARN_KIND)
+    layer = {"kind": warn_board["kind"], "thickness": warn_board["thickness"]}
+    payload = {
+      **cls.base_payload,
+      "rear_boards": [{**layer, "order": 1}],
+      "front_boards": [{**layer, "order": 1}, {**layer, "order": 2}],
+    }
+    response = client.post("/api/check", json=payload)
+    if response.status_code != 200:
+      raise AssertionError(f"보드 WARN 반례 /api/check 실패: {response.status_code} {response.text}")
+    return {
+      "name": "board-catalog-warn", "mode": "maxHeight", "product": None, "payload": payload,
+      "result": response.json()["data"], "boards": catalog,
+    }
+
+  @classmethod
+  def tearDownClass(cls) -> None:
+    for temp_dir in getattr(cls, "_temp_dirs", []):
+      shutil.rmtree(temp_dir, ignore_errors=True)
 
   # ── 1. API 응답·카탈로그 출력 필드 ──
   def test_api_report_strings_have_no_forbidden_wording(self) -> None:
@@ -201,8 +308,10 @@ class ReportWordingTest(unittest.TestCase):
     for relative in REPORT_SOURCES:
       source = _strip_comments((ROOT / relative).read_text(encoding="utf-8"))
       with self.subTest(file=relative):
-        lines = [line.strip() for line in source.splitlines() if _hits(line)]
-        self.assertEqual(lines, [])
+        # 문자열 리터럴과 JSX 텍스트만 검사한다(식별자 AlertTriangle·ResultNotices 등은 출력 문구가 아님)
+        texts = re.findall(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\]|\\.)*`', source)
+        texts += re.findall(r">([^<>{}]+)<", source)
+        self.assertEqual([text for text in texts if _hits(text)], [])
 
   # ── 3. 실제 렌더링 텍스트 ──
   _render_cache: dict[str, Any] | None = None
@@ -312,6 +421,51 @@ class ReportWordingTest(unittest.TestCase):
     self.assertIn('variant="report"', report)
     self.assertNotIn("screenGuidance", report)
 
+  # ── 5. Codex 2차 반영 분기 ──
+  def test_free_input_examples_are_omitted_from_documents(self) -> None:
+    # 검사 패턴과 별개로: 출처 행은 "—", 원문 고유 조각은 문서에 없음, 화면 안내 대상(안전 아님)
+    for index, (text, fragment) in enumerate(FORBIDDEN_EXAMPLES):
+      name = f"free-example-{index:02d}"
+      with self.subTest(example=text):
+        self.assertFalse(self._render()["screen_by_name"][name]["anchorSourceReportSafe"], text)
+        for kind in ("detail", "summary"):
+          body = self._text(name, kind)
+          self.assertNotIn(fragment.lower(), body.lower(), f"{kind}: {fragment}")
+          self.assertIn("고정못 허용내력 출처 —", body)
+        self.assertEqual(self.cases_by_name()[name]["payload"]["anchor_capacity_source"], text)  # 원문 보존
+
+  def test_board_catalog_warn_name_is_not_printed(self) -> None:
+    case = self.cases_by_name()["board-catalog-warn"]
+    self.assertTrue(any(layer["name"].find("WARN") >= 0 for layer in case["result"]["layers"]), "반례 전제: 레이어 이름에 WARN")
+    for kind in ("detail", "summary"):
+      body = self._text("board-catalog-warn", kind)
+      with self.subTest(kind=kind):
+        for token in LITERAL_TOKENS:
+          self.assertNotIn(token.lower(), body.lower())
+        self.assertIn("방화 19T", body)  # 안전한 종류명은 남는다
+    self.assertEqual(case["payload"]["front_boards"][0]["kind"], BOARD_WARN_KIND)  # 원본 키 보존
+
+  def test_zero_load_with_screw_layers_is_not_marked_skipped(self) -> None:
+    case = self.cases_by_name()["zero-load-c-stud"]
+    self.assertEqual(case["result"]["intermediate"]["screw_tension_spacing_mm"], 0.0)  # 반례 전제: 엔진 지배 피치 0
+    for kind in ("detail", "summary"):
+      body = self._text("zero-load-c-stud", kind)
+      with self.subTest(kind=kind):
+        self.assertNotIn("검토 생략", body)
+        self.assertNotIn("CH 끼움 보드만", body)
+        self.assertRegex(body, r"피스 인장\s+O\.K(?!\s*\()")
+
+  def test_standard_reports_have_no_literal_tokens(self) -> None:
+    for name in ("seismic-hilti_x_u", "seismic-simpson_titen_14", "non_seismic-maxHeight", "ch-slot-only"):
+      for kind in ("detail", "summary"):
+        body = self._text(name, kind).lower()
+        for token in LITERAL_TOKENS:
+          with self.subTest(case=name, kind=kind, token=token):
+            self.assertNotIn(token.lower(), body)
+
+  def cases_by_name(self) -> dict[str, dict[str, Any]]:
+    return {case["name"]: case for case in self.cases}
+
   def test_forbidden_pattern_is_case_insensitive(self) -> None:
     for text in ("Warning", "WARNING", "warn", "Caution", "tbd", "확인필요", "결과 적용에 유의할 것"):
       with self.subTest(text=text):
@@ -321,11 +475,11 @@ class ReportWordingTest(unittest.TestCase):
         self.assertEqual(_hits(text), [])
 
   # ── 계산서 데이터 구성(page.tsx createReportData 의 텍스트 관련 필드와 같은 규칙) ──
-  def _board_slot(self, label: str, board: Mapping[str, Any] | None) -> dict[str, Any]:
+  def _board_slot(self, label: str, board: Mapping[str, Any] | None, catalog: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     if board is None:
       return {"label": label, "kind": "없음", "thickness": None, "mass_kg_m2": None, "Fy": None, "Fu": None,
               "E_GPa": None, "yieldRatio": None, "yieldRatioSource": None}
-    found = next(b for b in self.boards if b["kind"] == board["kind"] and b["thickness"] == board["thickness"])
+    found = next(b for b in (catalog or self.boards) if b["kind"] == board["kind"] and b["thickness"] == board["thickness"])
     return {"label": label, "kind": found["kind"], "thickness": found["thickness"], "mass_kg_m2": found["mass_kg_m2"],
             "Fy": found["Fy"], "Fu": found["Fu"], "E_GPa": found["E_GPa"], "yieldRatio": found["yield_ratio"],
             "yieldRatioSource": found["yield_ratio_source"]}
@@ -366,14 +520,14 @@ class ReportWordingTest(unittest.TestCase):
       "generatedAt": "2026-11-26T00:00:00.000Z",
       "calculationMode": case["mode"],
       "rearBoards": [
-        self._board_slot("후면 3번(외측)", rear3[2]),
-        self._board_slot("후면 2번(중간)", rear3[1]),
-        self._board_slot("후면 1번(내측)", rear3[0]),
+        self._board_slot("후면 3번(외측)", rear3[2], case.get("boards")),
+        self._board_slot("후면 2번(중간)", rear3[1], case.get("boards")),
+        self._board_slot("후면 1번(내측)", rear3[0], case.get("boards")),
       ],
       "frontBoards": [
-        self._board_slot("전면 1번(내측)", front3[0]),
-        self._board_slot("전면 2번(중간)", front3[1]),
-        self._board_slot("전면 3번(외측)", front3[2]),
+        self._board_slot("전면 1번(내측)", front3[0], case.get("boards")),
+        self._board_slot("전면 2번(중간)", front3[1], case.get("boards")),
+        self._board_slot("전면 3번(외측)", front3[2], case.get("boards")),
       ],
       "stud": {
         "group": group, "method": method, "spec": stud["name"], "multiplier": multiplier, "H": stud["H"],

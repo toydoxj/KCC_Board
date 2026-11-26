@@ -7,6 +7,7 @@ import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } 
 import { ResultNotices } from "@/components/result-notices";
 import { APP_FULL_TITLE } from "@/lib/app-info";
 import { reportSafeText, screwTensionScope } from "@/lib/report-wording";
+import { sanitizeReportData } from "@/lib/report-sanitize";
 
 export interface ReportBoardSlot {
   label: string;
@@ -118,14 +119,17 @@ const dateFormat = new Intl.DateTimeFormat("ko-KR", {
 
 const defaultStudYieldStrength = 295;
 
-export function CalculationReport({ data, className = "" }: CalculationReportProps) {
+export function CalculationReport({ data: rawData, className = "" }: CalculationReportProps) {
+  // 인쇄 전 일괄 정화(item 182): DB·시드·자유입력·엔진 문자열의 금지 표현을 생략·변환한 사본으로 그린다
+  const data = sanitizeReportData(rawData).data;
   const stressOk = data.result.stress_verdict === "O.K";
   const deflectionOk = data.result.deflection_verdict === "O.K";
   const screwTensionOk = data.result.screw_tension_verdict === "O.K";
   const isSeismic = data.result.design_case !== "non_seismic";
   const runnerOk = heightReview(data.result,data.calculationMode,data.geometry.spanMm).anchorOk;
   // 피스 인장 검토 범위(item 182): 피스 체결층이 없으면 "O.K (피스 인장 검토 생략)", CH 일부 체결이면 범위 표기
-  const screwScope = screwTensionScope(data.result, data.rearBoards.some((board) => board.thickness !== null && board.thickness > 0));
+  const hasBoardLayer = (boards: ReportBoardSlot[]) => boards.some((board) => board.thickness !== null && board.thickness > 0);
+  const screwScope = screwTensionScope(data.result, hasBoardLayer(data.frontBoards), hasBoardLayer(data.rearBoards));
   const calculationModeLabel = calculationModeLabels[data.calculationMode];
   const strengthCheckModeLabel = strengthCheckModeLabels[data.result.strength_check_mode] ?? data.result.strength_check_mode;
   const isStudOnlyStrengthCheck = data.result.strength_check_mode === "stud_only";

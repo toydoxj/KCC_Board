@@ -95,9 +95,9 @@ KDS/AISC 인용 시 기준명+조항번호를 코드 주석·계산서에 명시
 - 판정은 계산값 기준이다. 행은 O.K / N.G, 검토의견·종합은 적합 / 부적합 둘만 쓴다. 엔진의 보류·WARN 성격 판정도 계산값 비 ≤ 1.0 이면 O.K, 초과면 N.G로 적는다.
 - 일부 검토를 계산하지 않은 행은 O.K만 적지 않고 계산한 범위를 붙인다(예: 'O.K (휨·전단)', '(…검토 생략)'). 계산값이 전혀 없는 '판정 불가' 행은 산출 문서에서 빼고 화면 메시지로만 알린다.
 - 판정 로직·출력 차단·계산 한계는 바꾸지 않는다. 안내 사유(원문 미확보·국내 적용 타당성 등)는 입력·결과 화면 메시지로 옮긴다. KDS 조항번호 인용은 그대로 둔다.
-- 금지 문구 패턴 단일 출처는 `renderer/src/lib/report-wording.ts`(`reportForbiddenPatternSource`, 영문 대소문자 무관)이다. 「유의」「CAUTION」「TBD」도 포함한다.
-- 자유입력(허용내력 출처)·DB 문자열(앵커 label·source·approvals·concrete_condition)은 인쇄 전 `reportSafeText`로 거른다. 금지 문구가 있으면 문서에서 그 표시만 생략("—")하고 원문 저장값은 그대로 둔다. 입력 화면에 생략 사유를 안내한다.
-- 피스 인장: 피스 체결층이 없으면(CH 끼움 보드만) 'O.K (피스 인장 검토 생략)', CH 일부 체결이면 'O.K (전면 피스 체결층)'으로 적는다(`screwTensionScope`). 엔진 판정은 그대로다.
+- 금지 문구 패턴 단일 출처는 `renderer/src/lib/report-wording.ts`(`reportForbiddenPatternSource`, 영문 대소문자 무관)이다. 한국어 조사·어미 변형(확인이/확인을/검토가 필요합니다, 요망·요청·바람), 경고·잠정·추후·미확인·미확정, 영문 WARN·CAUTION·DRAFT·TBD·TBC·PENDING·PRELIMINARY·UNVERIFIED·TO BE CONFIRMED·REVIEW REQUIRED 등을 포함한다. 검사는 NFKC·폭 없는 문자 제거·공백/줄바꿈 정규화 후 원문형과 공백 제거형으로 한다(`findForbiddenWording`).
+- 계산서·요약 컴포넌트는 인쇄 전 `sanitizeReportData`(`renderer/src/lib/report-sanitize.ts`)로 데이터 전체 문자열(DB·시드·자유입력·엔진 문자열)을 일괄 정화한 사본으로 그린다. 서술형(허용내력 출처·앵커 source·approvals·concrete_condition·notices)은 금지 문구가 있으면 통째로 생략("—"), 명칭(보드 종류·레이어 이름·스터드 규격 등)은 금지 표현만 지운다(`reportSafeName`, 예: "방화 WARN" → "방화"). 열거형 키(모드·판정 등)는 그대로 둔다. 원문 저장값·자재 DB는 바꾸지 않고, 결과 화면에 생략·변환 항목을 안내한다(`reportSanitizeNotice`).
+- 피스 인장: 피스 체결층은 실제 보드 구성으로 판별한다(전면 보드 = 피스 체결, 후면 보드는 CH-STUD만 끼움). 체결층이 없으면(CH 끼움 보드만) 'O.K (피스 인장 검토 생략)', CH 일부 체결이면 'O.K (전면 피스 체결층)'으로 적는다(`screwTensionScope`). 하중 0으로 엔진 지배 피치가 0이어도 체결층이 있으면 생략으로 적지 않는다. 엔진 판정은 그대로다.
 - 엔진 입력 조건 안내(notices: 중립축 위치·표준 외 피스 간격)는 사실과 계산 범위만 쓴다. 적용 판단 안내는 결과 화면(`result-panel.tsx` screenGuidance)에만 둔다.
 - 산출 문서에서 뺀 확인 필요 사항은 DevVault `projects/KCC_board/unverified.md`에 기록한다.
 - 회귀 시험: `tests/test_report_wording.py`(API 출력 문자열·계산서 소스·표준 예제와 분기 예제의 실제 렌더링 텍스트, `renderer/scripts/report-wording-check.mjs`). 렌더링 시험은 `renderer/node_modules`가 없으면 실패한다(의도적 생략만 `KCC_ALLOW_SKIP_RENDER=1`).

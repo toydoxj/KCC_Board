@@ -15,6 +15,7 @@ import { boardColor, displayStudGroup, findStudAsset } from "@/lib/visual-assets
 import type { StudSection } from "@/lib/api";
 import { APP_FULL_TITLE } from "@/lib/app-info";
 import { reportSafeText, screwTensionScope } from "@/lib/report-wording";
+import { sanitizeReportData } from "@/lib/report-sanitize";
 import { productScopeNotice, resultScopeDisclaimer, supportScopeNotice, testedConfigurationStatus } from "@/lib/result-notice";
 
 const n=(v: number|null|undefined,d=3)=>v==null?"-":v.toLocaleString("ko-KR",{maximumFractionDigits:d});
@@ -58,7 +59,9 @@ function Assembly({data}:{data:CalculationReportData}) {
   return <div className="summary-assembly"><div className="summary-board-list"><strong>1면 (전면)</strong>{data.frontBoards.map((b,i)=><div key={i}>1-{i+1}P　{hasBoard(b)?`${b.kind} ${b.thickness}T`:"-"}</div>)}</div><svg viewBox={`0 0 440 ${cursor+8}`} aria-label="스터드 단면 3개를 나란히 배치한 보드 구성도" role="img">{rearRects}{inserted&&breaks.map((x,i)=>i%2===0&&i<breaks.length-1?<rect key={i} x={x} y={slotY} width={breaks[i+1]-x} height={slotH} fill={boardColor(rear[0].kind)} stroke="#777" strokeWidth=".6"/>:null)}{centers.map((c,i)=>asset?<image key={i} href={`/stud-assets/${asset.svg}`} x={c-shapeW/2} y={top} width={shapeW} height={shapeH} transform={ch?`rotate(180 ${c} ${top+shapeH/2})`:undefined}/>:<path key={i} d={`M ${c-shapeW/2} ${top} h ${shapeW} M ${c} ${top} v ${shapeH} M ${c-shapeW/2} ${top+shapeH} h ${shapeW}`} stroke="#171717" strokeWidth="2" fill="none"/>)}{frontRects}</svg><div className="summary-board-list"><strong>2면 (후면)</strong>{[...data.rearBoards].reverse().map((b,i)=><div key={i}>2-{i+1}P　{hasBoard(b)?`${b.kind} ${b.thickness}T`:"-"}</div>)}</div></div>;
 }
 
-export function SummaryReport({data}:{data:CalculationReportData}) {
+export function SummaryReport({data:rawData}:{data:CalculationReportData}) {
+  // 인쇄 전 일괄 정화(item 182)
+  const data=sanitizeReportData(rawData).data;
   const r=data.result,g=data.geometry,l=data.loads,b=data.bolts;
   const seismic=r.design_case!=="non_seismic";
   const frontCount=data.frontBoards.filter(hasBoard).length,rearCount=data.rearBoards.filter(hasBoard).length;
@@ -70,7 +73,7 @@ export function SummaryReport({data}:{data:CalculationReportData}) {
   const review=heightReview(r,data.calculationMode,g.spanMm);
   const verdict=(label:string,ok:boolean,text?:string)=><div data-verdict={label} className={`summary-verdict ${ok?"":"ng"}`}><span>{label}</span><b>{text??(ok?"O.K":"N.G")}</b></div>;
   // 피스 인장 검토 범위(item 182): 피스 체결층이 없으면 만족 조건 목록에서 빼고 카드에 "검토 생략"을 붙인다
-  const screwScope=screwTensionScope(r,rearCount>0);
+  const screwScope=screwTensionScope(r,frontCount>0,rearCount>0);
   const criteria=`${["응력","처짐",...(seismic?["런너 고정못"]:[]),...(screwScope.checked?["피스 인장"]:[])].join("·")} 조건 만족값${screwScope.checked?"":" (피스 인장 검토 생략)"}`;
   const notices=(r.notices??[]).filter((notice)=>reportSafeText(notice)!==null);
   const pitch=[b.innerPitch,b.middlePitch,b.outerPitch],screws=[b.innerCount,b.middleCount,b.outerCount];

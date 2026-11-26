@@ -43,6 +43,7 @@ import {
 } from "@/lib/calculation-mode";
 import { APP_SHORT_NAME, APP_TITLE, APP_VERSION } from "@/lib/app-info";
 import { cn } from "@/lib/utils";
+import { reportSanitizeNotice, sanitizeReportData } from "@/lib/report-sanitize";
 import { useCheckStore } from "@/store/check-store";
 
 const noneBoardValue = "NONE";
@@ -459,6 +460,8 @@ export default function Home() {
   const calculationModeRegister = register("calculationMode");
   const studGroupRegister = register("studGroup");
   const [reportData, setReportData] = useState<CalculationReportData | null>(null);
+  // 화면 안내(item 182): 계산서 인쇄 시 생략·변환되는 표기가 있으면 결과 영역에 알린다(원문은 그대로 보존)
+  const reportSanitizeMessage = useMemo(() => (reportData ? reportSanitizeNotice(sanitizeReportData(reportData).changes) : null), [reportData]);
   const [savingPdf, setSavingPdf] = useState(false);
   const [mirrorRear, setMirrorRear] = useState(false);
   const [pdfMessage, setPdfMessage] = useState<string | null>(null);
@@ -830,6 +833,7 @@ export default function Home() {
               </Button>
               </div>
             </div>
+            {reportSanitizeMessage ? <p className="input-warning mb-3" role="status" data-report-omitted="sanitize">{reportSanitizeMessage}</p> : null}
             <ResultPanel result={result} mode={selectedCalculationMode} spanMm={reportData?.geometry.spanMm} />
           </section>
         </aside>

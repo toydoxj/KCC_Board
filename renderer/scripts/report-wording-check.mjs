@@ -22,8 +22,8 @@ const nodeModulesDir = path.join(rendererDir, "node_modules");
 const isOwnFile = (filePath) => filePath.startsWith(rendererDir) && !filePath.startsWith(nodeModulesDir);
 const sourceExtensions = [".ts", ".tsx", ".json"];
 
-// 금지 문구 패턴은 src/lib/report-wording.ts 단일 출처를 쓴다(hook 등록 후 import)
-let forbiddenPattern = null;
+// 금지 문구 검출은 src/lib/report-wording.ts findForbiddenWording(정규화형 + 공백 제거형)을 쓴다(hook 등록 후 import)
+let findForbidden = null;
 
 function resolveFile(basePath) {
   if (existsSync(basePath) && statSync(basePath).isFile()) return basePath;
@@ -92,8 +92,8 @@ function htmlToText(html) {
 function findHits(text) {
   const hits = [];
   for (const line of text.split("\n")) {
-    const matches = line.match(forbiddenPattern);
-    if (matches) hits.push({ words: matches, line: line.trim().slice(0, 200) });
+    const matches = findForbidden(line);
+    if (matches.length > 0) hits.push({ words: matches, line: line.trim().slice(0, 200) });
   }
   return hits;
 }
@@ -111,7 +111,7 @@ async function main() {
     process.exit(2);
   }
   const wording = await import(pathToFileURL(path.join(srcDir, "lib/report-wording.ts")).href);
-  forbiddenPattern = wording.reportForbiddenPattern(true);
+  findForbidden = wording.findForbiddenWording;
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
   const { CalculationReport } = await import(pathToFileURL(path.join(srcDir, "components/calculation-report.tsx")).href);
