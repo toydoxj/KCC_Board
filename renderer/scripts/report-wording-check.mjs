@@ -112,6 +112,7 @@ async function main() {
   }
   const wording = await import(pathToFileURL(path.join(srcDir, "lib/report-wording.ts")).href);
   findForbidden = wording.findForbiddenWording;
+  const sanitize = await import(pathToFileURL(path.join(srcDir, "lib/report-sanitize.ts")).href);
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
   const { CalculationReport } = await import(pathToFileURL(path.join(srcDir, "components/calculation-report.tsx")).href);
@@ -135,6 +136,9 @@ async function main() {
   const screen = cases.map((item) => ({
     name: item.name,
     anchorSourceReportSafe: wording.isReportSafeText(item.data.geometry?.anchorCapacitySource ?? ""),
+    // 인쇄 전 정화가 바꾼 항목 수·대체 표기(프로그램 문구만 있는 구성은 0이어야 함)
+    sanitizeChanges: sanitize.sanitizeReportData(item.data).changes,
+    aliases: sanitize.sanitizeReportData(item.data).aliases,
   }));
   // 큰 출력이 파이프에서 잘리지 않도록 process.exit 대신 exitCode 로 끝낸다
   process.stdout.write(JSON.stringify({ total, report, screen }, null, 2) + "\n");

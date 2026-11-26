@@ -7,7 +7,7 @@ import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } 
 import { ResultNotices } from "@/components/result-notices";
 import { APP_FULL_TITLE } from "@/lib/app-info";
 import { reportSafeText, screwTensionScope } from "@/lib/report-wording";
-import { sanitizeReportData } from "@/lib/report-sanitize";
+import { reportAliasLegend, sanitizeReportData } from "@/lib/report-sanitize";
 
 export interface ReportBoardSlot {
   label: string;
@@ -121,7 +121,9 @@ const defaultStudYieldStrength = 295;
 
 export function CalculationReport({ data: rawData, className = "" }: CalculationReportProps) {
   // 인쇄 전 일괄 정화(item 182): DB·시드·자유입력·엔진 문자열의 금지 표현을 생략·변환한 사본으로 그린다
-  const data = sanitizeReportData(rawData).data;
+  const sanitized = sanitizeReportData(rawData);
+  const data = sanitized.data;
+  const aliasLegend = reportAliasLegend(sanitized.aliases);
   const stressOk = data.result.stress_verdict === "O.K";
   const deflectionOk = data.result.deflection_verdict === "O.K";
   const screwTensionOk = data.result.screw_tension_verdict === "O.K";
@@ -175,6 +177,7 @@ export function CalculationReport({ data: rawData, className = "" }: Calculation
 
       <section className="mt-4">
         <ResultNotices notices={(data.result.notices ?? []).filter((notice) => reportSafeText(notice) !== null)} showProductScope result={data.result} variant="report" />
+        {aliasLegend ? <p className="mt-2 text-xs text-slate-600" data-alias-legend="detail">{aliasLegend}</p> : null}
       </section>
 
       <section className={`mt-5 grid gap-3 md:grid-cols-2 ${isHeightSearchMode&&isSeismic?"report-overview-anchor-height":""}`}>

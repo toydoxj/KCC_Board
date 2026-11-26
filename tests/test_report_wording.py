@@ -99,10 +99,21 @@ FORBIDDEN_EXAMPLES: tuple[tuple[str, str], ...] = (
   ("W A R N spaced", "spaced"),
   ("ｗａｒｎｉｎｇ fullwidth", "fullwidth"),
   ("확인\u200b필요 zero-width", "zero-width"),
+  ("현장 조건을 확인해 주시기 바랍니다", "현장 조건을"),
+  ("Please verify before use", "Please"),
+  ("사용 전 검토해 주십시오", "사용 전"),
+  ("Confirm prior to use", "prior"),
+  ("(주의) 현장 메모", "현장 메모"),
 )
 # 독립 단언용: 문서 본문에 나오면 안 되는 영문 경고 토큰(대소문자 무관 비교)
 LITERAL_TOKENS = ("WARN", "CAUTION", "DRAFT", "TBD", "PENDING", "경고", "확인 필요", "확인필요", "검토가 필요")
 BOARD_WARN_KIND = "방화 WARN"
+BOARD_DRAFT_KIND = "방화 DRAFT"
+# 정상값 반례(Codex 3차): 정화가 훼손하면 안 되는 출처·자재명
+SAFE_SOURCE = "건축주의 승인도서 A-17"
+SAFE_BOARD_KIND = "건축주의 지정 방화보드"
+# 프로그램 문구만 있는 구성(자유입력·로컬 DB 반례 제외) — 인쇄 전 정화가 바꾸는 항목이 0이어야 함
+USER_INPUT_CASE_PREFIXES = ("free-", "db-edited", "board-catalog-")
 
 # 계산서·요약페이지에 텍스트를 내보내는 렌더러 소스(화면 전용 input-workspace 등은 대상 아님)
 REPORT_SOURCES = (
@@ -241,6 +252,10 @@ class ReportWordingTest(unittest.TestCase):
         "name": f"free-example-{index:02d}", "mode": "anchorHeight", "product": None,
         "payload": {**custom, "anchor_capacity_source": text},
       })
+    cases.append({
+      "name": "free-safe-source", "mode": "anchorHeight", "product": None,
+      "payload": {**custom, "anchor_capacity_source": SAFE_SOURCE},
+    })
     # 하중 0(비내진·활하중 0): 피스 체결층이 있어도 엔진 지배 피치가 0 — 검토 생략으로 적으면 안 됨
     cases.append({
       "name": "zero-load-c-stud", "mode": "maxHeight", "product": None,
@@ -248,37 +263,40 @@ class ReportWordingTest(unittest.TestCase):
     })
     for case in cases:
       case["result"] = cls._check(case["payload"])
-    # 로컬 보드 카탈로그 반례: 임시 seed에 '방화 WARN'(방화와 같은 물성) 추가
-    cases.append(cls._board_warn_case())
+    # 로컬 보드 카탈로그 반례: 경고 표현이 든 이름 2개(서로 구분돼야 함) + 실제 '방화'
+    cases.append(cls._local_board_case("board-catalog-warn", (BOARD_WARN_KIND, BOARD_DRAFT_KIND), (BOARD_WARN_KIND, BOARD_DRAFT_KIND), "방화"))
+    # 정상 자재명(Codex 3차): '건축주의'(건축주+의)는 경고 '주의'가 아님 — 원문 그대로 인쇄
+    cases.append(cls._local_board_case("board-catalog-safe", (SAFE_BOARD_KIND,), (SAFE_BOARD_KIND, SAFE_BOARD_KIND), "방화"))
     return cases
 
   @classmethod
-  def _board_warn_case(cls) -> dict[str, Any]:
-    temp_dir = tempfile.mkdtemp(prefix="kcc-board-warn-")
+  def _local_board_case(cls, name: str, extra_kinds: tuple[str, ...], front_kinds: tuple[str, ...], rear_kind: str) -> dict[str, Any]:
+    """임시 seed에 '방화 19T'와 같은 물성의 보드 종류를 실제 등록하고, 카탈로그 API로 받은 항목으로 구성해 계산한다."""
+    temp_dir = tempfile.mkdtemp(prefix="kcc-board-local-")
     cls._temp_dirs = [*getattr(cls, "_temp_dirs", []), temp_dir]
     seed = Path(temp_dir) / "seed"
     shutil.copytree(ROOT / "data/seed", seed)
     board_file = seed / "board_property.json"
     boards = json.loads(board_file.read_text(encoding="utf-8"))
     source = next(item for item in boards["items"] if item["kind"] == "방화" and float(item["thickness"]) == 19.0)
-    boards["items"].append({**source, "kind": BOARD_WARN_KIND})
+    boards["items"].extend({**source, "kind": kind} for kind in extra_kinds)
     board_file.write_text(json.dumps(boards, ensure_ascii=False), encoding="utf-8")
     client = TestClient(create_app(JsonSeedRepository(seed)))
     catalog = client.get("/api/db/boards").json()["data"]
-    warn_board = next(item for item in catalog if item["kind"] == BOARD_WARN_KIND)
-    layer = {"kind": warn_board["kind"], "thickness": warn_board["thickness"]}
+
+    def layer(kind: str, order: int) -> dict[str, Any]:
+      board = next(item for item in catalog if item["kind"] == kind and float(item["thickness"]) == 19.0)
+      return {"kind": board["kind"], "thickness": board["thickness"], "order": order}
+
     payload = {
       **cls.base_payload,
-      "rear_boards": [{**layer, "order": 1}],
-      "front_boards": [{**layer, "order": 1}, {**layer, "order": 2}],
+      "rear_boards": [layer(rear_kind, 1)],
+      "front_boards": [layer(kind, order) for order, kind in enumerate(front_kinds, start=1)],
     }
     response = client.post("/api/check", json=payload)
     if response.status_code != 200:
-      raise AssertionError(f"보드 WARN 반례 /api/check 실패: {response.status_code} {response.text}")
-    return {
-      "name": "board-catalog-warn", "mode": "maxHeight", "product": None, "payload": payload,
-      "result": response.json()["data"], "boards": catalog,
-    }
+      raise AssertionError(f"{name} /api/check 실패: {response.status_code} {response.text}")
+    return {"name": name, "mode": "maxHeight", "product": None, "payload": payload, "result": response.json()["data"], "boards": catalog}
 
   @classmethod
   def tearDownClass(cls) -> None:
@@ -434,16 +452,52 @@ class ReportWordingTest(unittest.TestCase):
           self.assertIn("고정못 허용내력 출처 —", body)
         self.assertEqual(self.cases_by_name()[name]["payload"]["anchor_capacity_source"], text)  # 원문 보존
 
-  def test_board_catalog_warn_name_is_not_printed(self) -> None:
+  def test_board_catalog_warn_name_is_aliased_and_distinct(self) -> None:
     case = self.cases_by_name()["board-catalog-warn"]
-    self.assertTrue(any(layer["name"].find("WARN") >= 0 for layer in case["result"]["layers"]), "반례 전제: 레이어 이름에 WARN")
+    self.assertTrue(any("WARN" in layer["name"] for layer in case["result"]["layers"]), "반례 전제: 레이어 이름에 WARN")
+    screen = self._render()["screen_by_name"]["board-catalog-warn"]
+    self.assertEqual([item["alias"] for item in screen["aliases"]], ["등록명 1", "등록명 2"])
     for kind in ("detail", "summary"):
       body = self._text("board-catalog-warn", kind)
       with self.subTest(kind=kind):
         for token in LITERAL_TOKENS:
           self.assertNotIn(token.lower(), body.lower())
-        self.assertIn("방화 19T", body)  # 안전한 종류명은 남는다
+        # 서로 다른 두 제품은 서로 다른 고유 표기, 실제 '방화'와도 구분
+        self.assertIn("등록명 1", body)
+        self.assertIn("등록명 2", body)
+        self.assertIn("방화 19T", body)
+        self.assertIn("표기 대체: 등록명 1, 등록명 2", body)  # 문서에 범례(사실 서술)
+    detail = self._text("board-catalog-warn", "detail")
+    # 부분 삭제로 '방화'가 되지 않았음: 전면 행은 대체 표기, 후면 행은 원 명칭
+    self.assertRegex(detail, r"전면 1번\(내측\)\s+등록명 1\s+19T")
+    self.assertRegex(detail, r"전면 2번\(중간\)\s+등록명 2\s+19T")
+    self.assertRegex(detail, r"후면 1번\(내측\)\s+방화\s+19T")
     self.assertEqual(case["payload"]["front_boards"][0]["kind"], BOARD_WARN_KIND)  # 원본 키 보존
+
+  def test_safe_board_name_is_printed_verbatim(self) -> None:
+    screen = self._render()["screen_by_name"]["board-catalog-safe"]
+    self.assertEqual(screen["sanitizeChanges"], [])
+    self.assertEqual(screen["aliases"], [])
+    for kind in ("detail", "summary"):
+      body = self._text("board-catalog-safe", kind)
+      with self.subTest(kind=kind):
+        self.assertIn(SAFE_BOARD_KIND, body)
+        self.assertNotIn("건축 지정", body)
+        self.assertNotIn("등록명", body)
+
+  def test_safe_source_is_printed_verbatim(self) -> None:
+    self.assertTrue(self._render()["screen_by_name"]["free-safe-source"]["anchorSourceReportSafe"])
+    for kind in ("detail", "summary"):
+      with self.subTest(kind=kind):
+        self.assertIn(f"고정못 허용내력 출처 {SAFE_SOURCE}", self._text("free-safe-source", kind))
+
+  def test_program_generated_text_needs_no_sanitizing(self) -> None:
+    # 프로그램 문구(엔진·시드·고정 문자열)는 원천에서 사실 서술 — 정화가 바꾸는 항목이 없어야 한다
+    for case in self.cases:
+      if case["name"].startswith(USER_INPUT_CASE_PREFIXES):
+        continue
+      with self.subTest(case=case["name"]):
+        self.assertEqual(self._render()["screen_by_name"][case["name"]]["sanitizeChanges"], [])
 
   def test_zero_load_with_screw_layers_is_not_marked_skipped(self) -> None:
     case = self.cases_by_name()["zero-load-c-stud"]
@@ -470,7 +524,11 @@ class ReportWordingTest(unittest.TestCase):
     for text in ("Warning", "WARNING", "warn", "Caution", "tbd", "확인필요", "결과 적용에 유의할 것"):
       with self.subTest(text=text):
         self.assertTrue(_hits(text))
-    for text in ("O.K", "N.G", "적합", "부적합", "O.K (피스 인장 검토 생략)", "안전율 원문 미기재"):
+    for text in ("(주의) 시공", "주의사항", "Please verify before use", "확인해 주시기 바랍니다", "Confirm prior to use"):
+      with self.subTest(text=text):
+        self.assertTrue(_hits(text))
+    for text in ("O.K", "N.G", "적합", "부적합", "O.K (피스 인장 검토 생략)", "안전율 원문 미기재", SAFE_SOURCE, SAFE_BOARD_KIND,
+                 "DEPENDING ON LOAD", "Hardware", "Hilti X-U P8", "검토 조건", "실험으로 검증된 범위"):
       with self.subTest(text=text):
         self.assertEqual(_hits(text), [])
 

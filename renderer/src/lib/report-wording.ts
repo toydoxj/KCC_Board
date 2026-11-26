@@ -3,8 +3,9 @@ import type { WallCheckResult } from "./api";
 // 산출 문서(상세 계산서·요약페이지) 금지 문구 (APP_DEV item 182, 소유자 상시 지시 — CODEX.md §11).
 // 단일 출처: tests/test_report_wording.py 와 renderer/scripts/report-wording-check.mjs 가 이 패턴 원문을 그대로 읽는다.
 // 검사는 normalizeReportText(NFKC·폭 없는 문자 제거·공백/줄바꿈 1칸) 후 원문형과 공백 제거형 두 가지로 한다.
-// 영문은 대소문자 무관. 한국어는 조사·어미 변형(확인이/확인을/검토가 필요합니다 등)을 \s*·선택 조사로 받는다.
-export const reportForbiddenPatternSource = String.raw`(확인|검토|확정|검증)\s*(이|을|를|가)?\s*(필요|요망|요청|바람|바랍)|확인하시기|확인\s*하십시오|미검증|미확인|미확정|검증\s*(하지|되지|안\s*됨|전)|근거\s*(가|는|이)?\s*없|초안|보류|잠정|추후|별도\s*(확인|검토)|판정\s*불가|주의|유의\s*(할|하|바|요)|경고|결과\s*적용에|WARN|CAUTION|ALERT|ATTENTION|DRAFT|TBD|TBC|TODO|FIXME|PENDING|PRELIMINARY|PROVISIONAL|UNVERIFIED|NOT\s*VERIFIED|UNCONFIRMED|TO\s*BE\s*(CONFIRMED|DETERMINED|VERIFIED|CHECKED|REVIEWED)|(REVIEW|CHECK|CONFIRMATION|VERIFICATION)\s*(IS\s*)?(REQUIRED|NEEDED|PENDING)|NEEDS?\s*(TO\s*BE\s*)?(REVIEW|CHECK|CONFIRM|VERIF)`;
+// 영문은 대소문자 무관. 한국어는 조사·어미 변형(확인이/확인을/검토가 필요합니다, 확인해 주시기 바랍니다 등)을 받는다.
+// 짧은 경고 명사(주의·경고·보류 등)와 영문 단어는 앞 글자가 한글/영문이 아닐 때만 잡는다 — '건축주의'(건축주+의)·'DEPENDING' 오탐 방지(Codex 3차).
+export const reportForbiddenPatternSource = String.raw`(확인|검토|확정|검증)\s*(이|을|를|가)?\s*(필요|요망|요청|바람|바랍)|(확인|검토|검증|대조)\s*(해|하여|하고|해서)\s*(주|바|보)|확인하시기|확인\s*하십시오|확인\s*하세요|검증\s*(하지|되지|안\s*됨|전)|근거\s*(가|는|이)?\s*없|별도\s*(확인|검토)|판정\s*불가|결과\s*적용에|(?<![가-힣])(주의|유의\s*(할|하|바|요)|경고|보류|초안|잠정|추후|미검증|미확인|미확정)|(?<![A-Za-z])(WARN|CAUTION|ALERT|ATTENTION|DRAFT|TBD|TBC|TODO|FIXME|PENDING|PRELIMINARY|PROVISIONAL|UNVERIFIED|UNCONFIRMED|NOT\s*VERIFIED|TO\s*BE\s*(CONFIRMED|DETERMINED|VERIFIED|CHECKED|REVIEWED)|(REVIEW|CHECK|CONFIRMATION|VERIFICATION)\s*(IS\s*)?(REQUIRED|NEEDED|PENDING)|NEEDS?\s*(TO\s*BE\s*)?(REVIEW|CHECK|CONFIRM|VERIF)|PLEASE\s*(VERIFY|CONFIRM|CHECK|REVIEW)|(VERIFY|CONFIRM|CHECK|REVIEW)\s*(BEFORE|PRIOR\s*TO)\s*USE)`;
 
 export function reportForbiddenPattern(global = false) {
   return new RegExp(reportForbiddenPatternSource, global ? "giu" : "iu");
@@ -35,18 +36,6 @@ export function isReportSafeText(text: string | null | undefined) {
 export function reportSafeText(text: string | null | undefined): string | null {
   const value = normalizeReportText(text ?? "");
   return isReportSafeText(value) ? value : null;
-}
-
-// 명칭(자재 종류·레이어 이름 등)용 변환: 금지 표현만 지우고 나머지 명칭은 남긴다. 다 지워지면 fallback
-export function reportSafeName(text: string | null | undefined, fallback = "—"): string {
-  let value = normalizeReportText(text ?? "");
-  for (let i = 0; i < 5 && !isReportSafeText(value); i += 1) {
-    value = value.replace(reportForbiddenPattern(true), " ");
-    // 공백 제거형에서만 잡히는 표현(예: "W A R N")은 공백을 없앤 뒤 다시 지운다
-    if (!isReportSafeText(value)) value = value.replace(/\s+/g, "").replace(reportForbiddenPattern(true), " ");
-    value = value.replace(/[\s/·,;:()\[\]-]+$/u, "").replace(/^[\s/·,;:()\[\]-]+/u, "").replace(/\s+/g, " ").trim();
-  }
-  return value && isReportSafeText(value) ? value : fallback;
 }
 
 // 화면 안내: 문서에서 생략되는 자유입력 문구의 사유
