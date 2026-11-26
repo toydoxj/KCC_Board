@@ -121,7 +121,17 @@ FORBIDDEN_EXAMPLES: tuple[tuple[str, str], ...] = (
   ("사용 전 검토해 주십시오", "사용 전"),
   ("Confirm prior to use", "prior"),
   ("(주의) 현장 메모", "현장 메모"),
+  # Codex 4차: 붙여 쓴 합성어·공백 변형
+  ("취급주의", "취급주의"),
+  ("성능미검증", "성능미검증"),
+  ("취급 주 의 표기", "표기"),
+  ("성능 미 검 증 자료", "자료"),
+  ("사용보류 자재", "사용보류"),
+  ("시험미확인 값", "시험미확인"),
+  ("승인 확인 안 됨", "안 됨"),
 )
+# Codex 4차 대표 반례: 두 문서 모두에 원문 + 경고(documents = 계산서·요약페이지)
+COMPOUND_EXAMPLES = ("취급주의", "성능미검증")
 # 독립 단언용: 문서 본문에 나오면 안 되는 영문 경고 토큰(대소문자 무관 비교)
 LITERAL_TOKENS = ("WARN", "CAUTION", "DRAFT", "TBD", "PENDING", "경고", "확인 필요", "확인필요", "검토가 필요")
 BOARD_WARN_KIND = "방화 WARN"
@@ -279,6 +289,21 @@ class ReportWordingTest(unittest.TestCase):
     cases.append({
       "name": "free-safe-source", "mode": "anchorHeight", "product": None,
       "payload": {**custom, "anchor_capacity_source": SAFE_SOURCE}, "userInputs": [SAFE_SOURCE],
+    })
+    # Codex 4차: 비내진 문서에는 앵커 출처가 인쇄되지 않음 — 경고 목록에도 넣지 않는다
+    cases.append({
+      "name": "free-nonseismic-source", "mode": "maxHeight", "product": None, "userInputs": ["Warning: A-17"],
+      "payload": {**cls.base_payload, "design_case": "non_seismic", "anchor_capacity_source": "Warning: A-17"},
+    })
+    # Codex 4차: 출처·승인 별개 필드에 같은 문구 — 경고 목록에서 따로 센다
+    draft = {**x_c, "source": "DRAFT", "approvals": "DRAFT"}
+    cases.append({
+      "name": "db-edited-source-approvals", "mode": "anchorHeight", "product": draft, "userInputs": ["DRAFT"],
+      "payload": {
+        **cls.base_payload, "design_case": "seismic", "anchor_product_id": "hilti_x_c",
+        "anchor_embedment_mm": embedment, "anchor_concrete_fc_MPa": fc, "anchor_apply_seismic_cap": True,
+        "anchor_capacity_source": "Hilti X-C 카탈로그",
+      },
     })
     # 하중 0(비내진·활하중 0): 피스 체결층이 있어도 엔진 지배 피치가 0 — 검토 생략으로 적으면 안 됨
     cases.append({
@@ -447,7 +472,7 @@ class ReportWordingTest(unittest.TestCase):
     page = (RENDERER / "src/app/page.tsx").read_text(encoding="utf-8")
     self.assertIn("findReservationFields(", page)
     self.assertIn('data-reservation-warning="before-print"', page)
-    self.assertIn("window.confirm(", page)
+    self.assertIn("window.confirm(message)", page)
     workspace = (RENDERER / "src/components/input-workspace.tsx").read_text(encoding="utf-8")
     self.assertIn('data-reservation-warning="anchor-source"', workspace)
     case = self.cases_by_name()["free-input-source"]
@@ -503,6 +528,92 @@ class ReportWordingTest(unittest.TestCase):
     self.assertIn("전면 1번(내측) 보드 종류", labels)
     self.assertIn("전면 2번(중간) 보드 종류", labels)
     self.assertFalse(any(label.startswith("후면") for label in labels), labels)
+
+  def test_compound_reservation_words_are_warned_for_both_documents(self) -> None:
+    # Codex 4차 높음: '취급주의'·'성능미검증'은 두 PDF에 원문 인쇄 + 저장 전 경고·확인 창
+    for text in COMPOUND_EXAMPLES:
+      name = f"free-example-{[t for t, _ in FORBIDDEN_EXAMPLES].index(text):02d}"
+      with self.subTest(example=text):
+        self._assert_printed_verbatim(name)
+        fields = self._fields(name)
+        source = [f for f in fields if f["path"] == "geometry.anchorCapacitySource"]
+        self.assertEqual(len(source), 1, fields)
+        self.assertEqual(source[0]["documents"], ["detail", "summary"])
+        screen = self._render()["screen_by_name"][name]
+        self.assertIsNotNone(screen["reservationTitle"])
+        for kind in ("detail", "summary"):
+          self.assertEqual(screen["output"][kind]["cancel"], {**screen["output"][kind]["cancel"], "status": "canceled", "saves": 0, "prompts": 1})
+          self.assertIn(text, screen["output"][kind]["cancel"]["message"])
+          self.assertEqual(screen["output"][kind]["approve"]["saves"], 1)
+
+  def test_negative_controls_stay_unwarned(self) -> None:
+    # 넓힌 검출식도 정상 명사는 경고하지 않는다
+    for text in (SAFE_SOURCE, SAFE_BOARD_KIND, "기초안정", "DEPENDING ON LOAD", "Hilti X-U P8"):
+      with self.subTest(text=text):
+        self.assertEqual(_hits(text), [])
+
+  def test_separate_fields_are_listed_separately(self) -> None:
+    # Codex 4차 중간: 출처·승인에 같은 문구가 있어도 원본 경로별로 따로 센다
+    fields = self._fields("db-edited-source-approvals")
+    by_path = {f["path"]: f for f in fields}
+    self.assertIn("anchorProduct.source", by_path, fields)
+    self.assertIn("anchorProduct.approvals", by_path, fields)
+    self.assertNotEqual(by_path["anchorProduct.source"]["label"], by_path["anchorProduct.approvals"]["label"])
+    self.assertEqual(len(fields), len(by_path))
+    # 출력 종류별 인쇄 여부: 콘크리트 조건은 계산서 부록에만 인쇄됨
+    edited = {f["path"]: f["documents"] for f in self._fields("db-edited-strings")}
+    self.assertEqual(edited["anchorProduct.concreteCondition"], ["detail"])
+    self.assertEqual(edited["anchorProduct.approvals"], ["detail", "summary"])
+
+  def test_unprinted_fields_are_not_warned(self) -> None:
+    # Codex 4차 중간: 비내진 문서는 앵커 출처를 인쇄하지 않으므로 경고·확인 창 없음
+    for kind in ("detail", "summary"):
+      with self.subTest(kind=kind):
+        printed = self._render()["printed"][("free-nonseismic-source", kind)]
+        self.assertEqual([item["printed"] for item in printed], [False])
+    self.assertEqual(self._fields("free-nonseismic-source"), [])
+    screen = self._render()["screen_by_name"]["free-nonseismic-source"]
+    self.assertIsNone(screen["reservationTitle"])
+    self.assertEqual(screen["output"]["detail"]["cancel"]["saves"], 1)
+    self.assertEqual(screen["output"]["detail"]["cancel"]["prompts"], 0)
+
+  def test_output_procedure_without_warning_saves_directly(self) -> None:
+    # Codex 4차 낮음: 경고 0건이면 확인 없이 저장 1회, 경고가 있으면 취소 시 0회·승인 시 1회
+    for case in self.cases:
+      screen = self._render()["screen_by_name"][case["name"]]
+      for kind in ("detail", "summary"):
+        targets = [f for f in screen["reservationFields"] if kind in f["documents"]]
+        cancel, approve = screen["output"][kind]["cancel"], screen["output"][kind]["approve"]
+        with self.subTest(case=case["name"], kind=kind):
+          if targets:
+            self.assertEqual((cancel["status"], cancel["saves"], cancel["prompts"]), ("canceled", 0, 1))
+            self.assertEqual((approve["status"], approve["saves"], approve["prompts"]), ("saved", 1, 1))
+          else:
+            self.assertEqual((cancel["status"], cancel["saves"], cancel["prompts"]), ("saved", 1, 0))
+
+  def test_direct_browser_print_does_not_print_documents(self) -> None:
+    # Codex 4차 중간: 브라우저 인쇄 명령은 앱 확인 절차를 거치지 않으므로 data-print-kind 가 없으면 문서 DOM을 인쇄하지 않는다
+    css = (RENDERER / "src/app/globals.css").read_text(encoding="utf-8")
+    print_block = css[css.index("@media print"):]
+    self.assertRegex(print_block, r"main > \*\s*\{\s*display:\s*none !important;")
+    self.assertIn("html[data-print-kind=detail] main > .print-report { display:block !important; }", print_block)
+    self.assertIn("html[data-print-kind=summary] main > .print-summary { display:block !important; }", print_block)
+    self.assertIn("html:not([data-print-kind]) main > .print-guard { display:block !important; }", print_block)
+    self.assertIsNone(re.search(r"(^|\n)\s*\.print-report\s*\{\s*display:\s*block", print_block), "조건 없는 문서 표시 규칙")
+    page = (RENDERER / "src/app/page.tsx").read_text(encoding="utf-8")
+    handler = page[page.index("async function handlePrintReport"):page.index("async function saveReportPdf")]
+    saver = page[page.index("async function saveReportPdf"):page.index("function clearCalculationResult")]
+    self.assertIn("runGuardedReportOutput(", handler)
+    self.assertIn("save: () => saveReportPdf(reportData, kind)", handler)
+    self.assertNotIn("printKind", handler)
+    self.assertIn("document.documentElement.dataset.printKind = kind", saver)
+    self.assertEqual(page.count("saveReportPdf(reportData, "), 1, "확인 절차를 거치지 않는 저장 호출")
+    self.assertEqual(page.count("window.print()"), 1)
+    self.assertIn("window.print()", saver)
+    self.assertNotIn("dataset.printKind =", page.replace(saver, ""))
+    # 앱 메뉴·단축키에 인쇄 항목 없음(문서 인쇄는 저장 버튼 경로만)
+    main_js = (RENDERER / "electron/main.cjs").read_text(encoding="utf-8")
+    self.assertIsNone(re.search(r"role:\s*\"print\"|CmdOrCtrl\+P|webContents\.print\(", main_js))
 
   def test_reverted_alias_is_absent(self) -> None:
     # '등록명 n' 대체 표기·문서 범례는 되돌림(소유자 결정 2026-11-26)

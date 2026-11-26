@@ -39,7 +39,7 @@ select {
   font: inherit;
 }
 
-.print-report, .print-summary {
+.print-report, .print-summary, .print-guard {
   display: none;
 }
 
@@ -139,16 +139,15 @@ select {
     background: white;
   }
 
-  main > :not(.print-report) {
+  /* 문서 DOM은 앱 확인 절차(handlePrintReport → runGuardedReportOutput)를 통과해 data-print-kind 가 설정됐을 때만 인쇄한다.
+     브라우저 인쇄 명령(Ctrl+P·메뉴)을 직접 쓰면 문서 대신 저장 버튼 안내만 인쇄된다(Codex 4차). */
+  main > * {
     display: none !important;
   }
 
-  .print-report {
-    display: block !important;
-  }
-
-  html[data-print-kind=summary] main > .print-report { display:none !important; }
+  html[data-print-kind=detail] main > .print-report { display:block !important; }
   html[data-print-kind=summary] main > .print-summary { display:block !important; }
+  html:not([data-print-kind]) main > .print-guard { display:block !important; }
 
   .report-document {
     color: #020617;

@@ -6,8 +6,9 @@ import type { WallCheckResult } from "./api";
 // 프로그램 문구 검사(시험)는 이 검출식과 독립된 검색식을 쓴다(renderer/scripts/report-wording-check.mjs, tests/test_report_wording.py).
 // 검사는 normalizeReportText(NFKC·폭 없는 문자 제거·공백/줄바꿈 1칸) 후 원문형과 공백 제거형 두 가지로 한다.
 // 영문은 대소문자 무관. 한국어는 조사·어미 변형(확인이/확인을/검토가 필요합니다, 확인해 주시기 바랍니다 등)을 받는다.
-// 짧은 경고 명사(주의·경고·보류 등)와 영문 단어는 앞 글자가 한글/영문이 아닐 때만 잡는다 — '건축주의'(건축주+의)·'DEPENDING' 오탐 방지(Codex 3차).
-export const reportForbiddenPatternSource = String.raw`(확인|검토|확정|검증)\s*(이|을|를|가)?\s*(필요|요망|요청|바람|바랍)|(확인|검토|검증|대조)\s*(해|하여|하고|해서)\s*(주|바|보)|확인하시기|확인\s*하십시오|확인\s*하세요|검증\s*(하지|되지|안\s*됨|전)|근거\s*(가|는|이)?\s*없|별도\s*(확인|검토)|판정\s*불가|결과\s*적용에|(?<![가-힣])(주의|유의\s*(할|하|바|요)|경고|보류|초안|잠정|추후|미검증|미확인|미확정)|(?<![A-Za-z])(WARN|CAUTION|ALERT|ATTENTION|DRAFT|TBD|TBC|TODO|FIXME|PENDING|PRELIMINARY|PROVISIONAL|UNVERIFIED|UNCONFIRMED|NOT\s*VERIFIED|TO\s*BE\s*(CONFIRMED|DETERMINED|VERIFIED|CHECKED|REVIEWED)|(REVIEW|CHECK|CONFIRMATION|VERIFICATION)\s*(IS\s*)?(REQUIRED|NEEDED|PENDING)|NEEDS?\s*(TO\s*BE\s*)?(REVIEW|CHECK|CONFIRM|VERIF)|PLEASE\s*(VERIFY|CONFIRM|CHECK|REVIEW)|(VERIFY|CONFIRM|CHECK|REVIEW)\s*(BEFORE|PRIOR\s*TO)\s*USE)`;
+// 화면 경고는 과탐이 무해하므로 넓게 잡는다(Codex 4차): 붙여 쓴 합성어('취급주의'·'성능미검증'·'사용보류')도 경고한다.
+// 예외는 '건축주의'·'발주의'처럼 '…주(사람)+의' 조사 결합과 '기초안'(기초+안)뿐이다. 영문 단어는 앞 글자가 영문이 아닐 때만 잡는다('DEPENDING' 제외).
+export const reportForbiddenPatternSource = String.raw`(확인|검토|확정|검증)\s*(이|을|를|가)?\s*(필요|요망|요청|바람|바랍)|(확인|검토|검증|대조)\s*(해|하여|하고|해서)\s*(주|바|보)|확인하시기|확인\s*하십시오|확인\s*하세요|검증\s*(하지|되지|안\s*됨|전)|근거\s*(가|는|이)?\s*없|별도\s*(확인|검토)|판정\s*불가|결과\s*적용에|(?<![발업점화선차집민])(?<!건축|사업|시행|소유|고용|건물|임대|가맹|시공|공사|자본|사회|공산|민족|국가|개인)주의|유의\s*(할|하|바|요)|경고|보류|(?<!기)초안|잠정|추후|미검증|미검토|미확인|미확정|미승인|(확인|검증|검토)\s*(안\s*됨|안\s*된|되지\s*않)|(?<![A-Za-z])(WARN|CAUTION|ALERT|ATTENTION|DRAFT|TBD|TBC|TODO|FIXME|PENDING|PRELIMINARY|PROVISIONAL|UNVERIFIED|UNCONFIRMED|NOT\s*VERIFIED|TO\s*BE\s*(CONFIRMED|DETERMINED|VERIFIED|CHECKED|REVIEWED)|(REVIEW|CHECK|CONFIRMATION|VERIFICATION)\s*(IS\s*)?(REQUIRED|NEEDED|PENDING)|NEEDS?\s*(TO\s*BE\s*)?(REVIEW|CHECK|CONFIRM|VERIF)|PLEASE\s*(VERIFY|CONFIRM|CHECK|REVIEW)|(VERIFY|CONFIRM|CHECK|REVIEW)\s*(BEFORE|PRIOR\s*TO)\s*USE)`;
 
 export function reportForbiddenPattern(global = false) {
   return new RegExp(reportForbiddenPatternSource, global ? "giu" : "iu");

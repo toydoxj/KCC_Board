@@ -8,6 +8,7 @@
 // ① 프로그램 문구 검사: 텍스트에서 userInputs 원문을 빼고 PROGRAM_TEXT_PATTERN(아래, 화면 경고 검출식과 독립)으로 찾는다.
 //    1곳이라도 있으면 종료 코드 1. 렌더링 실패는 종료 코드 2.
 // ② 사용자 입력: 원문이 그대로 인쇄됐는지(userInputsPrinted)와 화면 경고 목록(findReservationFields)을 함께 낸다.
+// ③ 출력 절차: runGuardedReportOutput 에 확인 거절·승인 대역을 넣어 저장 호출 횟수를 낸다(output).
 //    사용자 자유입력·식별 필드는 지우거나 바꾸지 않는다(소유자 결정 2026-11-26).
 // TS/TSX 는 renderer 의 typescript 로 즉시 변환한다(추가 의존성 없음). "@/..." 경로는 src 로 해석한다.
 
@@ -138,8 +139,10 @@ async function main() {
   const { SummaryReport } = await import(pathToFileURL(path.join(srcDir, "components/summary-report.tsx")).href);
 
   const report = [];
+  const screen = [];
   let total = 0;
   for (const item of cases) {
+    const printed = {};
     for (const [kind, Component] of [["detail", CalculationReport], ["summary", SummaryReport]]) {
       const html = renderToStaticMarkup(createElement(Component, { data: item.data }));
       const text = htmlToText(html);
@@ -152,14 +155,29 @@ async function main() {
       const normalizedText = normalizeForCheck(text);
       const userInputsPrinted = userInputs.map((input) => ({ input, printed: normalizedText.includes(normalizeForCheck(input)) }));
       report.push({ name: item.name, kind, chars: text.length, hits, userInputsPrinted, ...(dumpText ? { text } : {}) });
+      printed[kind] = text;
     }
+    // PDF 출력 전 화면 경고 목록(page.tsx 와 같은 함수, 문서 종류별 렌더링 텍스트로 인쇄 여부 판별)
+    const fields = reservation.findReservationFields(item.data, printed);
+    // 앱 저장 버튼 경로(runGuardedReportOutput): 확인 거절/승인 시 저장 호출 횟수
+    const output = {};
+    for (const kind of ["detail", "summary"]) {
+      output[kind] = {};
+      for (const answer of [false, true]) {
+        let saves = 0;
+        let prompts = 0;
+        let message = null;
+        const status = await reservation.runGuardedReportOutput({
+          kind,
+          fields,
+          confirm: (text) => { prompts += 1; message = text; return answer; },
+          save: () => { saves += 1; },
+        });
+        output[kind][answer ? "approve" : "cancel"] = { status, saves, prompts, message };
+      }
+    }
+    screen.push({ name: item.name, reservationFields: fields, reservationTitle: reservation.reservationWarningTitle(fields), output });
   }
-  // PDF 출력 전 화면 경고 목록(page.tsx 와 같은 함수)
-  const screen = cases.map((item) => ({
-    name: item.name,
-    reservationFields: reservation.findReservationFields(item.data),
-    reservationTitle: reservation.reservationWarningTitle(reservation.findReservationFields(item.data)),
-  }));
   // 큰 출력이 파이프에서 잘리지 않도록 process.exit 대신 exitCode 로 끝낸다
   process.stdout.write(JSON.stringify({ total, report, screen }, null, 2) + "\n");
   process.exitCode = total === 0 ? 0 : 1;
