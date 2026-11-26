@@ -129,9 +129,18 @@ FORBIDDEN_EXAMPLES: tuple[tuple[str, str], ...] = (
   ("사용보류 자재", "사용보류"),
   ("시험미확인 값", "시험미확인"),
   ("승인 확인 안 됨", "안 됨"),
+  # Codex 5차: 형태 검출('…주의' 합성어, 확인·검토·검증·확정 + 어미 + 필요, 미 + 확인·검토·검증·확정)
+  ("폭발주의", "폭발주의"),
+  ("발화주의", "발화주의"),
+  ("확인할 필요가 있음", "있음"),
+  ("검토해야 할 필요 있음", "검토해야"),
+  ("검증할 필요", "검증할"),
+  ("확정하여야 할 필요", "확정하여야"),
+  ("성능 미확정", "성능"),
+  ("미 검토 자료", "자료"),
 )
-# Codex 4차 대표 반례: 두 문서 모두에 원문 + 경고(documents = 계산서·요약페이지)
-COMPOUND_EXAMPLES = ("취급주의", "성능미검증")
+# Codex 4·5차 대표 반례: 두 문서 모두에 원문 + 경고(documents = 계산서·요약페이지), 거절 시 저장 0회
+COMPOUND_EXAMPLES = ("취급주의", "성능미검증", "폭발주의", "발화주의", "확인할 필요가 있음")
 # 독립 단언용: 문서 본문에 나오면 안 되는 영문 경고 토큰(대소문자 무관 비교)
 LITERAL_TOKENS = ("WARN", "CAUTION", "DRAFT", "TBD", "PENDING", "경고", "확인 필요", "확인필요", "검토가 필요")
 BOARD_WARN_KIND = "방화 WARN"
@@ -548,7 +557,7 @@ class ReportWordingTest(unittest.TestCase):
 
   def test_negative_controls_stay_unwarned(self) -> None:
     # 넓힌 검출식도 정상 명사는 경고하지 않는다
-    for text in (SAFE_SOURCE, SAFE_BOARD_KIND, "기초안정", "DEPENDING ON LOAD", "Hilti X-U P8"):
+    for text in (SAFE_SOURCE, SAFE_BOARD_KIND, "민주주의 체제", "자본주의", "기초안정", "DEPENDING ON LOAD", "Hilti X-U P8"):
       with self.subTest(text=text):
         self.assertEqual(_hits(text), [])
 
