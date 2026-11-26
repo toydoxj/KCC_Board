@@ -14,8 +14,7 @@ import {
 import { boardColor, displayStudGroup, findStudAsset } from "@/lib/visual-assets";
 import type { StudSection } from "@/lib/api";
 import { APP_FULL_TITLE } from "@/lib/app-info";
-import { reportSafeText, screwTensionScope } from "@/lib/report-wording";
-import { reportAliasLegend, sanitizeReportData } from "@/lib/report-sanitize";
+import { screwTensionScope } from "@/lib/report-wording";
 import { productScopeNotice, resultScopeDisclaimer, supportScopeNotice, testedConfigurationStatus } from "@/lib/result-notice";
 
 const n=(v: number|null|undefined,d=3)=>v==null?"-":v.toLocaleString("ko-KR",{maximumFractionDigits:d});
@@ -59,11 +58,7 @@ function Assembly({data}:{data:CalculationReportData}) {
   return <div className="summary-assembly"><div className="summary-board-list"><strong>1면 (전면)</strong>{data.frontBoards.map((b,i)=><div key={i}>1-{i+1}P　{hasBoard(b)?`${b.kind} ${b.thickness}T`:"-"}</div>)}</div><svg viewBox={`0 0 440 ${cursor+8}`} aria-label="스터드 단면 3개를 나란히 배치한 보드 구성도" role="img">{rearRects}{inserted&&breaks.map((x,i)=>i%2===0&&i<breaks.length-1?<rect key={i} x={x} y={slotY} width={breaks[i+1]-x} height={slotH} fill={boardColor(rear[0].kind)} stroke="#777" strokeWidth=".6"/>:null)}{centers.map((c,i)=>asset?<image key={i} href={`/stud-assets/${asset.svg}`} x={c-shapeW/2} y={top} width={shapeW} height={shapeH} transform={ch?`rotate(180 ${c} ${top+shapeH/2})`:undefined}/>:<path key={i} d={`M ${c-shapeW/2} ${top} h ${shapeW} M ${c} ${top} v ${shapeH} M ${c-shapeW/2} ${top+shapeH} h ${shapeW}`} stroke="#171717" strokeWidth="2" fill="none"/>)}{frontRects}</svg><div className="summary-board-list"><strong>2면 (후면)</strong>{[...data.rearBoards].reverse().map((b,i)=><div key={i}>2-{i+1}P　{hasBoard(b)?`${b.kind} ${b.thickness}T`:"-"}</div>)}</div></div>;
 }
 
-export function SummaryReport({data:rawData}:{data:CalculationReportData}) {
-  // 인쇄 전 일괄 정화(item 182)
-  const sanitized=sanitizeReportData(rawData);
-  const data=sanitized.data;
-  const aliasLegend=reportAliasLegend(sanitized.aliases);
+export function SummaryReport({data}:{data:CalculationReportData}) {
   const r=data.result,g=data.geometry,l=data.loads,b=data.bolts;
   const seismic=r.design_case!=="non_seismic";
   const frontCount=data.frontBoards.filter(hasBoard).length,rearCount=data.rearBoards.filter(hasBoard).length;
@@ -77,7 +72,7 @@ export function SummaryReport({data:rawData}:{data:CalculationReportData}) {
   // 피스 인장 검토 범위(item 182): 피스 체결층이 없으면 만족 조건 목록에서 빼고 카드에 "검토 생략"을 붙인다
   const screwScope=screwTensionScope(r,frontCount>0,rearCount>0);
   const criteria=`${["응력","처짐",...(seismic?["런너 고정못"]:[]),...(screwScope.checked?["피스 인장"]:[])].join("·")} 조건 만족값${screwScope.checked?"":" (피스 인장 검토 생략)"}`;
-  const notices=(r.notices??[]).filter((notice)=>reportSafeText(notice)!==null);
+  const notices=r.notices??[];
   const pitch=[b.innerPitch,b.middlePitch,b.outerPitch],screws=[b.innerCount,b.middleCount,b.outerCount];
   const tested=testedConfigurationStatus(r);
   return <article className="summary-document">
@@ -124,6 +119,6 @@ export function SummaryReport({data:rawData}:{data:CalculationReportData}) {
       ["단면2차모멘트",unit(data.stud.Ix,"mm⁴"),"단면계수",unit(data.stud.Sx,"mm³")],
     ]}/>
     <Heading>석고보드 고정 나사못 배치</Heading><table className="summary-table screw-table"><thead><tr><th>적용 위치</th><th>나사못 개수</th><th>간격</th></tr></thead><tbody>{[1,2,3].map((p)=><tr key={p}><td>{p}P {p<=count?(p===count?"(마감)":"(내측)"):""}</td><td>{p<=count?`${screws[p-1]}개`:"미적용"}</td><td>{p<=count?`${pitch[p-1]} mm`:"-"}</td></tr>)}{r.intermediate.fixed_rear_board_screw_pitch_mm!==undefined&&<tr><td>2면 고정 보드</td><td>{n(r.intermediate.fixed_rear_board_screw_count)}개</td><td>{n(r.intermediate.fixed_rear_board_screw_pitch_mm)} mm</td></tr>}</tbody></table>
-    <footer><p className="summary-scope-disclaimer">{resultScopeDisclaimer}</p><p className="summary-scope-disclaimer">{supportScopeNotice}</p><p className="summary-scope-disclaimer">{productScopeNotice}</p>{aliasLegend&&<p className="summary-scope-disclaimer" data-alias-legend="summary">{aliasLegend}</p>}프로그램 결과는 입력조건 및 적용 기준에 따른 설계 참고자료입니다.<br/>실제 시공은 현장 조건과 적용 기준에 따릅니다.</footer>
+    <footer><p className="summary-scope-disclaimer">{resultScopeDisclaimer}</p><p className="summary-scope-disclaimer">{supportScopeNotice}</p><p className="summary-scope-disclaimer">{productScopeNotice}</p>프로그램 결과는 입력조건 및 적용 기준에 따른 설계 참고자료입니다.<br/>실제 시공은 현장 조건과 적용 기준에 따릅니다.</footer>
   </article>;
 }

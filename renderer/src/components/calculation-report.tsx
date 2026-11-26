@@ -6,8 +6,7 @@ import { displayStudGroup } from "@/lib/visual-assets";
 import { calculationModeLabels, strengthCheckModeLabels, type CalculationMode } from "@/lib/calculation-mode";
 import { ResultNotices } from "@/components/result-notices";
 import { APP_FULL_TITLE } from "@/lib/app-info";
-import { reportSafeText, screwTensionScope } from "@/lib/report-wording";
-import { reportAliasLegend, sanitizeReportData } from "@/lib/report-sanitize";
+import { screwTensionScope } from "@/lib/report-wording";
 
 export interface ReportBoardSlot {
   label: string;
@@ -119,11 +118,7 @@ const dateFormat = new Intl.DateTimeFormat("ko-KR", {
 
 const defaultStudYieldStrength = 295;
 
-export function CalculationReport({ data: rawData, className = "" }: CalculationReportProps) {
-  // 인쇄 전 일괄 정화(item 182): DB·시드·자유입력·엔진 문자열의 금지 표현을 생략·변환한 사본으로 그린다
-  const sanitized = sanitizeReportData(rawData);
-  const data = sanitized.data;
-  const aliasLegend = reportAliasLegend(sanitized.aliases);
+export function CalculationReport({ data, className = "" }: CalculationReportProps) {
   const stressOk = data.result.stress_verdict === "O.K";
   const deflectionOk = data.result.deflection_verdict === "O.K";
   const screwTensionOk = data.result.screw_tension_verdict === "O.K";
@@ -176,8 +171,7 @@ export function CalculationReport({ data: rawData, className = "" }: Calculation
       </header>
 
       <section className="mt-4">
-        <ResultNotices notices={(data.result.notices ?? []).filter((notice) => reportSafeText(notice) !== null)} showProductScope result={data.result} variant="report" />
-        {aliasLegend ? <p className="mt-2 text-xs text-slate-600" data-alias-legend="detail">{aliasLegend}</p> : null}
+        <ResultNotices notices={data.result.notices ?? []} showProductScope result={data.result} variant="report" />
       </section>
 
       <section className={`mt-5 grid gap-3 md:grid-cols-2 ${isHeightSearchMode&&isSeismic?"report-overview-anchor-height":""}`}>
@@ -567,7 +561,7 @@ export function CalculationReport({ data: rawData, className = "" }: Calculation
         <section className="mt-5">
           <ReportBlock title={`참고 부록 — 선택 앵커 제품의 허용하중 표 (${anchorProductLabel(data.anchorProduct)})`}>
             <p className="mb-2 text-xs text-slate-600">
-              {anchorBasisSourceLabel(data.anchorProduct)}.{reportSafeText(data.anchorProduct.concreteCondition) ? ` 조건: ${reportSafeText(data.anchorProduct.concreteCondition)}.` : ""}
+              {anchorBasisSourceLabel(data.anchorProduct)}. 조건: {data.anchorProduct.concreteCondition}.
               최소 콘크리트 두께 / 연단거리 / 간격: {mmOrDash(data.anchorProduct.minConcreteThicknessMm)} / {mmOrDash(data.anchorProduct.minEdgeMm)} / {mmOrDash(data.anchorProduct.minSpacingMm)}.
               {data.anchorProduct.basis === "rec" ? " 제조사 권장하중 — 안전율 원문 미기재." : ""}
               {" "}DB 수치는 제조사 Data Sheet·ICC-ES 평가서 전재값이며 국내 인증값이 아님.
@@ -593,7 +587,7 @@ export function CalculationReport({ data: rawData, className = "" }: Calculation
                         <TableCell>{row.concrete_fc_MPa === null ? "강도 무관" : formatNumber(row.concrete_fc_MPa)}</TableCell>
                         <TableCell>{formatNumber(row.allowable_shear_N)}</TableCell>
                         <TableCell>{formatNumber(row.allowable_tension_N)}</TableCell>
-                        <TableCell>{[selected ? "◀ 선택 행" : "", reportSafeText(row.label) ?? ""].filter(Boolean).join(" ")}</TableCell>
+                        <TableCell>{[selected ? "◀ 선택 행" : "", row.label ?? ""].filter(Boolean).join(" ")}</TableCell>
                       </tr>
                     );
                   })}
@@ -611,7 +605,7 @@ export const anchorScopeNotice =
   "고정못 허용내력은 입력(또는 DB 조회)값 기준이며, 제품 성능의 검증은 본 프로그램 범위 외임. 매입깊이·연단거리·콘크리트 두께 등 시공 조건은 제조사 기술자료를 따를 것";
 
 export function anchorProductLabel(product: ReportAnchorProduct | null) {
-  return product ? reportSafeText(product.label) ?? product.anchorId : "사용자 정의";
+  return product ? product.label : "사용자 정의";
 }
 
 export function anchorConditionLabel(product: ReportAnchorProduct) {
@@ -655,12 +649,9 @@ export function anchorShearTensionLabel(result: WallCheckResult) {
   return `${formatNumber(shear)} N / ${formatNumber(tension)} N${capNote}`;
 }
 
-// DB·시드 문자열도 인쇄 전 금지 문구 필터를 거친다(금지 문구가 있는 부분은 생략, item 182)
+// 식별·출처 필드는 원문 그대로 인쇄한다(소유자 결정 2026-11-26). 유보 문구는 PDF 출력 전 화면 경고로 알린다
 export function anchorBasisSourceLabel(product: ReportAnchorProduct) {
-  const basis = reportSafeText(product.basisLabel);
-  const source = reportSafeText(product.source);
-  const approvals = reportSafeText(product.approvals);
-  return [[basis, source].filter(Boolean).join(" — "), approvals].filter(Boolean).join("; ") || "—";
+  return `${product.basisLabel} — ${product.source}${product.approvals ? `; ${product.approvals}` : ""}`;
 }
 
 function isSelectedAnchorRow(row: AnchorLoadRow, product: ReportAnchorProduct) {
@@ -731,9 +722,9 @@ function FpRows({ result }: { result: WallCheckResult }) {
 }
 
 // 고정못 허용내력 출처 표기. 미입력이면 "—"
-// 자유입력 출처: 금지 문구가 있으면 문서에는 "—"(표시 생략), 원문은 입력값 그대로 저장. 사유는 입력 화면에 안내
+// 자유입력 출처는 원문 그대로 인쇄한다(소유자 결정 2026-11-26). 유보 문구는 PDF 출력 전 화면 경고로 알린다
 export function anchorSourceLabel(source: string | undefined) {
-  return reportSafeText(source) || "—";
+  return source && source.trim() ? source.trim() : "—";
 }
 
 function BoltRow({ label, count, pitch, applicable = true }: { label: string; count: number; pitch: number; applicable?: boolean }) {

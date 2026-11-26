@@ -9,10 +9,15 @@
 3. 표준 예제의 실제 렌더링 텍스트 — CalculationReport·SummaryReport 를 react-dom/server 로 렌더링
    (renderer/scripts/report-wording-check.mjs). renderer/node_modules 가 없으면 실패한다
    (환경변수 KCC_ALLOW_SKIP_RENDER=1 일 때만 건너뜀 — 병합 전 시험에서는 반드시 실행).
-4. Codex 1차 반영 분기: 피스 체결층 없는 CH(검토 생략 표기), CH 일부 체결(범위 표기), 자유입력 출처 필터,
-   엔진 입력 조건 안내(중립축·표준 외 피스 간격), DB 문자열 필터.
+4. Codex 1차 반영 분기: 피스 체결층 없는 CH(검토 생략 표기), CH 일부 체결(범위 표기),
+   엔진 입력 조건 안내(중립축·표준 외 피스 간격).
+5. 소유자 결정(2026-11-26, Curtainwall item 177 공통 방식): 사용자 자유입력·식별 필드(출처·제품명·자재명 등)는
+   유보 문구가 있어도 원문 그대로 인쇄한다. 대신 PDF 출력 전 화면에 「유보 문구가 있는 필드」 목록을 경고로 보인다.
+   - 프로그램 문구 검사: renderer/scripts/report-wording-check.mjs 의 PROGRAM_TEXT_PATTERN(화면 경고 검출식과 독립).
+     렌더링 텍스트에서 사용자 입력 원문을 뺀 나머지가 0곳이어야 한다.
+   - 사용자 입력 반례: 원문이 문서에 그대로 있는지 + 화면 경고 목록에 해당 필드가 나오는지 검사한다.
 
-금지 문구 패턴 단일 출처: renderer/src/lib/report-wording.ts (reportForbiddenPatternSource, 대소문자 무관).
+화면 경고 검출식: renderer/src/lib/report-wording.ts (reportForbiddenPatternSource, 대소문자 무관).
 """
 
 from __future__ import annotations
@@ -52,10 +57,22 @@ def _load_forbidden_pattern() -> re.Pattern[str]:
 
 
 FORBIDDEN_PATTERN = _load_forbidden_pattern()
+
+
+def _load_program_pattern() -> re.Pattern[str]:
+  """renderer/scripts/report-wording-check.mjs 의 PROGRAM_TEXT_PATTERN 원문을 읽는다(화면 경고 검출식과 독립)."""
+  match = re.search(r"PROGRAM_TEXT_PATTERN\s*=\s*/(.+)/giu;", CHECK_SCRIPT.read_text(encoding="utf-8"))
+  if match is None:
+    raise AssertionError(f"{CHECK_SCRIPT}: PROGRAM_TEXT_PATTERN 을 찾을 수 없음")
+  return re.compile(match.group(1), re.IGNORECASE)
+
+
+PROGRAM_PATTERN = _load_program_pattern()
 FREE_INPUT_FORBIDDEN_SOURCE = "승인번호 확인 필요 / Warning"
 
-# 소유자 금지어 각각과 동의·변형 표현의 독립 반례 목록(Codex 2차). 검사 패턴과 별개로 문서 생략을 직접 단언한다.
-# 각 항목: (자유입력 원문, 문서에 나오면 안 되는 고유 조각)
+# 소유자 금지어 각각과 동의·변형 표현의 독립 반례 목록(Codex 2차). 소유자 결정(2026-11-26)에 따라
+# 문서에는 원문 그대로 인쇄되고, 화면 경고 목록에 출처 필드가 나와야 한다.
+# 각 항목: (자유입력 원문, 원문의 고유 조각)
 FORBIDDEN_EXAMPLES: tuple[tuple[str, str], ...] = (
   ("확인필요 자료", "확인필요"),
   ("시험성적서 확인 필요", "시험성적서"),
@@ -109,10 +126,10 @@ FORBIDDEN_EXAMPLES: tuple[tuple[str, str], ...] = (
 LITERAL_TOKENS = ("WARN", "CAUTION", "DRAFT", "TBD", "PENDING", "경고", "확인 필요", "확인필요", "검토가 필요")
 BOARD_WARN_KIND = "방화 WARN"
 BOARD_DRAFT_KIND = "방화 DRAFT"
-# 정상값 반례(Codex 3차): 정화가 훼손하면 안 되는 출처·자재명
+# 정상값 반례(Codex 3차): 경고 대상이 아닌 출처·자재명(화면 경고 목록에 나오면 안 됨)
 SAFE_SOURCE = "건축주의 승인도서 A-17"
 SAFE_BOARD_KIND = "건축주의 지정 방화보드"
-# 프로그램 문구만 있는 구성(자유입력·로컬 DB 반례 제외) — 인쇄 전 정화가 바꾸는 항목이 0이어야 함
+# 사용자 입력 반례 구성 — 그 밖의 구성(프로그램 문구만)은 화면 경고 목록이 비어야 함
 USER_INPUT_CASE_PREFIXES = ("free-", "db-edited", "board-catalog-")
 
 # 계산서·요약페이지에 텍스트를 내보내는 렌더러 소스(화면 전용 input-workspace 등은 대상 아님)
@@ -137,11 +154,16 @@ def _normalize(text: str) -> str:
   return re.sub(r"\s+", " ", text).strip()
 
 
-def _hits(text: str) -> list[str]:
+def _hits(text: str, pattern: re.Pattern[str] = FORBIDDEN_PATTERN) -> list[str]:
   """정규화형과 공백 제거형 모두에서 금지 표현을 찾는다(report-wording.ts findForbiddenWording 과 같은 규칙)."""
   normalized = _normalize(text)
   compact = re.sub(r"\s+", "", normalized)
-  return [m.group(0) for candidate in (normalized, compact) for m in FORBIDDEN_PATTERN.finditer(candidate)]
+  return [m.group(0) for candidate in (normalized, compact) for m in pattern.finditer(candidate)]
+
+
+def _program_hits(text: str) -> list[str]:
+  """프로그램 문구 검사식(PROGRAM_TEXT_PATTERN)으로 찾는다."""
+  return _hits(text, PROGRAM_PATTERN)
 
 
 def _strip_comments(source: str) -> str:
@@ -207,7 +229,8 @@ class ReportWordingTest(unittest.TestCase):
     cases.append({"name": "seismic-custom", "mode": "anchorHeight", "payload": custom, "product": None})
     # Codex 1차 반영 분기
     free_input = {**custom, "anchor_capacity_source": FREE_INPUT_FORBIDDEN_SOURCE}
-    cases.append({"name": "free-input-source", "mode": "anchorHeight", "payload": free_input, "product": None})
+    cases.append({"name": "free-input-source", "mode": "anchorHeight", "payload": free_input, "product": None,
+                  "userInputs": [FREE_INPUT_FORBIDDEN_SOURCE]})
     ch_stud = {"stud_type": "CH-STUD", "spec": "102CHS-08", "method": "기본"}
     rear_slot = [{"kind": "방화", "thickness": 25.0, "order": 1}]
     cases.append({
@@ -218,12 +241,13 @@ class ReportWordingTest(unittest.TestCase):
       "name": "ch-partial", "mode": "maxHeight", "product": None,
       "payload": {**cls.base_payload, "stud": ch_stud, "rear_boards": rear_slot},
     })
-    # 로컬 DB에서 고친 카탈로그 문자열(금지 문구 포함)도 인쇄 전에 걸러져야 한다
+    # 로컬 DB에서 고친 카탈로그 문자열(유보 문구 포함): 원문 그대로 인쇄 + 화면 경고
     x_c = next(product for product in cls.anchors if product["anchor_id"] == "hilti_x_c")
     edited = {**x_c, "approvals": "승인번호 확인 필요", "concrete_condition": "Warning: 원문 대조", "source": x_c["source"]}
     embedment, fc = _anchor_input(x_c)
     cases.append({
       "name": "db-edited-strings", "mode": "anchorHeight", "product": edited,
+      "userInputs": ["승인번호 확인 필요", "Warning: 원문 대조"],
       "payload": {
         **cls.base_payload, "design_case": "seismic", "anchor_product_id": "hilti_x_c",
         "anchor_embedment_mm": embedment, "anchor_concrete_fc_MPa": fc, "anchor_apply_seismic_cap": True,
@@ -250,11 +274,11 @@ class ReportWordingTest(unittest.TestCase):
     for index, (text, _) in enumerate(FORBIDDEN_EXAMPLES):
       cases.append({
         "name": f"free-example-{index:02d}", "mode": "anchorHeight", "product": None,
-        "payload": {**custom, "anchor_capacity_source": text},
+        "payload": {**custom, "anchor_capacity_source": text}, "userInputs": [text],
       })
     cases.append({
       "name": "free-safe-source", "mode": "anchorHeight", "product": None,
-      "payload": {**custom, "anchor_capacity_source": SAFE_SOURCE},
+      "payload": {**custom, "anchor_capacity_source": SAFE_SOURCE}, "userInputs": [SAFE_SOURCE],
     })
     # 하중 0(비내진·활하중 0): 피스 체결층이 있어도 엔진 지배 피치가 0 — 검토 생략으로 적으면 안 됨
     cases.append({
@@ -296,7 +320,8 @@ class ReportWordingTest(unittest.TestCase):
     response = client.post("/api/check", json=payload)
     if response.status_code != 200:
       raise AssertionError(f"{name} /api/check 실패: {response.status_code} {response.text}")
-    return {"name": name, "mode": "maxHeight", "product": None, "payload": payload, "result": response.json()["data"], "boards": catalog}
+    return {"name": name, "mode": "maxHeight", "product": None, "payload": payload, "result": response.json()["data"], "boards": catalog,
+            "userInputs": list(extra_kinds)}
 
   @classmethod
   def tearDownClass(cls) -> None:
@@ -310,14 +335,14 @@ class ReportWordingTest(unittest.TestCase):
       with self.subTest(case=case["name"]):
         texts = [*cast(list[str], result.get("notices") or []), str(result.get("anchor_product_summary") or "")]
         for text in texts:
-          self.assertEqual(_hits(text), [], text)
+          self.assertEqual(_hits(text) + _program_hits(text), [], text)
 
   def test_anchor_catalog_report_fields_have_no_forbidden_wording(self) -> None:
     for product in self.anchors:
       for field in ANCHOR_REPORT_FIELDS:
         with self.subTest(anchor=product["anchor_id"], field=field):
           value = str(product.get(field) or "")
-          self.assertEqual(_hits(value), [], value)
+          self.assertEqual(_hits(value) + _program_hits(value), [], value)
       for row in product["table"]:
         self.assertEqual(_hits(str(row.get("label") or "")), [], row)
 
@@ -329,7 +354,7 @@ class ReportWordingTest(unittest.TestCase):
         # 문자열 리터럴과 JSX 텍스트만 검사한다(식별자 AlertTriangle·ResultNotices 등은 출력 문구가 아님)
         texts = re.findall(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|`(?:[^`\\]|\\.)*`', source)
         texts += re.findall(r">([^<>{}]+)<", source)
-        self.assertEqual([text for text in texts if _hits(text)], [])
+        self.assertEqual([text for text in texts if _program_hits(text) or _hits(text)], [])
 
   # ── 3. 실제 렌더링 텍스트 ──
   _render_cache: dict[str, Any] | None = None
@@ -344,7 +369,7 @@ class ReportWordingTest(unittest.TestCase):
       if os.environ.get("KCC_ALLOW_SKIP_RENDER") == "1":
         self.skipTest(message)
       self.fail(message + " (렌더링 시험은 건너뛰지 않음. 의도적으로 건너뛰려면 KCC_ALLOW_SKIP_RENDER=1)")
-    fixtures = [{"name": case["name"], "data": self._report_data(case)} for case in self.cases]
+    fixtures = [{"name": case["name"], "data": self._report_data(case), "userInputs": case.get("userInputs", [])} for case in self.cases]
     with tempfile.TemporaryDirectory() as temp_dir:
       fixture_path = Path(temp_dir) / "fixtures.json"
       fixture_path.write_text(json.dumps(fixtures, ensure_ascii=False), encoding="utf-8")
@@ -361,6 +386,7 @@ class ReportWordingTest(unittest.TestCase):
     summary = cast(dict[str, Any], json.loads(completed.stdout))
     summary["returncode"] = completed.returncode
     summary["texts"] = {(entry["name"], entry["kind"]): entry["text"] for entry in summary["report"]}
+    summary["printed"] = {(entry["name"], entry["kind"]): entry["userInputsPrinted"] for entry in summary["report"]}
     summary["screen_by_name"] = {entry["name"]: entry for entry in summary["screen"]}
     ReportWordingTest._render_cache = summary
     return summary
@@ -368,7 +394,18 @@ class ReportWordingTest(unittest.TestCase):
   def _text(self, name: str, kind: str) -> str:
     return cast(str, self._render()["texts"][(name, kind)])
 
-  def test_rendered_reports_have_no_forbidden_wording(self) -> None:
+  def _fields(self, name: str) -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], self._render()["screen_by_name"][name]["reservationFields"])
+
+  def _assert_printed_verbatim(self, name: str, kinds: tuple[str, ...] = ("detail", "summary")) -> None:
+    for kind in kinds:
+      printed = self._render()["printed"][(name, kind)]
+      with self.subTest(case=name, kind=kind):
+        self.assertTrue(printed, "반례 전제: userInputs 지정")
+        self.assertEqual([item["input"] for item in printed if not item["printed"]], [], f"{kind}: 원문 그대로 인쇄되지 않음")
+
+  def test_rendered_reports_have_no_program_wording(self) -> None:
+    # 프로그램 문구(엔진·시드·고정 문자열) 0곳 — 사용자 입력 원문을 뺀 렌더링 텍스트를 독립 검색식으로 검사
     summary = self._render()
     self.assertEqual(len(summary["report"]), 2 * len(self.cases))
     hits = [{k: v for k, v in entry.items() if k != "text"} for entry in summary["report"] if entry["hits"]]
@@ -398,29 +435,31 @@ class ReportWordingTest(unittest.TestCase):
         self.assertIn(f"{verdict} (전면 피스 체결층)", self._text("ch-partial", kind))
     self.assertIn("전면 피스 체결층(후면 CH 끼움 보드는 피스 없음 — 검토 생략)", self._text("ch-partial", "detail"))
 
-  def test_free_input_source_is_filtered_from_documents_and_flagged_on_screen(self) -> None:
+  def test_free_input_source_is_printed_verbatim_and_warned_on_screen(self) -> None:
+    self._assert_printed_verbatim("free-input-source")
     for kind in ("detail", "summary"):
       with self.subTest(kind=kind):
-        text = self._text("free-input-source", kind)
-        self.assertNotIn("승인번호", text)
-        self.assertNotIn("Warning", text)
-    # 화면 안내 조건: 같은 함수(isReportSafeText)가 거짓이면 입력 화면에 생략 안내를 띄운다
-    self.assertFalse(self._render()["screen_by_name"]["free-input-source"]["anchorSourceReportSafe"])
-    self.assertTrue(self._render()["screen_by_name"]["seismic-hilti_x_u"]["anchorSourceReportSafe"])
-    screen_source = (RENDERER / "src/components/input-workspace.tsx").read_text(encoding="utf-8")
-    self.assertIn("isReportSafeText(values.anchorCapacitySource)", screen_source)
-    self.assertIn('reportOmittedTextNotice("허용내력 출처")', screen_source)
-    # 원문 보존: API 요청·계산은 입력값 그대로 받는다
-    case = next(c for c in self.cases if c["name"] == "free-input-source")
+        self.assertIn(f"고정못 허용내력 출처 {FREE_INPUT_FORBIDDEN_SOURCE}", self._text("free-input-source", kind))
+    fields = self._fields("free-input-source")
+    self.assertIn(("런너 고정못 허용내력 출처", FREE_INPUT_FORBIDDEN_SOURCE), [(f["label"], f["value"]) for f in fields])
+    self.assertIsNotNone(self._render()["screen_by_name"]["free-input-source"]["reservationTitle"])
+    # 화면 경고는 출력 전(page.tsx)과 입력 화면(input-workspace.tsx) 두 곳
+    page = (RENDERER / "src/app/page.tsx").read_text(encoding="utf-8")
+    self.assertIn("findReservationFields(", page)
+    self.assertIn('data-reservation-warning="before-print"', page)
+    self.assertIn("window.confirm(", page)
+    workspace = (RENDERER / "src/components/input-workspace.tsx").read_text(encoding="utf-8")
+    self.assertIn('data-reservation-warning="anchor-source"', workspace)
+    case = self.cases_by_name()["free-input-source"]
     self.assertEqual(case["payload"]["anchor_capacity_source"], FREE_INPUT_FORBIDDEN_SOURCE)
 
-  def test_db_edited_strings_are_filtered(self) -> None:
-    for kind in ("detail", "summary"):
-      text = self._text("db-edited-strings", kind)
-      with self.subTest(kind=kind):
-        self.assertNotIn("승인번호", text)
-        self.assertNotIn("원문 대조", text)
-        self.assertIn("Hilti X-C", text)
+  def test_db_edited_strings_are_printed_verbatim_and_warned(self) -> None:
+    self._assert_printed_verbatim("db-edited-strings", ("detail",))
+    detail = self._text("db-edited-strings", "detail")
+    self.assertIn("Hilti X-C", detail)
+    values = [f["value"] for f in self._fields("db-edited-strings")]
+    self.assertIn("승인번호 확인 필요", values)
+    self.assertIn("Warning: 원문 대조", values)
 
   def test_input_condition_notices_print_facts_only(self) -> None:
     case = next(c for c in self.cases if c["name"] == "notice-neutral-axis-and-pitch")
@@ -439,65 +478,63 @@ class ReportWordingTest(unittest.TestCase):
     self.assertIn('variant="report"', report)
     self.assertNotIn("screenGuidance", report)
 
-  # ── 5. Codex 2차 반영 분기 ──
-  def test_free_input_examples_are_omitted_from_documents(self) -> None:
-    # 검사 패턴과 별개로: 출처 행은 "—", 원문 고유 조각은 문서에 없음, 화면 안내 대상(안전 아님)
+  # ── 5. 사용자 입력 반례(소유자 결정 2026-11-26: 원문 인쇄 + 화면 경고) ──
+  def test_free_input_examples_are_printed_verbatim_and_warned(self) -> None:
     for index, (text, fragment) in enumerate(FORBIDDEN_EXAMPLES):
       name = f"free-example-{index:02d}"
       with self.subTest(example=text):
-        self.assertFalse(self._render()["screen_by_name"][name]["anchorSourceReportSafe"], text)
+        self._assert_printed_verbatim(name)
         for kind in ("detail", "summary"):
-          body = self._text(name, kind)
-          self.assertNotIn(fragment.lower(), body.lower(), f"{kind}: {fragment}")
-          self.assertIn("고정못 허용내력 출처 —", body)
-        self.assertEqual(self.cases_by_name()[name]["payload"]["anchor_capacity_source"], text)  # 원문 보존
+          self.assertIn(_normalize(fragment), _normalize(self._text(name, kind)), f"{kind}: {fragment}")
+        labels = [f["label"] for f in self._fields(name)]
+        self.assertIn("런너 고정못 허용내력 출처", labels, text)
+        self.assertEqual(self.cases_by_name()[name]["payload"]["anchor_capacity_source"], text)
 
-  def test_board_catalog_warn_name_is_aliased_and_distinct(self) -> None:
+  def test_board_catalog_warn_name_is_printed_verbatim_and_warned(self) -> None:
     case = self.cases_by_name()["board-catalog-warn"]
     self.assertTrue(any("WARN" in layer["name"] for layer in case["result"]["layers"]), "반례 전제: 레이어 이름에 WARN")
-    screen = self._render()["screen_by_name"]["board-catalog-warn"]
-    self.assertEqual([item["alias"] for item in screen["aliases"]], ["등록명 1", "등록명 2"])
-    for kind in ("detail", "summary"):
-      body = self._text("board-catalog-warn", kind)
-      with self.subTest(kind=kind):
-        for token in LITERAL_TOKENS:
-          self.assertNotIn(token.lower(), body.lower())
-        # 서로 다른 두 제품은 서로 다른 고유 표기, 실제 '방화'와도 구분
-        self.assertIn("등록명 1", body)
-        self.assertIn("등록명 2", body)
-        self.assertIn("방화 19T", body)
-        self.assertIn("표기 대체: 등록명 1, 등록명 2", body)  # 문서에 범례(사실 서술)
+    self._assert_printed_verbatim("board-catalog-warn")
     detail = self._text("board-catalog-warn", "detail")
-    # 부분 삭제로 '방화'가 되지 않았음: 전면 행은 대체 표기, 후면 행은 원 명칭
-    self.assertRegex(detail, r"전면 1번\(내측\)\s+등록명 1\s+19T")
-    self.assertRegex(detail, r"전면 2번\(중간\)\s+등록명 2\s+19T")
+    self.assertRegex(detail, r"전면 1번\(내측\)\s+방화 WARN\s+19T")
+    self.assertRegex(detail, r"전면 2번\(중간\)\s+방화 DRAFT\s+19T")
     self.assertRegex(detail, r"후면 1번\(내측\)\s+방화\s+19T")
-    self.assertEqual(case["payload"]["front_boards"][0]["kind"], BOARD_WARN_KIND)  # 원본 키 보존
+    fields = self._fields("board-catalog-warn")
+    labels = [f["label"] for f in fields]
+    self.assertIn("전면 1번(내측) 보드 종류", labels)
+    self.assertIn("전면 2번(중간) 보드 종류", labels)
+    self.assertFalse(any(label.startswith("후면") for label in labels), labels)
+
+  def test_reverted_alias_is_absent(self) -> None:
+    # '등록명 n' 대체 표기·문서 범례는 되돌림(소유자 결정 2026-11-26)
+    for case in self.cases:
+      for kind in ("detail", "summary"):
+        with self.subTest(case=case["name"], kind=kind):
+          self.assertNotIn("등록명", self._text(case["name"], kind))
+          self.assertNotIn("표기 대체", self._text(case["name"], kind))
+    self.assertFalse((RENDERER / "src/lib/report-sanitize.ts").exists())
 
   def test_safe_board_name_is_printed_verbatim(self) -> None:
-    screen = self._render()["screen_by_name"]["board-catalog-safe"]
-    self.assertEqual(screen["sanitizeChanges"], [])
-    self.assertEqual(screen["aliases"], [])
+    self._assert_printed_verbatim("board-catalog-safe")
+    self.assertEqual(self._fields("board-catalog-safe"), [])
     for kind in ("detail", "summary"):
-      body = self._text("board-catalog-safe", kind)
       with self.subTest(kind=kind):
-        self.assertIn(SAFE_BOARD_KIND, body)
-        self.assertNotIn("건축 지정", body)
-        self.assertNotIn("등록명", body)
+        self.assertIn(SAFE_BOARD_KIND, self._text("board-catalog-safe", kind))
 
   def test_safe_source_is_printed_verbatim(self) -> None:
-    self.assertTrue(self._render()["screen_by_name"]["free-safe-source"]["anchorSourceReportSafe"])
+    self._assert_printed_verbatim("free-safe-source")
+    self.assertEqual(self._fields("free-safe-source"), [])
+    self.assertIsNone(self._render()["screen_by_name"]["free-safe-source"]["reservationTitle"])
     for kind in ("detail", "summary"):
       with self.subTest(kind=kind):
         self.assertIn(f"고정못 허용내력 출처 {SAFE_SOURCE}", self._text("free-safe-source", kind))
 
-  def test_program_generated_text_needs_no_sanitizing(self) -> None:
-    # 프로그램 문구(엔진·시드·고정 문자열)는 원천에서 사실 서술 — 정화가 바꾸는 항목이 없어야 한다
+  def test_program_only_cases_have_no_screen_warning(self) -> None:
+    # 프로그램 문구(엔진·시드·고정 문자열)는 원천에서 사실 서술 — 경고 목록이 비어야 한다
     for case in self.cases:
       if case["name"].startswith(USER_INPUT_CASE_PREFIXES):
         continue
       with self.subTest(case=case["name"]):
-        self.assertEqual(self._render()["screen_by_name"][case["name"]]["sanitizeChanges"], [])
+        self.assertEqual(self._fields(case["name"]), [])
 
   def test_zero_load_with_screw_layers_is_not_marked_skipped(self) -> None:
     case = self.cases_by_name()["zero-load-c-stud"]
@@ -519,6 +556,13 @@ class ReportWordingTest(unittest.TestCase):
 
   def cases_by_name(self) -> dict[str, dict[str, Any]]:
     return {case["name"]: case for case in self.cases}
+
+  def test_program_pattern_catches_owner_terms(self) -> None:
+    # 독립 검색식도 소유자 금지어 기본형을 잡는다(대소문자 무관)
+    for text in ("확인 필요", "확인필요", "미검증", "주의", "WARN", "warning", "Caution", "DRAFT", "TBD", "검토가 필요"):
+      with self.subTest(text=text):
+        self.assertTrue(_program_hits(text))
+    self.assertIsNot(PROGRAM_PATTERN, FORBIDDEN_PATTERN)
 
   def test_forbidden_pattern_is_case_insensitive(self) -> None:
     for text in ("Warning", "WARNING", "warn", "Caution", "tbd", "확인필요", "결과 적용에 유의할 것"):

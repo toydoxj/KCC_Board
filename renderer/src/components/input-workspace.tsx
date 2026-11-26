@@ -1,7 +1,7 @@
 "use client";
 
 import { type ChangeEvent, type ReactNode, useState } from "react";
-import { isReportSafeText, reportOmittedTextNotice } from "@/lib/report-wording";
+import { findForbiddenWording } from "@/lib/report-wording";
 import type { FieldErrors, UseFormRegister, UseFormSetValue } from "react-hook-form";
 import { Calculator, RotateCcw } from "lucide-react";
 import { StudGallery } from "./stud-gallery";
@@ -205,7 +205,7 @@ export function InputWorkspace(p: Props) {
           <input className={inputClassName} type="text" maxLength={200} placeholder="예: 제조사 / 제품명 / 시험성적서 번호" {...register("anchorCapacitySource")} aria-label="허용내력 출처(제조사·제품명)"/>
         </Field>
       </div>
-      {!isReportSafeText(values.anchorCapacitySource)&&<p className="input-warning" role="status" data-report-omitted="anchor-source">{reportOmittedTextNotice("허용내력 출처")}</p>}
+      {findForbiddenWording(values.anchorCapacitySource).length>0&&<p className="input-warning" role="status" data-reservation-warning="anchor-source">허용내력 출처에 유보 문구({findForbiddenWording(values.anchorCapacitySource).join(", ")})가 있음 — 계산서·요약페이지에 원문 그대로 인쇄됨.</p>}
       {!a.isCustom&&product&&<div className="anchor-reference" role="note" aria-label="앵커 제품 참조">
         <strong>{anchorProductLabel(product)}</strong>
         {resolved

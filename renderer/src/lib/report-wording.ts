@@ -1,7 +1,9 @@
 import type { WallCheckResult } from "./api";
 
-// 산출 문서(상세 계산서·요약페이지) 금지 문구 (APP_DEV item 182, 소유자 상시 지시 — CODEX.md §11).
-// 단일 출처: tests/test_report_wording.py 와 renderer/scripts/report-wording-check.mjs 가 이 패턴 원문을 그대로 읽는다.
+// 유보 문구(확인 필요·주의·WARN 등) 검출식 (APP_DEV item 182, CODEX.md §11).
+// 용도: 사용자 자유입력·식별 필드(제품명·자재명·출처 등)에 유보 문구가 있으면 PDF 출력 전 화면에 경고 목록을 보인다.
+// 산출 문서는 이 필드를 원문 그대로 인쇄한다(소유자 결정 2026-11-26 — 지우거나 바꾸지 않음).
+// 프로그램 문구 검사(시험)는 이 검출식과 독립된 검색식을 쓴다(renderer/scripts/report-wording-check.mjs, tests/test_report_wording.py).
 // 검사는 normalizeReportText(NFKC·폭 없는 문자 제거·공백/줄바꿈 1칸) 후 원문형과 공백 제거형 두 가지로 한다.
 // 영문은 대소문자 무관. 한국어는 조사·어미 변형(확인이/확인을/검토가 필요합니다, 확인해 주시기 바랍니다 등)을 받는다.
 // 짧은 경고 명사(주의·경고·보류 등)와 영문 단어는 앞 글자가 한글/영문이 아닐 때만 잡는다 — '건축주의'(건축주+의)·'DEPENDING' 오탐 방지(Codex 3차).
@@ -27,20 +29,9 @@ export function findForbiddenWording(text: string | null | undefined): string[] 
   return [...found];
 }
 
-// 산출 문서에 그대로 실어도 되는 문자열인지. 빈 문자열은 안전으로 본다
+// 유보 문구가 없는 문자열인지. 빈 문자열은 해당 없음으로 본다
 export function isReportSafeText(text: string | null | undefined) {
   return findForbiddenWording(text).length === 0;
-}
-
-// 자유입력·DB 문자열을 인쇄 전에 거른다. 금지 문구가 있으면 null(문서에서 해당 표시 생략). 원문은 저장값 그대로 둔다
-export function reportSafeText(text: string | null | undefined): string | null {
-  const value = normalizeReportText(text ?? "");
-  return isReportSafeText(value) ? value : null;
-}
-
-// 화면 안내: 문서에서 생략되는 자유입력 문구의 사유
-export function reportOmittedTextNotice(fieldLabel: string) {
-  return `${fieldLabel}에 산출 문서에 쓰지 않는 표현(예: "확인 필요", "주의", "Warning")이 있어 계산서·요약페이지에는 표시하지 않음. 입력값은 그대로 저장됨.`;
 }
 
 // 피스 인장 검토 범위. 엔진 판정(screw_tension_verdict)은 바꾸지 않고 문서 표기만 정한다
